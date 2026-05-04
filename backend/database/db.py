@@ -61,14 +61,20 @@ def _row_to_dict(row: aiosqlite.Row) -> dict:
     return {k: row[k] for k in row.keys()}
 
 
+def _message_row_to_dict(row: aiosqlite.Row) -> dict:
+    d = _row_to_dict(row)
+    if "round" in d:
+        d["turn_number"] = d.pop("round")
+    return d
+
+
 @asynccontextmanager
 async def get_db() -> AsyncIterator[aiosqlite.Connection]:
     """非同步 context manager：``async with get_db() as db:`` 取得連線並於結束時關閉。"""
     async with aiosqlite.connect(_database_path(), timeout=30) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA journal_mode=DELETE")
         await db.execute("PRAGMA busy_timeout=10000")
-        await db.execute("PRAGMA synchronous=NORMAL")
         await db.execute("PRAGMA foreign_keys=ON")
         yield db
 
@@ -126,7 +132,7 @@ async def delete_case(case_id: str) -> bool:
 async def add_message(
     case_id: str,
     session_id: str,
-    round: int,
+    turn_number: int,
     role: str,
     content: str,
 ) -> dict:
@@ -141,14 +147,14 @@ async def add_message(
             INSERT INTO messages (id, case_id, session_id, round, role, content, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (msg_id, case_id, session_id, round, role, content, created_at),
+            (msg_id, case_id, session_id, turn_number, role, content, created_at),
         )
         await db.commit()
         cur = await db.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
         row = await cur.fetchone()
     if row is None:
         raise RuntimeError(f"message 寫入後查詢失敗，id={msg_id}")
-    return _row_to_dict(row)
+    return _message_row_to_dict(row)
 
 
 async def get_messages_by_session(case_id: str, session_id: str) -> list[dict]:
@@ -162,7 +168,7 @@ async def get_messages_by_session(case_id: str, session_id: str) -> list[dict]:
             (case_id, session_id),
         )
         rows = await cur.fetchall()
-    return [_row_to_dict(r) for r in rows]
+    return [_message_row_to_dict(r) for r in rows]
 
 
 async def get_all_sessions(case_id: str) -> list[str]:
@@ -189,7 +195,7 @@ async def get_all_sessions(case_id: str) -> list[str]:
 async def add_summary(
     case_id: str,
     session_id: str,
-    round: int,
+    turn_number: int,
     summary_json: str,
     crisis_flag: bool,
 ) -> dict:
@@ -213,7 +219,7 @@ async def add_summary(
                 summary_id,
                 case_id,
                 session_id,
-                round,
+                turn_number,
                 summary_json,
                 flag,
                 created_at,
@@ -229,7 +235,10 @@ async def add_summary(
 
 def _parse_summary_row(row: aiosqlite.Row) -> dict:
     d = _row_to_dict(row)
-    d["summary_json"] = json.loads(d["summary_json"])
+    parsed = json.loads(d.pop("summary_json"))
+    d["summary"] = parsed
+    if "round" in d:
+        d["turn_number"] = d.pop("round")
     return d
 
 
@@ -248,6 +257,10 @@ async def get_summaries_by_session(case_id: str, session_id: str) -> list[dict]:
 
 
 async def get_latest_summaries(case_id: str, limit: int = 10) -> list[dict]:
+    if not isinstance(limit, int) or limit <= 0:
+        raise ValueError(f"limit 必須是正整數，收到：{limit}")
+    limit = min(limit, 100)
+
     async with get_db() as db:
         cur = await db.execute(
             """
