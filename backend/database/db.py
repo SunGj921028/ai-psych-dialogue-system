@@ -215,7 +215,7 @@ async def add_summary(
         cur = await db.execute("SELECT * FROM summaries WHERE id = ?", (summary_id,))
         row = await cur.fetchone()
     assert row is not None
-    return _row_to_dict(row)
+    return _parse_summary_row(row)
 
 
 def _parse_summary_row(row: aiosqlite.Row) -> dict:
