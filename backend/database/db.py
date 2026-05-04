@@ -7,7 +7,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import aiosqlite
@@ -16,8 +16,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 SCHEMA = """
-PRAGMA foreign_keys = ON;
-
 CREATE TABLE IF NOT EXISTS cases (
     id TEXT PRIMARY KEY,
     code_name TEXT NOT NULL,
@@ -56,7 +54,7 @@ def _database_path() -> str:
 
 
 def _now_iso() -> str:
-    return datetime.utcnow().isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _row_to_dict(row: aiosqlite.Row) -> dict:
@@ -66,9 +64,12 @@ def _row_to_dict(row: aiosqlite.Row) -> dict:
 @asynccontextmanager
 async def get_db() -> AsyncIterator[aiosqlite.Connection]:
     """非同步 context manager：``async with get_db() as db:`` 取得連線並於結束時關閉。"""
-    async with aiosqlite.connect(_database_path()) as db:
+    async with aiosqlite.connect(_database_path(), timeout=30) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA foreign_keys = ON")
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA busy_timeout=10000")
+        await db.execute("PRAGMA synchronous=NORMAL")
+        await db.execute("PRAGMA foreign_keys=ON")
         yield db
 
 
@@ -93,7 +94,8 @@ async def create_case(code_name: str, note: str | None = None) -> dict:
         await db.commit()
         cur = await db.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
         row = await cur.fetchone()
-    assert row is not None
+    if row is None:
+        raise RuntimeError(f"個案寫入後查詢失敗，id={case_id}")
     return _row_to_dict(row)
 
 
@@ -144,7 +146,8 @@ async def add_message(
         await db.commit()
         cur = await db.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
         row = await cur.fetchone()
-    assert row is not None
+    if row is None:
+        raise RuntimeError(f"message 寫入後查詢失敗，id={msg_id}")
     return _row_to_dict(row)
 
 
@@ -219,7 +222,8 @@ async def add_summary(
         await db.commit()
         cur = await db.execute("SELECT * FROM summaries WHERE id = ?", (summary_id,))
         row = await cur.fetchone()
-    assert row is not None
+    if row is None:
+        raise RuntimeError(f"summary 寫入後查詢失敗，id={summary_id}")
     return _parse_summary_row(row)
 
 
