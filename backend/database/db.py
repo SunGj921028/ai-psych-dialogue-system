@@ -190,6 +190,11 @@ async def add_summary(
     summary_json: str,
     crisis_flag: bool,
 ) -> dict:
+    try:
+        json.loads(summary_json)
+    except json.JSONDecodeError as exc:
+        raise ValueError("summary_json 必須是合法的 JSON 字串") from exc
+
     summary_id = str(uuid.uuid4())
     created_at = _now_iso()
     flag = 1 if crisis_flag else 0
