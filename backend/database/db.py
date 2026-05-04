@@ -126,7 +126,7 @@ async def delete_case(case_id: str) -> bool:
 async def add_message(
     case_id: str,
     session_id: str,
-    round: int,
+    turn: int,
     role: str,
     content: str,
 ) -> dict:
@@ -141,7 +141,7 @@ async def add_message(
             INSERT INTO messages (id, case_id, session_id, round, role, content, created_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (msg_id, case_id, session_id, round, role, content, created_at),
+            (msg_id, case_id, session_id, turn, role, content, created_at),
         )
         await db.commit()
         cur = await db.execute("SELECT * FROM messages WHERE id = ?", (msg_id,))
