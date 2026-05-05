@@ -60,6 +60,11 @@ CREATE INDEX IF NOT EXISTS idx_summaries_case_session_crisis_flag
 """
 
 
+# Single source of truth for busy/lock timeout (milliseconds).
+# aiosqlite.connect() receives the equivalent in seconds.
+_BUSY_TIMEOUT_MS: int = 30_000  # 30 s
+
+
 def _database_path() -> str:
     raw = os.getenv("DATABASE_PATH", "./cases.db")
     raw_path = Path(raw)
@@ -88,9 +93,9 @@ def _message_row_to_dict(row: aiosqlite.Row) -> dict:
 @asynccontextmanager
 async def get_db() -> AsyncIterator[aiosqlite.Connection]:
     """非同步 context manager：``async with get_db() as db:`` 取得連線並於結束時關閉。"""
-    async with aiosqlite.connect(_database_path(), timeout=30) as db:
+    async with aiosqlite.connect(_database_path(), timeout=_BUSY_TIMEOUT_MS / 1000) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA busy_timeout=10000")
+        await db.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
         await db.execute("PRAGMA foreign_keys=ON")
         await db.execute("PRAGMA synchronous=NORMAL")
         yield db
