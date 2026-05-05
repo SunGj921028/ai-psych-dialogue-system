@@ -201,7 +201,7 @@ async def add_summary(
     crisis_flag: bool,
 ) -> dict:
     try:
-        json.loads(summary_json)
+        parsed_summary = json.loads(summary_json)
     except json.JSONDecodeError as exc:
         raise ValueError("summary_json 必須是合法的 JSON 字串") from exc
 
@@ -227,11 +227,15 @@ async def add_summary(
             ),
         )
         await db.commit()
-        cur = await db.execute("SELECT * FROM summaries WHERE id = ?", (summary_id,))
-        row = await cur.fetchone()
-    if row is None:
-        raise RuntimeError(f"summary 寫入後查詢失敗，id={summary_id}")
-    return _parse_summary_row(row)
+    return {
+        "id": summary_id,
+        "case_id": case_id,
+        "session_id": session_id,
+        "turn_number": turn_number,
+        "summary": parsed_summary,
+        "crisis_flag": bool(crisis_flag),
+        "created_at": created_at,
+    }
 
 
 def _parse_summary_row(row: aiosqlite.Row) -> dict:
