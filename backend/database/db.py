@@ -75,6 +75,7 @@ async def get_db() -> AsyncIterator[aiosqlite.Connection]:
         db.row_factory = aiosqlite.Row
         await db.execute("PRAGMA busy_timeout=10000")
         await db.execute("PRAGMA foreign_keys=ON")
+        await db.execute("PRAGMA synchronous=NORMAL")
         yield db
 
 
@@ -82,7 +83,6 @@ async def init_db() -> None:
     """建立三張資料表（若不存在）並套用 WAL 模式以提升並發能力。"""
     async with get_db() as db:
         await db.execute("PRAGMA journal_mode=WAL")
-        await db.execute("PRAGMA synchronous=NORMAL")
         await db.executescript(SCHEMA)
         await db.commit()
 
