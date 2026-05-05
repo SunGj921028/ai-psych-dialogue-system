@@ -1,4 +1,7 @@
 import asyncio
+import json
+import os
+import tempfile
 
 from database.db import (
     init_db,
@@ -14,7 +17,10 @@ from database.db import (
 
 
 async def run_smoke_test():
-    await init_db()
+    # Use a throw-away temp DB so the real cases.db is never touched.
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        os.environ["DATABASE_PATH"] = os.path.join(tmp_dir, "smoke_test.db")
+        await _run()
 
     # 測試 case CRUD
     case = await create_case("A001", note="測試個案")
