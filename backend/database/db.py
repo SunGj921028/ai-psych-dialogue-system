@@ -104,7 +104,21 @@ async def get_db() -> AsyncIterator[aiosqlite.Connection]:
 async def init_db() -> None:
     """建立三張資料表（若不存在）並套用 WAL 模式以提升並發能力。"""
     async with get_db() as db:
-        await db.execute("PRAGMA journal_mode=WAL")
+        cur = await db.execute("PRAGMA journal_mode=WAL")
+        row = await cur.fetchone()
+        journal_mode = ""
+        if row is not None:
+            if isinstance(row, aiosqlite.Row):
+                journal_mode = str(row[0]).lower()
+            else:
+                journal_mode = str(row[0]).lower()
+
+        if journal_mode != "wal":
+            raise RuntimeError(
+                f"無法啟用 SQLite WAL 模式，當前 journal_mode={journal_mode or 'unknown'}，"
+                f"database={_database_path()}"
+            )
+
         await db.executescript(SCHEMA)
         await db.commit()
 
