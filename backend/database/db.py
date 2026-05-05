@@ -45,6 +45,18 @@ CREATE TABLE IF NOT EXISTS summaries (
     created_at TEXT NOT NULL,
     FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
 );
+
+CREATE INDEX IF NOT EXISTS idx_messages_case_session_round
+    ON messages (case_id, session_id, round);
+
+CREATE INDEX IF NOT EXISTS idx_summaries_case_session_round
+    ON summaries (case_id, session_id, round);
+
+CREATE INDEX IF NOT EXISTS idx_summaries_case_created_at
+    ON summaries (case_id, created_at);
+
+CREATE INDEX IF NOT EXISTS idx_summaries_case_session_crisis_flag
+    ON summaries (case_id, session_id, crisis_flag);
 """
 
 
