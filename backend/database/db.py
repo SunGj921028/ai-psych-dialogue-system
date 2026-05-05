@@ -73,15 +73,16 @@ async def get_db() -> AsyncIterator[aiosqlite.Connection]:
     """非同步 context manager：``async with get_db() as db:`` 取得連線並於結束時關閉。"""
     async with aiosqlite.connect(_database_path(), timeout=30) as db:
         db.row_factory = aiosqlite.Row
-        await db.execute("PRAGMA journal_mode=DELETE")
         await db.execute("PRAGMA busy_timeout=10000")
         await db.execute("PRAGMA foreign_keys=ON")
         yield db
 
 
 async def init_db() -> None:
-    """建立三張資料表（若不存在）。"""
+    """建立三張資料表（若不存在）並套用 WAL 模式以提升並發能力。"""
     async with get_db() as db:
+        await db.execute("PRAGMA journal_mode=WAL")
+        await db.execute("PRAGMA synchronous=NORMAL")
         await db.executescript(SCHEMA)
         await db.commit()
 
