@@ -62,7 +62,12 @@ CREATE INDEX IF NOT EXISTS idx_summaries_case_session_crisis_flag
 
 def _database_path() -> str:
     raw = os.getenv("DATABASE_PATH", "./cases.db")
-    return str(Path(raw).resolve())
+    raw_path = Path(raw)
+    if raw_path.is_absolute():
+        return str(raw_path.resolve())
+
+    backend_dir = Path(__file__).resolve().parents[1]
+    return str((backend_dir / raw_path).resolve())
 
 
 def _now_iso() -> str:
