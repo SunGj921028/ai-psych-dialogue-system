@@ -133,10 +133,17 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
         content = (resp.choices[0].message.content or "").strip()
         data = json.loads(_extract_json(content))
 
+        validated = CrisisDetectionResult.model_validate(
+            {
+                "crisis_flag": data.get("crisis_flag", False),
+                "crisis_level": str(data.get("crisis_level", "low")),
+                "reason": str(data.get("reason", "模型未提供原因")),
+            }
+        )
         result = CrisisDetectionResult(
-            crisis_flag=bool(data.get("crisis_flag", False)),
-            crisis_level=_normalize_level(str(data.get("crisis_level", "low"))),
-            reason=str(data.get("reason", "模型未提供原因")),
+            crisis_flag=validated.crisis_flag,
+            crisis_level=_normalize_level(validated.crisis_level),
+            reason=validated.reason,
         )
 
         # 矛盾防呆機制
