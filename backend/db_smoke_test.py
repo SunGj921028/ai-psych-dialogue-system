@@ -13,7 +13,7 @@ from database.db import (
 )
 
 
-async def test():
+async def run_smoke_test():
     await init_db()
 
     # 測試 case CRUD
@@ -66,4 +66,4 @@ async def test():
 
 
 if __name__ == "__main__":
-    asyncio.run(test())
+    asyncio.run(run_smoke_test())
