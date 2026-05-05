@@ -47,7 +47,6 @@ def _normalize_level(level: str) -> str:
 
 
 def _heuristic_detect(text: str) -> CrisisDetectionResult:
-    print(f"heuristic_detect: {text}")
     normalized = text.strip().lower()
 
     high_keywords = [
@@ -110,7 +109,13 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
         max_chars = 1000
 
     text = (user_input or "").strip()
-    truncated = text[:max_chars]
+    # 同時保留前後 N 字元（如字數過長，取前半 N/2、後半 N/2 合併）
+    if len(text) <= max_chars:
+        truncated = text
+    else:
+        head_len = max_chars // 2
+        tail_len = max_chars - head_len
+        truncated = text[:head_len] + text[-tail_len:]
 
     if not truncated:
         return CrisisDetectionResult(
@@ -118,6 +123,8 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
             crisis_level="none",
             reason="輸入為空，無法判定危機",
         )
+
+    import asyncio
 
     try:
         client = get_llm_client()
@@ -133,10 +140,19 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
         content = (resp.choices[0].message.content or "").strip()
         data = json.loads(_extract_json(content))
 
+        # 補預設值：crisis_level 僅在 crisis_flag 為 True 才缺省為 "low"，否則為 "none"
+        raw_crisis_flag = data.get("crisis_flag", False)
+        raw_crisis_level = data.get("crisis_level", None)
+        level = None
+        if raw_crisis_level is None:
+            # 沒有明確 level，根據 flag 補預設
+            level = "low" if raw_crisis_flag else "none"
+        else:
+            level = str(raw_crisis_level)
         validated = CrisisDetectionResult.model_validate(
             {
-                "crisis_flag": data.get("crisis_flag", False),
-                "crisis_level": str(data.get("crisis_level", "low")),
+                "crisis_flag": raw_crisis_flag,
+                "crisis_level": level,
                 "reason": str(data.get("reason", "模型未提供原因")),
             }
         )
@@ -152,16 +168,28 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
         if result.crisis_level == "none" and result.crisis_flag:
             result.crisis_level = "low"
 
+    except asyncio.CancelledError:
+        raise
     except Exception as exc:
         result = _heuristic_detect(truncated)
         result.reason = f"{result.reason}; LLM fallback: {exc.__class__.__name__}"
 
     if result.crisis_flag:
+        import hashlib, re
+        def _sanitize_text(text):
+            # 移除控制字元並取前 30 字元
+            sanitized = re.sub(r"[\x00-\x1F\x7F]", "", text)
+            return sanitized[:30] + ("..." if len(sanitized) > 30 else "")
+        input_len = len(truncated)
+        input_hash = hashlib.sha256(truncated.encode("utf-8")).hexdigest()[:12]
+        input_preview = _sanitize_text(truncated)
         logger.warning(
-            "crisis_detected time=%s level=%s input=%s reason=%s",
+            "crisis_detected time=%s level=%s input_len=%d input_hash=%s input_preview=%r reason=%s",
             _now_utc_iso(),
             result.crisis_level,
-            truncated,
+            input_len,
+            input_hash,
+            input_preview,
             result.reason,
         )
 
