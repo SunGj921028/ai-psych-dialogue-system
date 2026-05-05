@@ -65,4 +65,5 @@ async def test():
     print("[OK] 所有測試通過")
 
 
-asyncio.run(test())
+if __name__ == "__main__":
+    asyncio.run(test())
