@@ -254,6 +254,8 @@ def _parse_summary_row(row: aiosqlite.Row) -> dict:
     d = _row_to_dict(row)
     parsed = json.loads(d.pop("summary_json"))
     d["summary"] = parsed
+    if "crisis_flag" in d:
+        d["crisis_flag"] = bool(d["crisis_flag"])
     if "round" in d:
         d["turn_number"] = d.pop("round")
     return d
