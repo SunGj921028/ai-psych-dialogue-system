@@ -227,6 +227,9 @@ async def generate_report(
         emotion_raw = data.get("emotion_pattern", {}) if isinstance(data, dict) else {}
         if not isinstance(emotion_raw, dict):
             emotion_raw = {}
+        emotion_raw.setdefault("description", "")
+        emotion_raw.setdefault("intensity_trend", "stable")
+        emotion_raw.setdefault("dominant_emotions", [])
         emotion_raw["peak_turn"] = peak_turn
 
         report = ConceptualizationReport(
