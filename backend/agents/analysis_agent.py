@@ -6,7 +6,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from agents import get_llm_client, get_model_name
+from agents import get_llm_client
 from agents.summary_agent import TurnSummary
 
 logger = logging.getLogger(__name__)
@@ -194,12 +194,12 @@ async def generate_report(
             min_turns=min_turns,
         )
 
-    model = os.getenv("ANALYSIS_MODEL") or get_model_name()
+    model = os.getenv("ANALYSIS_MODEL", "gemini-1.5-pro")
     payload = [s.model_dump() for s in summaries]
 
     raw_content = ""
     try:
-        client = get_llm_client()
+        client = get_llm_client("gemini")
         resp = await client.chat.completions.create(
             model=model,
             temperature=0.2,

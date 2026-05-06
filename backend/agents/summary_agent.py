@@ -1,11 +1,11 @@
-import json
+﻿import json
 import logging
 import os
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from agents import get_llm_client, get_model_name
+from agents import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -167,10 +167,10 @@ async def generate_summary(
     3) crisis_flag 一律以外部傳入為準，覆蓋 LLM 回傳值，確保一致性。
     4) 只送本輪內容（user_input + assistant_response），跨輪分析交由後續分析 Agent。
     """
-    model = os.getenv("SUMMARY_MODEL") or get_model_name()
+    model = os.getenv("SUMMARY_MODEL", "llama-3.3-70b-versatile")
 
     try:
-        client = get_llm_client()
+        client = get_llm_client("groq")
         response = await client.chat.completions.create(
             model=model,
             temperature=0,
