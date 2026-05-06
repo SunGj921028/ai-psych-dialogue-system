@@ -251,13 +251,29 @@ async def generate_report(
         return report
 
     except Exception as exc:
+        import hashlib
+
+        raw_content_str = raw_content if isinstance(raw_content, str) else str(raw_content)
+        raw_preview = raw_content_str[:60].replace("\n", " ") + ("..." if len(raw_content_str) > 60 else "")
+        raw_length = len(raw_content_str)
+        raw_hash = hashlib.sha256(raw_content_str.encode("utf-8")).hexdigest()[:12]
+        
         logger.error(
-            "analysis_report_generation_failed case_id=%s session_id=%s error=%s raw_output=%s",
+            "analysis_report_generation_failed case_id=%s session_id=%s error=%s raw_output_len=%d raw_hash=%s raw_preview=%r",
             case_id,
             session_id,
-            exc,
-            raw_content,
+            type(exc).__name__,
+            raw_length,
+            raw_hash,
+            raw_preview,
         )
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "analysis_report_generation_failed FULL raw_output for case_id=%s session_id=%s: %r",
+                case_id,
+                session_id,
+                raw_content_str,
+            )
         return _build_generation_failed_report(
             case_id=case_id,
             session_id=session_id,
