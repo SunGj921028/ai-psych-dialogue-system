@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from pydantic import BaseModel
 
-from agents import get_llm_client, get_model_name
+from agents import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -97,11 +97,11 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
 
     設計選擇說明：
     1) JSON 解析失敗採 fail-safe：回退到規則式偵測（至少 low），避免漏判危機。
-    2) 模型採 CRISIS_MODEL 獨立設定，預設 gpt-4o-mini（較快，符合並行低延遲需求）。
+    2) 模型採 CRISIS_MODEL 獨立設定，預設 llama-3.1-8b-instant（Groq 快速模型）。
     3) 超長輸入做截斷（預設 1000 字）：保留開頭，降低延遲與成本。
     4) crisis_flag=True 時記錄 console log（含時間、level、原文）。
     """
-    model = os.getenv("CRISIS_MODEL") or os.getenv("LLM_MODEL") or get_model_name()
+    model = os.getenv("CRISIS_MODEL", "llama-3.1-8b-instant")
     max_chars_raw = os.getenv("MAX_CRISIS_INPUT_CHARS", "1000")
     try:
         max_chars = max(1, int(max_chars_raw))
@@ -127,7 +127,7 @@ async def detect_crisis(user_input: str) -> CrisisDetectionResult:
     import asyncio
 
     try:
-        client = get_llm_client()
+        client = get_llm_client("groq")
         resp = await client.chat.completions.create(
             model=model,
             temperature=0,

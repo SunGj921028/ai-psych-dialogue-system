@@ -1,4 +1,4 @@
-"""對話 Agent：同理回應與安全護欄（非 streaming）。"""
+﻿"""對話 Agent：同理回應與安全護欄（非 streaming）。"""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import re
 
 from pydantic import BaseModel, field_validator
 
-from agents import get_llm_client, get_model_name
+from agents import get_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +154,7 @@ async def generate_response(
         max_tokens = 300
     # constrain max_tokens to a reasonable range, e.g. [1, 4096]
     max_tokens = max(1, min(max_tokens, 4096))
-    model = os.getenv("CONVERSATION_MODEL") or get_model_name()
+    model = os.getenv("CONVERSATION_MODEL", "gemini-2.0-flash")
 
     boundary_note = _detect_user_boundary_attempt(user_input)
     if boundary_note:
@@ -169,7 +169,7 @@ async def generate_response(
     warning: str | None = boundary_note
 
     try:
-        client = get_llm_client()
+        client = get_llm_client("gemini")
         resp = await client.chat.completions.create(
             model=model,
             temperature=0.7,
