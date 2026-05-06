@@ -143,7 +143,17 @@ async def generate_response(
     4) 先不做 streaming，降低 router 複雜度（見檔案頂端 TODO）。
     """
     window_rounds = _env_int("CONVERSATION_WINDOW_SIZE", 10)
-    max_tokens = _env_int("CONVERSATION_MAX_TOKENS", 300)
+    try:
+        raw_max_tokens = os.getenv("CONVERSATION_MAX_TOKENS")
+        if raw_max_tokens is not None and raw_max_tokens.strip() != "":
+            max_tokens = int(raw_max_tokens)
+        else:
+            max_tokens = 300
+    except Exception as exc:
+        logger.warning("Failed to parse CONVERSATION_MAX_TOKENS: %s", exc)
+        max_tokens = 300
+    # constrain max_tokens to a reasonable range, e.g. [1, 4096]
+    max_tokens = max(1, min(max_tokens, 4096))
     model = os.getenv("CONVERSATION_MODEL") or get_model_name()
 
     boundary_note = _detect_user_boundary_attempt(user_input)
