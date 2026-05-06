@@ -92,8 +92,8 @@ def _slice_history(history: list[ConversationMessage], window_rounds: int) -> li
     return history[-cap:] if history else []
 
 
-def _detect_user_boundary_attempt(user_input: str) -> str | None:
-    text = user_input.strip()
+def _detect_user_boundary_attempt(user_input: object | None) -> str | None:
+    text = ("" if user_input is None else str(user_input)).strip()
     if not text:
         return None
     hits = [p.pattern for p in _USER_BOUNDARY_PATTERNS if p.search(text)]
