@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from contextlib import suppress
 import json
+from pathlib import Path
+import tempfile
 import uuid
 
 import anyio
@@ -9,11 +12,28 @@ import pytest
 import backend.database.db as db_layer
 
 
+def _cleanup_db_files(db_path: Path) -> None:
+    for path in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
+        with suppress(FileNotFoundError, PermissionError):
+            path.unlink()
+
+    with suppress(OSError):
+        db_path.parent.rmdir()
+    with suppress(OSError):
+        db_path.parent.parent.rmdir()
+
+
 @pytest.fixture()
-def initialized_db(tmp_path, monkeypatch):
-    monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "test.db"))
+def initialized_db(monkeypatch):
+    db_dir = Path(tempfile.gettempdir()) / "ai_psych_dialogue_db_tests" / uuid.uuid4().hex
+    db_dir.mkdir(parents=True, exist_ok=False)
+    db_path = db_dir / "test.db"
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
     anyio.run(db_layer.init_db)
-    return tmp_path / "test.db"
+    try:
+        yield db_path
+    finally:
+        _cleanup_db_files(db_path)
 
 
 def _summary_json(turn_number: int, *, crisis_flag: bool = False) -> str:
