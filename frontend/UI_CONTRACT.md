@@ -19,7 +19,8 @@ Current reality:
   - `/settings` via `SettingsPage`
 - These pages are currently mostly placeholders.
 - `frontend/src/api/client.js` contains a basic axios client.
-- Backend integration should follow `backend/API_CONTRACT.md`.
+- Task 09 backend routes are implemented under `/api`; frontend integration should
+  follow `backend/API_CONTRACT.md`.
 
 Intended future behavior:
 
@@ -307,11 +308,12 @@ Current placeholder state:
 - Pages render placeholder text.
 - No page currently implements the full workflows above.
 - No page currently depends on Task 09 endpoints.
+- Task 09 backend endpoints are available for future integration.
 
 Future behavior:
 
-- Implement UI only after the relevant backend API route exists or after a task
-  explicitly requests mocked UI integration.
+- Implement UI against the available Task 09 backend API routes, or against explicit
+  mocks when a future task requests mocked UI integration.
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
 - Add frontend-specific tests later when workflows stabilize.
 

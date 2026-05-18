@@ -1,7 +1,8 @@
 # Backend Testing Guide
 
-This document describes the desired backend testing direction. It is a guide for
-future work; the current repository has not yet fully migrated to pytest-style tests.
+This document describes backend testing direction and current test status. The
+repository now includes deterministic pytest route tests, while older live-provider
+scripts remain manual checks.
 
 ## Testing Direction
 
@@ -15,6 +16,20 @@ Automated backend tests should be:
 
 Live provider scripts may remain for manual checks, but they should not be required
 for automated verification.
+
+## Current Automated Route Tests
+
+Task 09 added deterministic route tests under `backend/tests/`:
+
+| File | Current role | Notes |
+|---|---|---|
+| `backend/tests/conftest.py` | pytest fixtures | Uses a temporary SQLite database through `DATABASE_PATH`. |
+| `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
+| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence and public response shape. |
+| `backend/tests/test_routes_reports.py` | automated route tests | Covers report route summary conversion and insufficient-data behavior. |
+
+These tests are network-free and should be part of the default deterministic route
+test suite.
 
 ## Existing Test / Script Inventory
 
@@ -31,9 +46,9 @@ Current backend scripts:
 
 These files should not be treated as the final automated test suite.
 
-## Recommended Future Test Layout
+## Recommended Test Layout
 
-Proposed layout:
+Current and recommended layout:
 
 ```text
 backend/
@@ -49,7 +64,8 @@ backend/
     test_routes_reports.py
 ```
 
-This layout is proposed, not yet configured.
+The route test files above now exist. Additional deterministic tests can be added
+to this layout as DB and agent coverage is migrated away from live/manual scripts.
 
 ## Testing The Database
 
@@ -97,45 +113,43 @@ Important behaviors to cover:
 - Gemini JSON `response_format` compatibility failures are handled through fallback paths
   or robust parsing where applicable.
 
-## Testing Routes After Task 09
+## Testing Routes
 
-After HTTP routers are implemented, route tests should verify:
+Task 09 route tests currently verify:
 
 - Case create/list/get/delete behavior.
 - Missing case returns 404.
 - Conversation turn route:
-  - validates request shape.
   - calls conversation and crisis logic.
   - persists user and assistant messages.
   - persists summary.
   - returns `turn_number`, assistant response, crisis result, and summary.
 - Summary/message retrieval routes do not expose DB-internal `round`.
 - Report route converts parsed DB summaries into `TurnSummary` models before analysis.
-- Agent failures use existing fallback behavior when possible.
-- Database write failures return generic server errors without leaking sensitive text.
+- Report route preserves the real insufficient-data behavior without live provider calls.
 
 For route tests, prefer monkeypatching agent functions instead of mocking provider clients
 deep inside each agent.
 
 ## Proposed Deterministic Commands
 
-These commands are proposed for after pytest is configured:
+Default deterministic route tests can be run from the repository root with:
 
 ```bash
-cd backend
-pytest -q
+python -m pytest backend/tests/test_routes_cases.py backend/tests/test_routes_conversation.py backend/tests/test_routes_reports.py -q
 ```
 
-Focused examples after tests exist:
+Focused examples:
 
 ```bash
-cd backend
-pytest tests/test_db.py -q
-pytest tests/test_routes_conversation.py -q
+python -m pytest backend/tests/test_routes_cases.py -q
+python -m pytest backend/tests/test_routes_conversation.py -q
+python -m pytest backend/tests/test_routes_reports.py -q
 ```
 
-Until pytest migration is complete, use syntax/import checks and targeted manual scripts
-with care. Do not run live provider scripts unless explicitly requested.
+Until live/manual scripts are migrated or excluded, do not treat broad discovery over
+all `backend/test_*.py` files as the default automated suite. Do not run live provider
+scripts unless explicitly requested.
 
 ## Manual Live Provider Checks
 

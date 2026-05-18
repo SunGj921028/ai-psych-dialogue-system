@@ -55,7 +55,8 @@ mismatches.
   - `summary_agent.py`: per-turn JSON micro-summary, Groq provider.
   - `conversation_agent.py`: empathic response generation, Gemini provider.
   - `analysis_agent.py`: report generation from summaries, Gemini provider.
-- HTTP router files exist in `backend/routers/`, but they are placeholders.
+- HTTP router files in `backend/routers/` implement Task 09 routes and are mounted
+  under `/api`.
 - MCP server skeleton exists in `backend/mcp_servers/case_query_server.py`, but it is not implemented.
 
 ### Frontend
@@ -66,26 +67,33 @@ mismatches.
 
 ### Active API Reality
 
-The current active HTTP API is only:
+The current active HTTP API includes:
 
 - `GET /health`
+- `POST /api/cases`
+- `GET /api/cases`
+- `GET /api/cases/{case_id}`
+- `DELETE /api/cases/{case_id}`
+- `POST /api/conversation/turn`
+- `GET /api/cases/{case_id}/sessions/{session_id}/messages`
+- `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
+- `POST /api/reports/generate`
 
-Task 09 HTTP routes are the next backend blocker.
+Frontend integration is now the next major product integration blocker.
 
 ## Current Development Priority
 
-Implement HTTP API routes before MCP work.
+Integrate frontend pages with the implemented HTTP API before MCP work.
 
 Recommended order:
 
 1. Keep repository context docs aligned with current code.
-2. Implement Task 09 FastAPI routes.
-3. Add deterministic pytest-style backend tests with mocked LLM clients.
-4. Integrate frontend pages with the HTTP API.
-5. Implement MCP Task 07 after API contracts and data access behavior are clear.
+2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
+3. Integrate frontend pages with the HTTP API.
+4. Implement MCP Task 07 after API contracts and data access behavior are clear.
 
-MCP Task 07 should not be treated as the next blocker while HTTP routes are still
-placeholders.
+MCP Task 07 remains future work until frontend/API behavior is stable enough to
+guide case-query tooling.
 
 ## Non-Negotiable Safety Rules
 
@@ -134,8 +142,9 @@ These are current code facts and should not be contradicted in new work:
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
   If provider calls fail around JSON mode, prefer prompt-enforced JSON and robust
   parsing rather than changing the architecture.
-- Current tests are mostly script-style and may call live providers. Future
-  automated tests should be deterministic pytest-style tests with mocked LLM clients.
+- Deterministic route tests exist under `backend/tests/`; older script-style tests
+  may still call live providers and should remain manual checks unless migrated.
+- Future automated tests should be deterministic pytest-style tests with mocked LLM clients.
 - Live provider tests are manual checks only.
 
 ## Key Engineering Rules
@@ -170,7 +179,7 @@ deletion seems necessary, stop and ask the user to handle it manually.
   owns persistence.
 - Use `datetime.now(timezone.utc).isoformat()` for timestamps.
 - Use `str(uuid.uuid4())` for UUIDs.
-- For Task 09, implement routes against `backend/API_CONTRACT.md`.
+- For future backend API changes, keep routes aligned with `backend/API_CONTRACT.md`.
 
 ### Frontend
 
@@ -178,8 +187,7 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - Page components live in `frontend/src/pages/`.
 - Shared components live in `frontend/src/components/`.
 - API calls should go through `frontend/src/api/client.js`.
-- Frontend work should wait until the backend API contract is implemented or explicitly
-  mocked.
+- Frontend work can now integrate with the implemented Task 09 backend API routes.
 
 ### Testing
 
@@ -193,7 +201,7 @@ deletion seems necessary, stop and ask the user to handle it manually.
 | File | Purpose |
 |---|---|
 | `docs/IMPLEMENTATION_STATUS.md` | Current implementation reality, intended future work, known mismatches, and recommended order. |
-| `backend/API_CONTRACT.md` | Planned HTTP API contract for Task 09 and route-level data flow. |
+| `backend/API_CONTRACT.md` | Implemented HTTP API contract for Task 09 and route-level data flow. |
 | `backend/TESTING.md` | Backend testing direction, current script inventory, and pytest migration guidance. |
 | `docs/SAFETY_REQUIREMENTS.md` | Detailed safety behavior for agents, routes, reports, frontend warnings, and tests. |
 | `frontend/UI_CONTRACT.md` | Intended frontend behavior, state shapes, and integration expectations. |

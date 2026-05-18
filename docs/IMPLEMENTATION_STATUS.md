@@ -39,16 +39,25 @@ Current facts:
 
 ### Backend Routers
 
-Status: placeholder.
+Status: implemented.
 
 Current facts:
 
 - `backend/routers/cases.py`, `backend/routers/conversation.py`, and
-  `backend/routers/reports.py` contain placeholder endpoints that raise
-  `NotImplementedError`.
-- Router includes in `backend/main.py` are currently commented out.
-- The only active HTTP endpoint is `GET /health`.
-- Task 09 API routes are the next backend blocker.
+  `backend/routers/reports.py` implement Task 09 HTTP routes.
+- Routers are mounted in `backend/main.py` under `/api`.
+- `GET /health` remains active.
+- Implemented API endpoints are:
+  - `POST /api/cases`
+  - `GET /api/cases`
+  - `GET /api/cases/{case_id}`
+  - `DELETE /api/cases/{case_id}`
+  - `POST /api/conversation/turn`
+  - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
+  - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
+  - `POST /api/reports/generate`
+- Public route responses expose `turn_number`, not DB-internal `round`.
+- Summary responses expose parsed summary data, not raw `summary_json`.
 
 ### MCP Server
 
@@ -58,7 +67,7 @@ Current facts:
 
 - `backend/mcp_servers/case_query_server.py` is a skeleton and raises
   `NotImplementedError`.
-- MCP Task 07 should come after HTTP API route clarification and Task 09.
+- MCP Task 07 should come after HTTP API behavior and data access expectations are stable.
 
 ### Frontend
 
@@ -70,11 +79,12 @@ Current facts:
 - Routes exist for conversation, report, history, and settings.
 - Page components are mostly placeholders.
 - `frontend/src/api/client.js` defines a basic axios instance.
-- Frontend integration should wait for implemented or clearly mocked API routes.
+- Frontend integration remains future work and can now target the implemented
+  Task 09 backend routes.
 
 ### Tests
 
-Status: partial and mostly manual.
+Status: partial, with deterministic route tests added.
 
 Current facts:
 
@@ -82,7 +92,13 @@ Current facts:
 - Several scripts call live LLM providers and require provider keys/network.
 - `db_smoke_test.py` uses a temporary database and is closest to a deterministic
   smoke test.
-- Future automated tests should be pytest-style and should mock LLM clients by default.
+- Deterministic pytest route tests now exist under `backend/tests/`.
+- Route tests use temporary SQLite databases and mocked or monkeypatched LLM/agent
+  behavior where provider calls would otherwise occur.
+- Report insufficient-data behavior is covered by a deterministic route test without
+  live provider calls.
+- Future automated tests should continue to be pytest-style and should mock LLM
+  clients by default.
 - Live provider scripts should remain manual checks, not required automated tests.
 
 ## Task / Status Table
@@ -95,9 +111,9 @@ Current facts:
 | Task 04 summary agent | implemented | Reuses external crisis flag. |
 | Task 05 conversation agent | implemented | Non-streaming, Gemini-based, safety fallback. |
 | Task 06 analysis agent | implemented | Computes report metadata in code. |
-| Task 07 MCP case query server | placeholder | Defer until after Task 09. |
-| Task 09 FastAPI routes | placeholder | Next backend blocker. |
-| Task 11 conversation page | placeholder | Depends on API routes. |
+| Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
+| Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests. |
+| Task 11 conversation page | placeholder | Backend API routes now exist; frontend integration remains future work. |
 | Task 12 visualization components | future | Depends on summary/report data contracts. |
 | Task 13 report page | placeholder | Depends on report API. |
 | Task 14 history page | placeholder | Depends on case/session APIs. |
@@ -124,20 +140,19 @@ Status categories:
   Current `.env.example` uses `gemini-2.5-flash-lite` and `gemini-2.5-flash`.
 - README still references the generic default provider path more than the current
   Groq/Gemini split.
-- Current tests are not yet the desired mocked pytest-style automated suite.
+- Route tests now exist under `backend/tests/`; legacy live-provider scripts still
+  remain outside the default deterministic route test suite.
 
 ## Recommended Implementation Order
 
 1. Keep context documents accurate as work proceeds.
-2. Implement Task 09 HTTP API routes according to `backend/API_CONTRACT.md`.
-3. Add deterministic pytest-style backend tests with mocked LLM clients.
-4. Wire frontend pages to the implemented API.
-5. Implement MCP Task 07 after HTTP behavior is stable.
-6. Add broader integration and end-to-end tests.
+2. Add broader deterministic backend tests as route and agent behavior evolves.
+3. Wire frontend pages to the implemented API.
+4. Implement MCP Task 07 after HTTP behavior is stable.
+5. Add broader integration and end-to-end tests.
 
 ## Confirmed Risks
 
-- HTTP routes are placeholders, so frontend and report workflows cannot work end to end.
 - Live-provider scripts are not reliable automated tests.
 - Gemini JSON `response_format` may not be supported consistently.
 - Safety-sensitive behavior depends on prompts and fallback code; regression tests are needed.
@@ -146,7 +161,6 @@ Status categories:
 ## Suspected Risks
 
 - Existing docs and README may lag behind source behavior.
-- Router implementation may need clear request/response models to avoid duplicating agent models.
 - Frontend state shape may drift unless it follows the API contract.
 - Manual tests may give false confidence because they depend on provider availability and model behavior.
 
@@ -155,19 +169,19 @@ Status categories:
 Current reality:
 
 - DB and agents are the usable backend foundation.
-- Active API is only `/health`.
-- Routers, MCP, and frontend integration are not implemented.
+- Active API includes `/health` and the Task 09 `/api` routes.
+- Backend routers are implemented.
+- MCP and frontend integration are not implemented.
 
 Future intent:
 
-- Task 09 should expose HTTP routes for cases, conversation turns, summaries, and reports.
 - Frontend should consume those routes and render conversation, summaries, crisis warnings,
   history, and reports.
 - MCP should provide case-query tools after the core HTTP API is clarified.
 
 ## Related Context Documents
 
-- `backend/API_CONTRACT.md` defines planned Task 09 HTTP route behavior.
+- `backend/API_CONTRACT.md` defines implemented Task 09 HTTP route behavior.
 - `backend/TESTING.md` defines the desired deterministic backend testing direction.
 - `docs/SAFETY_REQUIREMENTS.md` defines detailed safety behavior for agents, routes,
   reports, frontend warnings, and tests.

@@ -1,13 +1,12 @@
 # Backend API Contract
 
-This document defines the planned HTTP API contract for Task 09. It describes
-target behavior before router implementation. Current source code is still the
-implementation truth.
+This document defines the HTTP API contract implemented by Task 09. Current
+source code remains the implementation truth.
 
 ## Endpoint Status Labels
 
 - current: implemented and active today.
-- Task 09 target: should be implemented during the HTTP API route task.
+- implemented: implemented as part of Task 09.
 - future: intended later, not required for Task 09.
 
 ## Current API Status
@@ -15,19 +14,27 @@ implementation truth.
 | Method | Path | Status | Notes |
 |---|---|---|---|
 | GET | `/health` | current | Returns `{"status": "ok"}`. |
+| POST | `/api/cases` | implemented | Creates a coded case record. |
+| GET | `/api/cases` | implemented | Lists cases using DB helper ordering. |
+| GET | `/api/cases/{case_id}` | implemented | Returns 404 when missing. |
+| DELETE | `/api/cases/{case_id}` | implemented | Deletes one case; DB cascades related rows. |
+| POST | `/api/conversation/turn` | implemented | Runs conversation/crisis agents, persists messages and summary. |
+| GET | `/api/cases/{case_id}/sessions/{session_id}/messages` | implemented | Returns messages with `turn_number`. |
+| GET | `/api/cases/{case_id}/sessions/{session_id}/summaries` | implemented | Returns parsed summary data. |
+| POST | `/api/reports/generate` | implemented | Generates a `ConceptualizationReport` for a case/session. |
 
-Router files currently contain placeholders and are not mounted in `backend/main.py`.
+Routers are mounted under `/api` in `backend/main.py`.
 
-## Planned Task 09 Endpoints
+## Implemented Task 09 Endpoints
 
-Task 09 may introduce route-level request/response Pydantic models when needed.
-Reuse existing agent models for nested agent data instead of duplicating them.
+Task 09 uses route-level request/response Pydantic models where needed and reuses
+existing agent models for nested agent data instead of duplicating them.
 
 ### Cases
 
 #### Create Case
 
-Status: Task 09 target
+Status: implemented
 
 `POST /api/cases`
 
@@ -58,7 +65,7 @@ Implementation notes:
 
 #### List Cases
 
-Status: Task 09 target
+Status: implemented
 
 `GET /api/cases`
 
@@ -82,7 +89,7 @@ Implementation notes:
 
 #### Get Case
 
-Status: Task 09 target
+Status: implemented
 
 `GET /api/cases/{case_id}`
 
@@ -104,7 +111,7 @@ Implementation notes:
 
 #### Delete Case
 
-Status: Task 09 target
+Status: implemented
 
 `DELETE /api/cases/{case_id}`
 
@@ -126,7 +133,7 @@ Implementation notes:
 
 #### Send Conversation Turn
 
-Status: Task 09 target
+Status: implemented
 
 `POST /api/conversation/turn`
 
@@ -205,7 +212,7 @@ Implementation notes:
 
 #### Get Session Messages
 
-Status: Task 09 target
+Status: implemented
 
 `GET /api/cases/{case_id}/sessions/{session_id}/messages`
 
@@ -234,7 +241,7 @@ Implementation notes:
 
 #### Get Session Summaries
 
-Status: Task 09 target
+Status: implemented
 
 `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
 
@@ -281,7 +288,7 @@ Implementation notes:
 
 #### Generate Report
 
-Status: Task 09 target
+Status: implemented
 
 `POST /api/reports/generate`
 
@@ -335,11 +342,13 @@ These are not required for Task 09:
 - Prompt/settings management endpoints.
 - MCP-related HTTP bridge endpoints.
 
-## Open Decisions
+## Remaining Frontend Coordination Decision
 
-- Session/report coordination: decide how `session_id` should reach report generation
-  and frontend report views. Options include a query parameter, route segment,
-  navigation state, or a future session selector.
+- Backend report generation receives `session_id` in the
+  `POST /api/reports/generate` request body.
+- Future frontend work still needs to decide how `session_id` reaches report views
+  in the browser, such as query parameter, route segment, navigation state, or a
+  future session selector.
 
 ## Expected Backend Data Flow
 
