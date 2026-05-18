@@ -12,4 +12,51 @@ export function getApiClient() {
   return apiClient
 }
 
+export async function getHealth() {
+  const response = await apiClient.get('/health')
+  return response.data
+}
+
+export async function listCases() {
+  const response = await apiClient.get('/api/cases')
+  return response.data
+}
+
+export async function createCase({ code_name, note }) {
+  const response = await apiClient.post('/api/cases', { code_name, note })
+  return response.data
+}
+
+export async function getCase(caseId) {
+  const response = await apiClient.get(`/api/cases/${caseId}`)
+  return response.data
+}
+
+export async function sendConversationTurn(payload) {
+  const response = await apiClient.post('/api/conversation/turn', payload)
+  return response.data
+}
+
+export async function getSessionMessages(caseId, sessionId) {
+  const response = await apiClient.get(
+    `/api/cases/${caseId}/sessions/${sessionId}/messages`,
+  )
+  return response.data
+}
+
+export async function getSessionSummaries(caseId, sessionId) {
+  const response = await apiClient.get(
+    `/api/cases/${caseId}/sessions/${sessionId}/summaries`,
+  )
+  return response.data
+}
+
+export async function generateReport({ case_id, session_id }) {
+  const response = await apiClient.post('/api/reports/generate', {
+    case_id,
+    session_id,
+  })
+  return response.data
+}
+
 export default apiClient
