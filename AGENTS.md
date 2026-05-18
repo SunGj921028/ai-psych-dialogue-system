@@ -142,9 +142,11 @@ These are current code facts and should not be contradicted in new work:
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
   If provider calls fail around JSON mode, prefer prompt-enforced JSON and robust
   parsing rather than changing the architecture.
-- Deterministic route tests exist under `backend/tests/`; older script-style tests
-  may still call live providers and should remain manual checks unless migrated.
-- Future automated tests should be deterministic pytest-style tests with mocked LLM clients.
+- Deterministic route, agent, and DB tests exist under `backend/tests/`; older
+  script-style tests may still call live providers and should remain manual checks
+  unless migrated.
+- Future automated tests should remain deterministic pytest-style tests with mocked
+  LLM clients or monkeypatched agent/provider boundaries.
 - Live provider tests are manual checks only.
 
 ## Key Engineering Rules
