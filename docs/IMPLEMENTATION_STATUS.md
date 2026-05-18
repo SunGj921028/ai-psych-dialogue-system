@@ -84,19 +84,23 @@ Current facts:
 
 ### Tests
 
-Status: partial, with deterministic route tests added.
+Status: implemented backend deterministic testing foundation, with future broader
+integration and end-to-end testing still pending.
 
 Current facts:
 
-- Existing backend test files are script-style checks.
-- Several scripts call live LLM providers and require provider keys/network.
-- `db_smoke_test.py` uses a temporary database and is closest to a deterministic
-  smoke test.
-- Deterministic pytest route tests now exist under `backend/tests/`.
+- Deterministic pytest tests now exist under `backend/tests/` for routes, agents,
+  and the SQLite data layer.
+- `backend/tests/helpers.py` provides fake OpenAI-compatible LLM responses for
+  deterministic agent tests.
+- DB tests use temporary SQLite databases and preserve current WAL expectations.
 - Route tests use temporary SQLite databases and mocked or monkeypatched LLM/agent
   behavior where provider calls would otherwise occur.
-- Report insufficient-data behavior is covered by a deterministic route test without
-  live provider calls.
+- Agent tests monkeypatch LLM clients and do not require API keys, network access,
+  or live providers.
+- Top-level `backend/test_*.py` files remain script-style live/manual checks.
+- `backend/db_smoke_test.py` remains a legacy/manual smoke script outside the
+  default deterministic pytest commands.
 - Future automated tests should continue to be pytest-style and should mock LLM
   clients by default.
 - Live provider scripts should remain manual checks, not required automated tests.
@@ -118,8 +122,9 @@ Current facts:
 | Task 13 report page | placeholder | Depends on report API. |
 | Task 14 history page | placeholder | Depends on case/session APIs. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
-| Task 16 end-to-end tests | future | Needs API and deterministic test base. |
-| Task 17 prompt iteration | future | Should include safety regression tests. |
+| Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
+| Task 16 end-to-end tests | future | Needs frontend integration and deterministic browser/API flow coverage. |
+| Task 17 prompt iteration | future | Should continue to include safety regression tests. |
 
 Status categories:
 
@@ -140,13 +145,13 @@ Status categories:
   Current `.env.example` uses `gemini-2.5-flash-lite` and `gemini-2.5-flash`.
 - README still references the generic default provider path more than the current
   Groq/Gemini split.
-- Route tests now exist under `backend/tests/`; legacy live-provider scripts still
-  remain outside the default deterministic route test suite.
+- Deterministic backend tests now exist under `backend/tests/`; legacy live-provider
+  scripts still remain outside the default deterministic test suite.
 
 ## Recommended Implementation Order
 
 1. Keep context documents accurate as work proceeds.
-2. Add broader deterministic backend tests as route and agent behavior evolves.
+2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Wire frontend pages to the implemented API.
 4. Implement MCP Task 07 after HTTP behavior is stable.
 5. Add broader integration and end-to-end tests.
@@ -155,7 +160,9 @@ Status categories:
 
 - Live-provider scripts are not reliable automated tests.
 - Gemini JSON `response_format` may not be supported consistently.
-- Safety-sensitive behavior depends on prompts and fallback code; regression tests are needed.
+- Safety-sensitive behavior depends on prompts and fallback code; deterministic
+  regression tests now cover core backend agents, but future prompt changes still
+  need focused test updates.
 - Database cascade deletion exists through case deletion and must be handled carefully in APIs.
 
 ## Suspected Risks
@@ -171,6 +178,7 @@ Current reality:
 - DB and agents are the usable backend foundation.
 - Active API includes `/health` and the Task 09 `/api` routes.
 - Backend routers are implemented.
+- Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
 - MCP and frontend integration are not implemented.
 
 Future intent:
