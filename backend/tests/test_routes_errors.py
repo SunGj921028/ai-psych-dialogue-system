@@ -392,3 +392,149 @@ def test_report_malformed_summary_row_returns_generic_non_leaking_500(
         "Field required",
         "ValidationError",
     )
+
+
+def test_case_list_helper_failure_returns_generic_non_leaking_500(client, monkeypatch):
+    exception_text = "PRIVATE_CASE_LIST_ERROR_DO_NOT_LEAK"
+
+    async def fake_get_all_cases():
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.cases.get_all_cases", fake_get_all_cases)
+
+    response = client.get("/api/cases")
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(response, exception_text)
+
+
+def test_case_get_helper_failure_returns_generic_non_leaking_500(client, monkeypatch):
+    exception_text = "PRIVATE_CASE_GET_ERROR_DO_NOT_LEAK"
+
+    async def fake_get_case(case_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.cases.get_case", fake_get_case)
+
+    response = client.get("/api/cases/case-1")
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(response, exception_text)
+
+
+def test_case_delete_helper_failure_returns_generic_non_leaking_500(client, monkeypatch):
+    exception_text = "PRIVATE_CASE_DELETE_ERROR_DO_NOT_LEAK"
+
+    async def fake_delete_case(case_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.cases.delete_case", fake_delete_case)
+
+    response = client.delete("/api/cases/case-1")
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(response, exception_text)
+
+
+def test_conversation_summary_generation_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    sensitive_user_input = "SUMMARY_GENERATION_USER_INPUT_DO_NOT_LEAK"
+    sensitive_assistant_text = "SUMMARY_GENERATION_ASSISTANT_TEXT_DO_NOT_LEAK"
+    exception_text = "PRIVATE_SUMMARY_GENERATION_ERROR_DO_NOT_LEAK"
+
+    async def fake_generate_response(user_input, conversation_history):
+        return ConversationResponse(
+            content=sensitive_assistant_text,
+            is_safe=True,
+            warning=None,
+        )
+
+    async def fake_detect_crisis(user_input):
+        return CrisisDetectionResult(
+            crisis_flag=False,
+            crisis_level="none",
+            reason="mocked no crisis",
+        )
+
+    async def fake_generate_summary(turn_number, user_input, assistant_response, crisis_flag):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.conversation.generate_response", fake_generate_response)
+    monkeypatch.setattr("routers.conversation.detect_crisis", fake_detect_crisis)
+    monkeypatch.setattr("routers.conversation.generate_summary", fake_generate_summary)
+
+    response = client.post(
+        "/api/conversation/turn",
+        json={
+            "case_id": case_id,
+            "session_id": "session-summary-generation-failure",
+            "turn_number": 1,
+            "user_input": sensitive_user_input,
+            "conversation_history": [],
+        },
+    )
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(
+        response,
+        sensitive_user_input,
+        sensitive_assistant_text,
+        exception_text,
+    )
+
+
+def test_conversation_summary_persistence_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    sensitive_user_input = "SUMMARY_PERSISTENCE_USER_INPUT_DO_NOT_LEAK"
+    sensitive_assistant_text = "SUMMARY_PERSISTENCE_ASSISTANT_TEXT_DO_NOT_LEAK"
+    exception_text = "PRIVATE_SUMMARY_PERSISTENCE_ERROR_DO_NOT_LEAK"
+
+    async def fake_generate_response(user_input, conversation_history):
+        return ConversationResponse(
+            content=sensitive_assistant_text,
+            is_safe=True,
+            warning=None,
+        )
+
+    async def fake_detect_crisis(user_input):
+        return CrisisDetectionResult(
+            crisis_flag=True,
+            crisis_level="high",
+            reason="mocked high crisis",
+        )
+
+    async def fake_generate_summary(turn_number, user_input, assistant_response, crisis_flag):
+        return _make_turn_summary(turn_number, 7, crisis_flag=crisis_flag)
+
+    async def fake_add_summary(case_id, session_id, turn_number, summary_json, crisis_flag):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.conversation.generate_response", fake_generate_response)
+    monkeypatch.setattr("routers.conversation.detect_crisis", fake_detect_crisis)
+    monkeypatch.setattr("routers.conversation.generate_summary", fake_generate_summary)
+    monkeypatch.setattr("routers.conversation.add_summary", fake_add_summary)
+
+    response = client.post(
+        "/api/conversation/turn",
+        json={
+            "case_id": case_id,
+            "session_id": "session-summary-persistence-failure",
+            "turn_number": 1,
+            "user_input": sensitive_user_input,
+            "conversation_history": [],
+        },
+    )
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(
+        response,
+        sensitive_user_input,
+        sensitive_assistant_text,
+        exception_text,
+    )
