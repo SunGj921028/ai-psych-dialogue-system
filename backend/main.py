@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database.db import init_db
+from routers import cases, conversation, reports
 
 
 @asynccontextmanager
@@ -32,8 +33,6 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# --- Router 掛載（Task 09 啟用）---
-# from routers import conversation, cases, reports
-# app.include_router(conversation.router, prefix="/api", tags=["conversation"])
-# app.include_router(cases.router, prefix="/api", tags=["cases"])
-# app.include_router(reports.router, prefix="/api", tags=["reports"])
+app.include_router(conversation.router, prefix="/api", tags=["conversation"])
+app.include_router(cases.router, prefix="/api", tags=["cases"])
+app.include_router(reports.router, prefix="/api", tags=["reports"])
