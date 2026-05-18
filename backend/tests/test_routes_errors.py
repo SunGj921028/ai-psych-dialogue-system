@@ -282,3 +282,113 @@ def test_report_route_preserves_code_owned_report_fields_with_mocked_llm(
     assert data["emotion_pattern"]["peak_turn"] == 2
     assert fake_client.calls == [{"provider": "gemini"}]
     assert len(fake_client.create_calls) == 1
+
+
+def test_session_messages_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_MESSAGES_DB_ERROR_DO_NOT_LEAK"
+
+    async def fake_get_messages_by_session(case_id, session_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr(
+        "routers.conversation.get_messages_by_session",
+        fake_get_messages_by_session,
+    )
+
+    response = client.get(f"/api/cases/{case_id}/sessions/session-1/messages")
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(response, exception_text)
+
+
+def test_session_summaries_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_SUMMARIES_DB_ERROR_DO_NOT_LEAK"
+
+    async def fake_get_summaries_by_session(case_id, session_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr(
+        "routers.conversation.get_summaries_by_session",
+        fake_get_summaries_by_session,
+    )
+
+    response = client.get(f"/api/cases/{case_id}/sessions/session-1/summaries")
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(response, exception_text)
+
+
+def test_report_summary_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_REPORT_SUMMARY_DB_ERROR_DO_NOT_LEAK"
+
+    async def fake_get_summaries_by_session(case_id, session_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr(
+        "routers.reports.get_summaries_by_session",
+        fake_get_summaries_by_session,
+    )
+
+    response = client.post(
+        "/api/reports/generate",
+        json={"case_id": case_id, "session_id": "session-1"},
+    )
+
+    assert response.status_code == 500
+    _assert_response_does_not_leak(response, exception_text)
+
+
+def test_report_malformed_summary_row_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    malformed_summary = {
+        "raw_secret": "MALFORMED_SUMMARY_SECRET",
+        "nested": {"value": "SHOULD_NOT_LEAK"},
+        "summary_json": "internal field name should not leak",
+        "round": 999,
+    }
+    calls = {"generate_report": 0}
+
+    async def fail_if_generate_report_is_called(case_id, session_id, summaries):
+        calls["generate_report"] += 1
+        raise AssertionError("analysis should not run after malformed summaries")
+
+    monkeypatch.setattr("routers.reports.generate_report", fail_if_generate_report_is_called)
+
+    anyio.run(
+        add_summary,
+        case_id,
+        "session-malformed",
+        1,
+        json.dumps(malformed_summary),
+        False,
+    )
+
+    response = client.post(
+        "/api/reports/generate",
+        json={"case_id": case_id, "session_id": "session-malformed"},
+    )
+
+    assert response.status_code == 500
+    assert calls["generate_report"] == 0
+    _assert_response_does_not_leak(
+        response,
+        "MALFORMED_SUMMARY_SECRET",
+        "SHOULD_NOT_LEAK",
+        "Field required",
+        "ValidationError",
+    )
