@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  AlertTriangle,
+  ArrowRight,
+  Bot,
+  ClipboardList,
+  FileText,
+  MessageSquareText,
+  Plus,
+  RefreshCcw,
+  Send,
+  UserRound,
+} from 'lucide-react'
+import {
   createCase,
   getSessionMessages,
   getSessionSummaries,
@@ -10,6 +22,15 @@ import {
 
 const ACTIVE_CASE_KEY = 'ai-psych-active-case-id'
 const ACTIVE_SESSION_KEY = 'ai-psych-active-session-id'
+
+const emotionDimensionLabels = {
+  anxiety: '焦慮',
+  sadness: '悲傷',
+  anger: '憤怒',
+  hopelessness: '無望',
+  confusion: '困惑',
+  hope: '希望',
+}
 
 function createSessionId() {
   return crypto.randomUUID()
@@ -65,6 +86,96 @@ function normalizeConversationHistory(messages) {
     }))
 }
 
+function clampScore(value) {
+  const numberValue = Number(value)
+
+  if (!Number.isFinite(numberValue)) return null
+
+  return Math.max(0, Math.min(10, numberValue))
+}
+
+function getCrisisLabel(level) {
+  if (level === 'high') return '高風險'
+  if (level === 'low') return '需留意'
+  if (level === 'none') return '未偵測'
+  return '尚無資料'
+}
+
+function SectionShell({ children, className = '' }) {
+  return (
+    <section
+      className={`rounded-md border border-slate-200/80 bg-white/90 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ${className}`}
+    >
+      {children}
+    </section>
+  )
+}
+
+function EmptyState({ title, description }) {
+  return (
+    <div className="rounded-md border border-dashed border-teal-200/70 bg-teal-50/45 p-5 text-sm">
+      <p className="font-medium text-foreground">{title}</p>
+      <p className="mt-1 leading-6 text-muted-foreground">{description}</p>
+    </div>
+  )
+}
+
+function IntensityBar({ value }) {
+  const score = clampScore(value)
+  const width = score == null ? 0 : score * 10
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span>情緒強度</span>
+        <span>{score == null ? '未提供' : `${score}/10`}</span>
+      </div>
+      <div className="h-2 rounded-full bg-slate-200/80">
+        <div
+          className="h-2 rounded-full bg-gradient-to-r from-teal-700 to-slate-700 transition-all"
+          style={{ width: `${width}%` }}
+        />
+      </div>
+    </div>
+  )
+}
+
+function DimensionBars({ dimensions }) {
+  const entries = dimensions ? Object.entries(dimensions) : []
+
+  if (!entries.length) {
+    return (
+      <p className="text-sm text-muted-foreground">尚未提供情緒維度資料。</p>
+    )
+  }
+
+  return (
+    <div className="space-y-3">
+      {entries.map(([key, value]) => {
+        const score = clampScore(value)
+        const width = score == null ? 0 : score * 10
+
+        return (
+          <div className="space-y-1" key={key}>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">
+                {emotionDimensionLabels[key] ?? key}
+              </span>
+              <span className="font-medium">{score == null ? '-' : score}</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-slate-200/80">
+              <div
+                className="h-1.5 rounded-full bg-teal-600"
+                style={{ width: `${width}%` }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 export default function ConversationPage() {
   const [cases, setCases] = useState([])
   const [activeCaseId, setActiveCaseId] = useState(() => {
@@ -90,6 +201,7 @@ export default function ConversationPage() {
   }, [activeCaseId, cases])
 
   const latestSummary = summaries.at(-1) ?? null
+  const latestSummaryData = latestSummary?.summary ?? null
 
   const reportUrl =
     activeCaseId && sessionId
@@ -270,13 +382,29 @@ export default function ConversationPage() {
   }
 
   return (
-    <div className="mx-auto flex max-w-5xl flex-col gap-6 p-4">
-      <section className="space-y-2">
-        <h1 className="text-2xl font-semibold">會談準備工作台</h1>
-        <p className="text-sm text-muted-foreground">
-          供諮商師輸入個案提供的文字，整理回應、微摘要與風險狀態。AI
-          內容僅作為文件輔助，仍需由諮商師審閱。
-        </p>
+    <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 pb-24">
+      <section className="flex flex-col gap-3 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur lg:flex-row lg:items-end lg:justify-between">
+        <div className="max-w-3xl">
+          <p className="text-xs font-semibold text-teal-800">
+            諮商文件輔助工作區
+          </p>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+            會談準備工作台
+          </h1>
+          <p className="mt-2 text-sm leading-6 text-muted-foreground">
+            供諮商師輸入個案提供的文字，檢視 AI 回應草稿、微摘要與後端危機偵測結果。所有內容僅作文件輔助與審閱參考。
+          </p>
+        </div>
+
+        {reportUrl ? (
+          <Link
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] hover:bg-teal-900"
+            to={reportUrl}
+          >
+            <FileText className="h-4 w-4" />
+            前往草稿報告
+          </Link>
+        ) : null}
       </section>
 
       {error ? (
@@ -287,225 +415,329 @@ export default function ConversationPage() {
 
       {crisisStatus?.crisis_level === 'high' ? (
         <section
-          className="rounded-md border border-red-300 bg-red-50 p-4 text-red-950"
+          className="rounded-md border border-red-300 bg-red-50/95 p-4 text-red-950 shadow-[0_12px_30px_rgba(185,28,28,0.10)]"
           role="alert"
         >
-          <h2 className="font-semibold">偵測到高風險語句</h2>
-          <p className="mt-1 text-sm">
-            系統回傳 crisis_level 為 high。請諮商師依專業流程立即審閱此輪內容。
-          </p>
-          {crisisStatus.reason ? (
-            <p className="mt-2 text-sm">後端說明：{crisisStatus.reason}</p>
-          ) : null}
+          <div className="flex gap-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <h2 className="font-semibold">偵測到高風險語句</h2>
+              <p className="mt-1 text-sm leading-6">
+                後端回傳 crisis_level 為 high。請諮商師立即審閱本輪內容，並依專業流程處理。
+              </p>
+              {crisisStatus.reason ? (
+                <p className="mt-2 text-sm">後端說明：{crisisStatus.reason}</p>
+              ) : null}
+            </div>
+          </div>
         </section>
       ) : null}
 
-      <section className="grid gap-4 md:grid-cols-[1fr_1fr]">
-        <form
-          className="space-y-3 rounded-md border bg-card p-4"
-          onSubmit={handleCreateCase}
-        >
-          <div>
-            <h2 className="font-semibold">建立個案代碼</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              請使用去識別化代碼，不輸入真實姓名。
-            </p>
-          </div>
+      <SectionShell className="p-4 ring-1 ring-white/60">
+        <div className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+          <form className="grid gap-3 sm:grid-cols-[1fr_1.2fr_auto]" onSubmit={handleCreateCase}>
+            <label className="text-sm font-medium">
+              建立個案代碼
+              <input
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                value={codeName}
+                onChange={(event) => setCodeName(event.target.value)}
+                placeholder="例如：A001"
+              />
+            </label>
 
-          <label className="block text-sm font-medium">
-            個案代碼
-            <input
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-              value={codeName}
-              onChange={(event) => setCodeName(event.target.value)}
-              placeholder="例如：A001"
-            />
-          </label>
+            <label className="text-sm font-medium">
+              備註
+              <input
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                placeholder="選填，請避免可識別個資"
+              />
+            </label>
 
-          <label className="block text-sm font-medium">
-            備註（選填）
-            <textarea
-              className="mt-1 min-h-20 w-full rounded-md border px-3 py-2 text-sm"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="僅記錄諮商師需要的非敏感備註"
-            />
-          </label>
-
-          <button
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={isCreatingCase}
-            type="submit"
-          >
-            {isCreatingCase ? '建立中...' : '建立並開始會談'}
-          </button>
-        </form>
-
-        <section className="space-y-3 rounded-md border bg-card p-4">
-          <div>
-            <h2 className="font-semibold">目前個案與會談</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              選擇個案會建立新的前端會談識別碼。
-            </p>
-          </div>
-
-          <label className="block text-sm font-medium">
-            選擇個案
-            <select
-              className="mt-1 w-full rounded-md border px-3 py-2 text-sm"
-              disabled={isLoadingCases}
-              value={activeCaseId}
-              onChange={handleSelectCase}
-            >
-              <option value="">請選擇個案</option>
-              {cases.map((caseItem) => (
-                <option key={caseItem.id} value={caseItem.id}>
-                  {caseItem.code_name}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <div className="rounded-md bg-muted p-3 text-sm">
-            <p>個案：{activeCase?.code_name ?? '尚未選擇'}</p>
-            <p className="mt-1 break-all">session_id：{sessionId || '尚未建立'}</p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
             <button
-              className="rounded-md border px-4 py-2 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isCreatingCase}
+              type="submit"
+            >
+              <Plus className="h-4 w-4" />
+              {isCreatingCase ? '建立中' : '建立'}
+            </button>
+          </form>
+
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <label className="text-sm font-medium">
+              選擇既有個案
+              <select
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                disabled={isLoadingCases}
+                value={activeCaseId}
+                onChange={handleSelectCase}
+              >
+                <option value="">請選擇個案</option>
+                {cases.map((caseItem) => (
+                  <option key={caseItem.id} value={caseItem.id}>
+                    {caseItem.code_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md border bg-white px-4 text-sm font-medium transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={!activeCaseId}
               onClick={handleNewSession}
               type="button"
             >
-              開始新會談
+              <RefreshCcw className="h-4 w-4" />
+              新會談
             </button>
-
-            {reportUrl ? (
-              <Link
-                className="rounded-md border px-4 py-2 text-sm font-medium"
-                to={reportUrl}
-              >
-                前往草稿報告
-              </Link>
-            ) : null}
           </div>
-        </section>
-      </section>
-
-      <section className="space-y-4 rounded-md border bg-card p-4">
-        <div>
-          <h2 className="font-semibold">輸入本輪內容</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            請輸入由個案提供、諮商師代為整理的文字。送出後會呼叫後端 API
-            產生回應與微摘要。
-          </p>
         </div>
 
-        <form className="space-y-3" onSubmit={handleSubmitTurn}>
-          <textarea
-            className="min-h-32 w-full rounded-md border px-3 py-2 text-sm"
-            value={userInput}
-            onChange={(event) => setUserInput(event.target.value)}
-            placeholder="輸入本輪會談文字..."
-          />
+        <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
+          <div className="rounded-md border border-teal-100 bg-teal-50/55 p-3">
+            <p className="text-xs text-muted-foreground">目前個案</p>
+            <p className="mt-1 font-medium">{activeCase?.code_name ?? '尚未選擇'}</p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-white/70 p-3">
+            <p className="text-xs text-muted-foreground">會談識別碼</p>
+            <p className="mt-1 truncate font-mono text-xs">{sessionId || '尚未建立'}</p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-white/70 p-3">
+            <p className="text-xs text-muted-foreground">摘要數</p>
+            <p className="mt-1 font-medium">{summaries.length} 筆微摘要</p>
+          </div>
+        </div>
+      </SectionShell>
 
-          <button
-            className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
-            disabled={!activeCaseId || !sessionId || isSubmitting}
-            type="submit"
-          >
-            {isSubmitting ? '送出中...' : '送出本輪'}
-          </button>
-        </form>
-      </section>
-
-      {crisisStatus && crisisStatus.crisis_level !== 'high' ? (
-        <section className="rounded-md border bg-card p-4">
-          <h2 className="font-semibold">本輪風險狀態</h2>
-          <p className="mt-2 text-sm">
-            crisis_level：
-            <span className="font-medium">{crisisStatus.crisis_level}</span>
-          </p>
-          {crisisStatus.reason ? (
-            <p className="mt-1 text-sm text-muted-foreground">
-              後端說明：{crisisStatus.reason}
-            </p>
-          ) : null}
-        </section>
-      ) : null}
-
-      <section className="grid gap-4 md:grid-cols-[1.2fr_0.8fr]">
-        <section className="space-y-3 rounded-md border bg-card p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="font-semibold">會談訊息</h2>
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <SectionShell className="flex min-h-[640px] flex-col overflow-hidden ring-1 ring-white/60">
+          <div className="flex items-center justify-between gap-3 border-b bg-gradient-to-r from-white to-teal-50/55 px-4 py-3">
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold">
+                <MessageSquareText className="h-4 w-4" />
+                會談對話
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                顯示諮商師輸入內容與 AI 文件輔助回應。
+              </p>
+            </div>
             {isLoadingSession ? (
               <span className="text-sm text-muted-foreground">載入中...</span>
             ) : null}
           </div>
 
-          {messages.length === 0 ? (
-            <p className="text-sm text-muted-foreground">尚無訊息。</p>
-          ) : (
-            <div className="space-y-3">
-              {messages.map((message) => (
-                <article className="rounded-md border p-3" key={message.id}>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                    <span>第 {message.turn_number} 輪</span>
-                    <span>
-                      {message.role === 'user' ? '輸入內容' : 'AI 回應草稿'}
-                    </span>
-                    <span>{formatDate(message.created_at)}</span>
-                  </div>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
-                    {message.content}
-                  </p>
-                </article>
-              ))}
+          <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,rgba(240,253,250,0.45),rgba(248,250,252,0.78))] p-4">
+            {messages.length === 0 ? (
+              <EmptyState
+                title="尚無會談訊息"
+                description="選擇或建立個案後，在下方輸入個案提供的文字，即可產生本輪回應與微摘要。"
+              />
+            ) : (
+              messages.map((message) => {
+                const isUser = message.role === 'user'
+
+                return (
+                  <article
+                    className={`flex gap-3 ${isUser ? 'justify-end' : 'justify-start'}`}
+                    key={message.id}
+                  >
+                    {!isUser ? (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-800 text-white shadow-sm">
+                        <Bot className="h-4 w-4" />
+                      </div>
+                    ) : null}
+
+                    <div
+                      className={`max-w-[86%] rounded-md border px-4 py-3 shadow-sm ${
+                        isUser
+                          ? 'border-teal-900 bg-teal-900 text-white shadow-[0_12px_28px_rgba(19,78,74,0.16)]'
+                          : 'border-slate-200 bg-white text-card-foreground shadow-[0_10px_24px_rgba(15,23,42,0.06)]'
+                      }`}
+                    >
+                      <div
+                        className={`flex flex-wrap items-center gap-2 text-xs ${
+                          isUser ? 'text-teal-100' : 'text-muted-foreground'
+                        }`}
+                      >
+                        <span>第 {message.turn_number} 輪</span>
+                        <span>
+                          {isUser
+                            ? '諮商師輸入的個案內容'
+                            : 'AI 文件輔助回應'}
+                        </span>
+                        <span>{formatDate(message.created_at)}</span>
+                      </div>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6">
+                        {message.content}
+                      </p>
+                    </div>
+
+                    {isUser ? (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-teal-50 text-teal-900 shadow-sm">
+                        <UserRound className="h-4 w-4" />
+                      </div>
+                    ) : null}
+                  </article>
+                )
+              })
+            )}
+          </div>
+
+          <form
+            className="sticky bottom-14 border-t bg-white/95 p-4 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur"
+            onSubmit={handleSubmitTurn}
+          >
+            <label className="sr-only" htmlFor="conversation-input">
+              輸入本輪會談文字
+            </label>
+            <div className="flex flex-col gap-3 md:flex-row">
+              <textarea
+                className="min-h-24 flex-1 resize-none rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
+                id="conversation-input"
+                value={userInput}
+                onChange={(event) => setUserInput(event.target.value)}
+                placeholder="輸入本輪由個案提供、諮商師代為整理的文字..."
+              />
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-60 md:self-end"
+                disabled={!activeCaseId || !sessionId || isSubmitting}
+                type="submit"
+              >
+                <Send className="h-4 w-4" />
+                {isSubmitting ? '送出中' : '送出本輪'}
+              </button>
             </div>
-          )}
-        </section>
+          </form>
+        </SectionShell>
 
-        <section className="space-y-3 rounded-md border bg-card p-4">
-          <h2 className="font-semibold">最新微摘要</h2>
-
-          {!latestSummary ? (
-            <p className="text-sm text-muted-foreground">尚無摘要。</p>
-          ) : (
-            <div className="space-y-3 text-sm">
-              <p>第 {latestSummary.turn_number} 輪</p>
-              <p>
-                主要情緒：
-                <span className="font-medium">
-                  {latestSummary.summary?.emotion?.primary ?? '未提供'}
+        <aside className="space-y-4 lg:sticky lg:top-4 lg:self-start">
+          <SectionShell className="p-4 ring-1 ring-white/60">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="flex items-center gap-2 font-semibold">
+                  <ClipboardList className="h-4 w-4" />
+                  即時微摘要
+                </h2>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  依後端回傳摘要呈現，供諮商師審閱。
+                </p>
+              </div>
+              {latestSummary ? (
+                <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-xs text-teal-900">
+                  第 {latestSummary.turn_number} 輪
                 </span>
-              </p>
-              <p>
-                強度：
-                <span className="font-medium">
-                  {latestSummary.summary?.emotion?.intensity ?? '未提供'}
-                </span>
-              </p>
-              <p>
-                關鍵語句：
-                <span className="text-muted-foreground">
-                  {latestSummary.summary?.key_statement ?? '未提供'}
-                </span>
-              </p>
-              {latestSummary.summary?.themes?.length ? (
-                <div>
-                  <p className="font-medium">主題</p>
-                  <ul className="mt-1 list-inside list-disc text-muted-foreground">
-                    {latestSummary.summary.themes.map((theme) => (
-                      <li key={theme}>{theme}</li>
-                    ))}
-                  </ul>
-                </div>
               ) : null}
             </div>
-          )}
-        </section>
-      </section>
+
+            {!latestSummaryData ? (
+              <div className="mt-4">
+                <EmptyState
+                  title="尚無微摘要"
+                  description="送出第一輪內容後，此處會顯示情緒、主題與關鍵語句。"
+                />
+              </div>
+            ) : (
+              <div className="mt-4 space-y-5 text-sm">
+                <div className="rounded-md border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-3 shadow-inner">
+                  <p className="text-xs text-muted-foreground">主要情緒</p>
+                  <p className="mt-1 text-base font-semibold">
+                    {latestSummaryData.emotion?.primary ?? '未提供'}
+                  </p>
+                  <div className="mt-3">
+                    <IntensityBar value={latestSummaryData.emotion?.intensity} />
+                  </div>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    情緒維度
+                  </p>
+                  <DimensionBars dimensions={latestSummaryData.emotion_dimensions} />
+                </div>
+
+                <div>
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">
+                    主題
+                  </p>
+                  {latestSummaryData.themes?.length ? (
+                    <div className="flex flex-wrap gap-2">
+                      {latestSummaryData.themes.map((theme) => (
+                        <span
+                          className="rounded-full border border-teal-200 bg-teal-50/80 px-2.5 py-1 text-xs text-teal-950 shadow-sm"
+                          key={theme}
+                        >
+                          {theme}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">未提供</p>
+                  )}
+                </div>
+
+                <blockquote className="rounded-md border border-slate-200 border-l-4 border-l-teal-500 bg-white/80 p-3 text-sm leading-6 text-muted-foreground shadow-sm">
+                  {latestSummaryData.key_statement ?? '尚無關鍵語句。'}
+                </blockquote>
+              </div>
+            )}
+          </SectionShell>
+
+          <SectionShell className="p-4 ring-1 ring-white/60">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <AlertTriangle className="h-4 w-4" />
+              危機狀態
+            </h2>
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/80 p-3 text-sm">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-muted-foreground">後端等級</span>
+                <span className="font-medium">
+                  {getCrisisLabel(crisisStatus?.crisis_level)}
+                </span>
+              </div>
+              <p className="mt-3 leading-6 text-muted-foreground">
+                {crisisStatus
+                  ? crisisStatus.reason || '後端未提供額外說明。'
+                  : '尚無本輪危機偵測結果；重新載入的摘要不會在前端重新推估危機等級。'}
+              </p>
+            </div>
+            {crisisStatus?.crisis_level === 'low' ? (
+              <p className="mt-3 text-xs leading-5 text-muted-foreground">
+                low 等級僅作為諮商師審閱 metadata 顯示，不提升為紅色警示。
+              </p>
+            ) : null}
+          </SectionShell>
+
+          <SectionShell className="p-4 ring-1 ring-white/60">
+            <h2 className="flex items-center gap-2 font-semibold">
+              <FileText className="h-4 w-4" />
+              草稿報告
+            </h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              完成會談輸入後，可前往個案概念化草稿頁，由諮商師審閱後再決定是否使用。
+            </p>
+            {reportUrl ? (
+              <Link
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-teal-200 bg-teal-50/70 px-4 py-2 text-sm font-medium text-teal-950 transition hover:bg-teal-100"
+                to={reportUrl}
+              >
+                開啟報告頁
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            ) : (
+              <button
+                className="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border bg-slate-50 px-4 py-2 text-sm font-medium opacity-60"
+                disabled
+                type="button"
+              >
+                請先選擇個案
+              </button>
+            )}
+          </SectionShell>
+        </aside>
+      </div>
     </div>
   )
 }
