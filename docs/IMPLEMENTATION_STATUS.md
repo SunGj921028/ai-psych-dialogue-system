@@ -71,16 +71,24 @@ Current facts:
 
 ### Frontend
 
-Status: scaffold / placeholder.
+Status: partially implemented and integrated with the HTTP API.
 
 Current facts:
 
 - React + Vite app exists under `frontend/`.
 - Routes exist for conversation, report, history, and settings.
-- Page components are mostly placeholders.
-- `frontend/src/api/client.js` defines a basic axios instance.
-- Frontend integration remains future work and can now target the implemented
-  Task 09 backend routes.
+- ConversationPage is integrated with the backend conversation API.
+- ReportPage is integrated with the backend report API and supports manual report
+  generation.
+- HistoryPage lists cases from the backend.
+- The app header includes navigation and a theme toggle.
+- Light/dark theme support exists and uses the `ai-psych-theme` localStorage key.
+- The frontend does not store clinical message content or summaries in browser
+  storage.
+- Crisis UI uses backend `crisis_level` only; the red banner is shown only for
+  `crisis_level == "high"`.
+- Frontend deletion, PDF export, session browser, charts, Settings backend
+  integration, and MCP integration remain future work.
 
 ### Tests
 
@@ -117,13 +125,13 @@ Current facts:
 | Task 06 analysis agent | implemented | Computes report metadata in code. |
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests. |
-| Task 11 conversation page | placeholder | Backend API routes now exist; frontend integration remains future work. |
+| Task 11 conversation page | implemented | Integrated with backend conversation API; uses backend crisis level for high-risk banner behavior. |
 | Task 12 visualization components | future | Depends on summary/report data contracts. |
-| Task 13 report page | placeholder | Depends on report API. |
-| Task 14 history page | placeholder | Depends on case/session APIs. |
+| Task 13 report page | partial | Integrated with report API and manual generation; PDF export and charts remain future work. |
+| Task 14 history page | partial | Lists backend cases; deletion and session browser remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
-| Task 16 end-to-end tests | future | Needs frontend integration and deterministic browser/API flow coverage. |
+| Task 16 end-to-end tests | future | Needs deterministic browser/API flow coverage for integrated frontend workflows. |
 | Task 17 prompt iteration | future | Should continue to include safety regression tests. |
 
 Status categories:
@@ -152,9 +160,10 @@ Status categories:
 
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
-3. Wire frontend pages to the implemented API.
-4. Implement MCP Task 07 after HTTP behavior is stable.
-5. Add broader integration and end-to-end tests.
+3. Complete remaining frontend workflows: deletion, PDF export, session browser,
+   charts, and Settings backend integration.
+4. Add broader frontend integration and end-to-end tests.
+5. Implement MCP Task 07 after HTTP and frontend behavior are stable.
 
 ## Confirmed Risks
 
@@ -168,7 +177,8 @@ Status categories:
 ## Suspected Risks
 
 - Existing docs and README may lag behind source behavior.
-- Frontend state shape may drift unless it follows the API contract.
+- Frontend state shape may drift unless remaining workflows continue to follow
+  the API contract.
 - Manual tests may give false confidence because they depend on provider availability and model behavior.
 
 ## Current Reality Versus Future Intent
@@ -179,13 +189,17 @@ Current reality:
 - Active API includes `/health` and the Task 09 `/api` routes.
 - Backend routers are implemented.
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
-- MCP and frontend integration are not implemented.
+- Frontend conversation, report generation, history case listing, app navigation,
+  and light/dark theme support are implemented.
+- Frontend does not persist clinical message content or summaries in browser storage.
+- MCP is not implemented.
 
 Future intent:
 
-- Frontend should consume those routes and render conversation, summaries, crisis warnings,
-  history, and reports.
-- MCP should provide case-query tools after the core HTTP API is clarified.
+- Frontend should add deletion, PDF export, session browsing, charts, and Settings
+  backend integration.
+- MCP should provide case-query tools after the core HTTP and frontend workflows
+  are clarified.
 
 ## Related Context Documents
 
