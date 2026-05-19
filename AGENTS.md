@@ -63,7 +63,12 @@ mismatches.
 
 - React + Vite app in `frontend/`.
 - React Router pages exist for conversation, report, history, and settings.
-- Current frontend pages are mostly placeholders and are not integrated with backend APIs.
+- ConversationPage is integrated with the backend conversation API.
+- ReportPage is integrated with backend report generation.
+- HistoryPage lists cases from the backend.
+- Header navigation and light/dark theme toggle are implemented.
+- Frontend deletion, PDF export, session browser, charts, Settings backend
+  integration, and MCP integration remain future work.
 
 ### Active API Reality
 
@@ -79,7 +84,8 @@ The current active HTTP API includes:
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
 - `POST /api/reports/generate`
 
-Frontend integration is now the next major product integration blocker.
+Remaining frontend workflow completion and tests are now the next major product
+integration blockers.
 
 ## Current Development Priority
 
@@ -89,8 +95,9 @@ Recommended order:
 
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
-3. Integrate frontend pages with the HTTP API.
-4. Implement MCP Task 07 after API contracts and data access behavior are clear.
+3. Complete remaining frontend workflows and add deterministic frontend/E2E coverage.
+4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
+   workflows are clear.
 
 MCP Task 07 remains future work until frontend/API behavior is stable enough to
 guide case-query tooling.
@@ -189,7 +196,9 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - Page components live in `frontend/src/pages/`.
 - Shared components live in `frontend/src/components/`.
 - API calls should go through `frontend/src/api/client.js`.
-- Frontend work can now integrate with the implemented Task 09 backend API routes.
+- Preserve the existing API integration patterns in the implemented frontend pages.
+- Do not store clinical message content or summaries in browser storage.
+- Theme preference may use the existing `ai-psych-theme` localStorage key.
 
 ### Testing
 

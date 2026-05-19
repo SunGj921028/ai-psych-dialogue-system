@@ -1,7 +1,7 @@
 # Frontend UI Contract
 
-This document defines intended frontend behavior before future frontend integration
-work. It does not describe current implementation completeness.
+This document defines current and intended frontend behavior. It should be kept
+aligned with the implemented React app and the backend API contract.
 
 Safety-sensitive UI behavior, especially crisis warnings and report disclaimers,
 must follow `docs/SAFETY_REQUIREMENTS.md`.
@@ -17,16 +17,29 @@ Current reality:
   - `/report/:caseId` via `ReportPage`
   - `/history` via `HistoryPage`
   - `/settings` via `SettingsPage`
-- These pages are currently mostly placeholders.
-- `frontend/src/api/client.js` contains a basic axios client.
-- Task 09 backend routes are implemented under `/api`; frontend integration should
-  follow `backend/API_CONTRACT.md`.
+- ConversationPage is integrated with the backend API for case setup,
+  conversation turns, assistant messages, summaries, and crisis status.
+- ReportPage is integrated with the backend API and supports manual report
+  generation.
+- HistoryPage lists cases from the backend.
+- The shared header includes navigation and a theme toggle.
+- Light/dark theme support exists and stores only the theme preference under the
+  `ai-psych-theme` localStorage key.
+- The frontend does not store clinical message content or summaries in browser
+  storage.
+- Crisis UI uses backend `crisis_level` only and shows the red banner only when
+  `crisis_level === 'high'`.
+- Frontend deletion, PDF export, session browser, charts, Settings backend
+  integration, and MCP integration are not implemented yet.
+- `frontend/src/api/client.js` contains the shared axios client for backend calls.
+- Task 09 backend routes are implemented under `/api`; frontend work should
+  continue to follow `backend/API_CONTRACT.md`.
 
-Intended future behavior:
+Remaining future behavior:
 
-- The frontend should become the counselor-facing workspace for case creation,
-  conversation entry, live summaries, crisis warning display, report review, and
-  history navigation.
+- Complete deletion, PDF export, session browsing, visualization charts, Settings
+  backend integration, and MCP-related UI only when the corresponding tasks are
+  prioritized.
 
 ## Intended Page Responsibilities
 
@@ -42,9 +55,14 @@ Responsibilities:
 - Send each conversation turn to the backend.
 - Display user and assistant messages.
 - Display the latest JSON micro-summary.
-- Display emotion trend data from accumulated summaries.
+- Display summary and crisis context returned by the backend.
 - Display a red crisis banner only for `crisis_level == "high"`.
 - Provide entry point to generate or view the report for the current case/session.
+
+Not currently implemented:
+
+- Session browser.
+- Emotion trend charts.
 
 ### ReportPage
 
@@ -55,10 +73,14 @@ Responsibilities:
 - Load or generate a report for a selected case/session.
 - Display the fixed report disclaimer.
 - Display report text sections from `ConceptualizationReport`.
-- Display emotion intensity trend visualization from summaries/report data.
-- Display emotion dimension visualization when enough summary data exists.
 - Display crisis summary and `has_crisis` status in counselor-review language.
 - Avoid presenting the report as diagnostic or final.
+
+Not currently implemented:
+
+- PDF export.
+- Emotion intensity trend charts.
+- Emotion dimension charts.
 
 ### HistoryPage
 
@@ -68,9 +90,12 @@ Responsibilities:
 
 - Display available cases.
 - Let the counselor open a case.
-- Provide access to case sessions, summaries, or reports once backend support exists.
-- Support deletion only with clear counselor intent because deleting a case cascades
-  associated messages and summaries in the database.
+
+Not currently implemented:
+
+- Case deletion.
+- Session browser.
+- Direct access to stored session summaries or reports from history.
 
 ### SettingsPage
 
@@ -82,6 +107,10 @@ Responsibilities:
 - Do not expose provider API keys or `.env` values in the browser.
 - Future prompt/knowledge-base management is optional and should be treated as P2
   unless a task explicitly prioritizes it.
+
+Not currently implemented:
+
+- Backend integration.
 
 ## Expected API Calls Per Page
 
@@ -114,10 +143,10 @@ whether to pass it through query params, navigation state, or a dedicated sessio
 Expected calls:
 
 - `GET /api/cases` to list cases.
-- `GET /api/cases/{case_id}` to inspect a selected case.
-- `DELETE /api/cases/{case_id}` when deleting a case after confirmation.
+- `GET /api/cases/{case_id}` to inspect a selected case when the UI needs case
+  detail.
 
-Future calls may include session listing once implemented.
+Future calls may include deletion and session listing once implemented.
 
 ### SettingsPage
 
@@ -298,23 +327,30 @@ Inherited constraints:
 - Preserve crisis warning behavior exactly.
 - Do not expose provider secrets or backend environment values.
 - Avoid storing sensitive text in browser logs.
+- Do not store clinical message content or summaries in browser storage.
+- Browser storage may store non-clinical UI preferences such as
+  `ai-psych-theme`.
 - Use API data contracts rather than guessing backend internals.
 - Do not reference DB-internal `round` in UI code.
 
-## Current Placeholder State Versus Future Behavior
+## Current Implemented State Versus Future Behavior
 
-Current placeholder state:
+Current implemented state:
 
-- Pages render placeholder text.
-- No page currently implements the full workflows above.
-- No page currently depends on Task 09 endpoints.
-- Task 09 backend endpoints are available for future integration.
+- ConversationPage is wired to backend case, conversation, message, summary, and
+  crisis data flows.
+- ReportPage is wired to backend report generation and supports manual report
+  generation.
+- HistoryPage lists backend cases.
+- Header navigation and light/dark theme toggle are implemented.
+- Theme preference is stored with the `ai-psych-theme` localStorage key.
+- Clinical message content and summaries are not stored in browser storage.
 
 Future behavior:
 
-- Implement UI against the available Task 09 backend API routes, or against explicit
-  mocks when a future task requests mocked UI integration.
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
+- Add deletion, PDF export, session browser, charts, Settings backend integration,
+  and MCP-related UI when prioritized.
 - Add frontend-specific tests later when workflows stabilize.
 
 ## Open Decisions
