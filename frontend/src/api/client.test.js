@@ -1,0 +1,148 @@
+import { beforeEach, describe, expect, test, vi } from 'vitest'
+
+const { axiosCreate, fakeApiClient } = vi.hoisted(() => {
+  const fakeApiClient = {
+    delete: vi.fn(),
+    get: vi.fn(),
+    post: vi.fn(),
+  }
+
+  return {
+    axiosCreate: vi.fn(() => fakeApiClient),
+    fakeApiClient,
+  }
+})
+
+vi.mock('axios', () => ({
+  default: {
+    create: axiosCreate,
+  },
+}))
+
+async function importClient() {
+  return import('./client.js')
+}
+
+describe('API helper contracts', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    axiosCreate.mockClear()
+    fakeApiClient.delete.mockReset()
+    fakeApiClient.get.mockReset()
+    fakeApiClient.post.mockReset()
+  })
+
+  test('getHealth calls GET /health', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: { status: 'ok' } })
+    const { getHealth } = await importClient()
+
+    const result = await getHealth()
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith('/health')
+    expect(result).toEqual({ status: 'ok' })
+  })
+
+  test('listCases calls GET /api/cases', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: [] })
+    const { listCases } = await importClient()
+
+    const result = await listCases()
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith('/api/cases')
+    expect(result).toEqual([])
+  })
+
+  test('createCase calls POST /api/cases with the exact payload', async () => {
+    const payload = {
+      code_name: 'CASE_ALPHA',
+      note: 'SYNTHETIC_NOTE_VISIBLE',
+    }
+    fakeApiClient.post.mockResolvedValue({
+      data: { id: 'case-1', ...payload },
+    })
+    const { createCase } = await importClient()
+
+    const result = await createCase(payload)
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith('/api/cases', payload)
+    expect(result).toEqual({ id: 'case-1', ...payload })
+  })
+
+  test('getCase calls GET /api/cases/{caseId}', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: { id: 'case-1' } })
+    const { getCase } = await importClient()
+
+    const result = await getCase('case-1')
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith('/api/cases/case-1')
+    expect(result).toEqual({ id: 'case-1' })
+  })
+
+  test('sendConversationTurn calls POST /api/conversation/turn with the exact payload', async () => {
+    const payload = {
+      case_id: 'case-1',
+      session_id: 'session-1',
+      turn_number: 1,
+      user_input: 'SYNTHETIC_PRIVATE_MESSAGE',
+      conversation_history: [
+        {
+          role: 'user',
+          content: 'previous synthetic message',
+        },
+      ],
+    }
+    fakeApiClient.post.mockResolvedValue({ data: { turn_number: 1 } })
+    const { sendConversationTurn } = await importClient()
+
+    const result = await sendConversationTurn(payload)
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/conversation/turn',
+      payload,
+    )
+    expect(result).toEqual({ turn_number: 1 })
+  })
+
+  test('getSessionMessages calls the expected session messages path', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: [] })
+    const { getSessionMessages } = await importClient()
+
+    const result = await getSessionMessages('case-1', 'session-1')
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/messages',
+    )
+    expect(result).toEqual([])
+  })
+
+  test('getSessionSummaries calls the expected session summaries path', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: [] })
+    const { getSessionSummaries } = await importClient()
+
+    const result = await getSessionSummaries('case-1', 'session-1')
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/summaries',
+    )
+    expect(result).toEqual([])
+  })
+
+  test('generateReport calls POST /api/reports/generate with the exact payload', async () => {
+    const payload = {
+      case_id: 'case-1',
+      session_id: 'session-1',
+    }
+    fakeApiClient.post.mockResolvedValue({
+      data: { case_id: 'case-1', session_id: 'session-1' },
+    })
+    const { generateReport } = await importClient()
+
+    const result = await generateReport(payload)
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/reports/generate',
+      payload,
+    )
+    expect(result).toEqual({ case_id: 'case-1', session_id: 'session-1' })
+  })
+})
