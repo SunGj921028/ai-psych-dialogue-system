@@ -25,8 +25,10 @@ Current reality:
 - The shared header includes navigation and a theme toggle.
 - Light/dark theme support exists and stores only the theme preference under the
   `ai-psych-theme` localStorage key.
-- The frontend does not store clinical message content or summaries in browser
-  storage.
+- The frontend does not store clinical message content, summaries, report text,
+  crisis reasons, or case notes in browser storage.
+- `localStorage` is used only for `ai-psych-theme`.
+- `sessionStorage` may store only active case/session identifiers.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
 - Frontend deletion, PDF export, session browser, charts, Settings backend
@@ -34,12 +36,50 @@ Current reality:
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
+- Frontend testing foundation is implemented with Vitest, React Testing Library,
+  and jsdom.
+- Frontend tests mock API helpers and do not call the live backend, providers, or
+  network.
 
 Remaining future behavior:
 
 - Complete deletion, PDF export, session browsing, visualization charts, Settings
   backend integration, and MCP-related UI only when the corresponding tasks are
   prioritized.
+- Complete remaining frontend testing gaps: ReportPage error handling tests,
+  ConversationPage submit edge cases, optional Playwright/E2E later, and visual
+  regression later if needed.
+
+## Current Frontend Test Coverage
+
+Current frontend tests use Vitest, React Testing Library, and jsdom.
+
+Coverage includes:
+
+- Header navigation and theme toggle behavior.
+- Safe theme localStorage usage.
+- ConversationPage crisis UI behavior.
+- ReportPage missing `sessionId` handling, manual generation, and disclaimer
+  display.
+- API helper path and payload contract tests.
+- HistoryPage list, empty, error, and no-future-controls behavior.
+- Browser storage safety regression coverage.
+
+Test boundaries:
+
+- Tests mock API helpers.
+- Tests do not call the live backend, LLM providers, or network.
+- Storage safety tests confirm clinical message content, summaries, report text,
+  crisis reasons, and case notes are not persisted to browser storage.
+- `localStorage` is used only for `ai-psych-theme`.
+- `sessionStorage` may store only active case/session identifiers.
+
+Remaining future testing work:
+
+- ReportPage error handling tests.
+- ConversationPage submit edge cases.
+- Optional Playwright/E2E later.
+- Visual regression later if needed.
 
 ## Intended Page Responsibilities
 
@@ -327,9 +367,10 @@ Inherited constraints:
 - Preserve crisis warning behavior exactly.
 - Do not expose provider secrets or backend environment values.
 - Avoid storing sensitive text in browser logs.
-- Do not store clinical message content or summaries in browser storage.
-- Browser storage may store non-clinical UI preferences such as
-  `ai-psych-theme`.
+- Do not store clinical message content, summaries, report text, crisis reasons,
+  or case notes in browser storage.
+- Browser `localStorage` is used only for the `ai-psych-theme` preference.
+- Browser `sessionStorage` may store only active case/session identifiers.
 - Use API data contracts rather than guessing backend internals.
 - Do not reference DB-internal `round` in UI code.
 
@@ -344,14 +385,19 @@ Current implemented state:
 - HistoryPage lists backend cases.
 - Header navigation and light/dark theme toggle are implemented.
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
-- Clinical message content and summaries are not stored in browser storage.
+- Clinical message content, summaries, report text, crisis reasons, and case
+  notes are not stored in browser storage.
+- Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
+  using mocked API helpers and no live backend/provider/network calls.
 
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
 - Add deletion, PDF export, session browser, charts, Settings backend integration,
   and MCP-related UI when prioritized.
-- Add frontend-specific tests later when workflows stabilize.
+- Add remaining frontend tests for ReportPage error handling and ConversationPage
+  submit edge cases.
+- Add optional Playwright/E2E later, and visual regression later if needed.
 
 ## Open Decisions
 

@@ -67,6 +67,11 @@ mismatches.
 - ReportPage is integrated with backend report generation.
 - HistoryPage lists cases from the backend.
 - Header navigation and light/dark theme toggle are implemented.
+- Frontend deterministic tests use Vitest, React Testing Library, and jsdom.
+- Frontend tests mock API helpers and do not call the live backend, providers, or
+  network.
+- Browser storage safety tests confirm clinical message content, summaries,
+  report text, crisis reasons, and case notes are not persisted.
 - Frontend deletion, PDF export, session browser, charts, Settings backend
   integration, and MCP integration remain future work.
 
@@ -84,8 +89,8 @@ The current active HTTP API includes:
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
 - `POST /api/reports/generate`
 
-Remaining frontend workflow completion and tests are now the next major product
-integration blockers.
+Remaining frontend workflow completion and focused frontend test gaps are now the
+next major product integration blockers.
 
 ## Current Development Priority
 
@@ -95,7 +100,7 @@ Recommended order:
 
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
-3. Complete remaining frontend workflows and add deterministic frontend/E2E coverage.
+3. Complete remaining frontend workflows and focused frontend test gaps.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
@@ -152,6 +157,8 @@ These are current code facts and should not be contradicted in new work:
 - Deterministic route, agent, and DB tests exist under `backend/tests/`; older
   script-style tests may still call live providers and should remain manual checks
   unless migrated.
+- Frontend deterministic tests exist and use Vitest, React Testing Library, and
+  jsdom with mocked API helpers.
 - Future automated tests should remain deterministic pytest-style tests with mocked
   LLM clients or monkeypatched agent/provider boundaries.
 - Live provider tests are manual checks only.
@@ -197,8 +204,10 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - Shared components live in `frontend/src/components/`.
 - API calls should go through `frontend/src/api/client.js`.
 - Preserve the existing API integration patterns in the implemented frontend pages.
-- Do not store clinical message content or summaries in browser storage.
-- Theme preference may use the existing `ai-psych-theme` localStorage key.
+- Do not store clinical message content, summaries, report text, crisis reasons,
+  or case notes in browser storage.
+- `localStorage` is used only for the existing `ai-psych-theme` key.
+- `sessionStorage` may store only active case/session identifiers.
 
 ### Testing
 

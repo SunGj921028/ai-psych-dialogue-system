@@ -82,9 +82,12 @@ Current facts:
   generation.
 - HistoryPage lists cases from the backend.
 - The app header includes navigation and a theme toggle.
-- Light/dark theme support exists and uses the `ai-psych-theme` localStorage key.
-- The frontend does not store clinical message content or summaries in browser
-  storage.
+- Light/dark theme support exists and uses only the `ai-psych-theme`
+  localStorage key.
+- Browser storage safety behavior is implemented: clinical message content,
+  summaries, report text, crisis reasons, and case notes are not persisted to
+  browser storage.
+- `sessionStorage` may store only active case/session identifiers.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
 - Frontend deletion, PDF export, session browser, charts, Settings backend
@@ -92,8 +95,8 @@ Current facts:
 
 ### Tests
 
-Status: implemented backend deterministic testing foundation, with future broader
-integration and end-to-end testing still pending.
+Status: implemented backend and frontend deterministic testing foundations, with
+optional broader end-to-end testing still pending.
 
 Current facts:
 
@@ -112,6 +115,24 @@ Current facts:
 - Future automated tests should continue to be pytest-style and should mock LLM
   clients by default.
 - Live provider scripts should remain manual checks, not required automated tests.
+- Frontend testing foundation is implemented with Vitest, React Testing Library,
+  and jsdom.
+- Frontend tests mock API helpers and do not call the live backend, providers, or
+  network.
+- Current frontend coverage includes header/theme toggle behavior, safe theme
+  localStorage usage, ConversationPage crisis UI behavior, ReportPage missing
+  `sessionId` handling, manual report generation, disclaimer display, API helper
+  path/payload contracts, HistoryPage list/empty/error/no-future-controls
+  behavior, and browser storage safety regressions.
+- Browser storage safety tests confirm clinical message content, summaries,
+  report text, crisis reasons, and case notes are not persisted to browser
+  storage.
+- Frontend storage expectations are explicit: `localStorage` is used only for
+  `ai-psych-theme`, and `sessionStorage` may store only active case/session
+  identifiers.
+- Remaining future frontend testing work includes ReportPage error handling
+  tests, ConversationPage submit edge cases, optional Playwright/E2E later, and
+  visual regression later if needed.
 
 ## Task / Status Table
 
@@ -131,7 +152,8 @@ Current facts:
 | Task 14 history page | partial | Lists backend cases; deletion and session browser remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
-| Task 16 end-to-end tests | future | Needs deterministic browser/API flow coverage for integrated frontend workflows. |
+| Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
+| Task 16 end-to-end tests | future | Optional Playwright/E2E coverage can be added later after remaining workflows stabilize. |
 | Task 17 prompt iteration | future | Should continue to include safety regression tests. |
 
 Status categories:
@@ -153,7 +175,8 @@ Status categories:
   Current `.env.example` uses `gemini-2.5-flash-lite` and `gemini-2.5-flash`.
 - README still references the generic default provider path more than the current
   Groq/Gemini split.
-- Deterministic backend tests now exist under `backend/tests/`; legacy live-provider
+- Deterministic backend tests now exist under `backend/tests/`, and deterministic
+  frontend tests now cover core UI/API/storage behavior; legacy live-provider
   scripts still remain outside the default deterministic test suite.
 
 ## Recommended Implementation Order
@@ -162,8 +185,11 @@ Status categories:
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: deletion, PDF export, session browser,
    charts, and Settings backend integration.
-4. Add broader frontend integration and end-to-end tests.
-5. Implement MCP Task 07 after HTTP and frontend behavior are stable.
+4. Fill remaining frontend test gaps: ReportPage error handling and
+   ConversationPage submit edge cases.
+5. Add optional Playwright/E2E coverage later, and visual regression later if
+   needed.
+6. Implement MCP Task 07 after HTTP and frontend behavior are stable.
 
 ## Confirmed Risks
 
@@ -191,13 +217,22 @@ Current reality:
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
 - Frontend conversation, report generation, history case listing, app navigation,
   and light/dark theme support are implemented.
-- Frontend does not persist clinical message content or summaries in browser storage.
+- Frontend deterministic tests are implemented with Vitest, React Testing
+  Library, and jsdom, using mocked API helpers and no live backend/provider/network
+  calls.
+- Frontend does not persist clinical message content, summaries, report text,
+  crisis reasons, or case notes in browser storage.
+- `localStorage` is used only for `ai-psych-theme`; `sessionStorage` may store
+  only active case/session identifiers.
 - MCP is not implemented.
 
 Future intent:
 
 - Frontend should add deletion, PDF export, session browsing, charts, and Settings
   backend integration.
+- Frontend testing should add ReportPage error handling tests, ConversationPage
+  submit edge cases, optional Playwright/E2E later, and visual regression later
+  if needed.
 - MCP should provide case-query tools after the core HTTP and frontend workflows
   are clarified.
 
