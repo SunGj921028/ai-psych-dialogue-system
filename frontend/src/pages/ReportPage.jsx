@@ -64,9 +64,9 @@ function formatTrend(value) {
 
 function SectionCard({ title, description, children }) {
   return (
-    <section className="rounded-md border border-slate-200/80 bg-white/92 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ring-1 ring-white/60">
-      <div className="mb-4 border-b border-slate-100 pb-3">
-        <h3 className="font-semibold text-slate-950">{title}</h3>
+    <section className="rounded-md border border-slate-200/80 bg-white/92 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ring-1 ring-white/60 dark:border-slate-700 dark:bg-card dark:shadow-[0_14px_40px_rgba(0,0,0,0.28)] dark:ring-slate-700/50">
+      <div className="mb-4 border-b border-slate-100 pb-3 dark:border-slate-800">
+        <h3 className="font-semibold text-slate-950 dark:text-slate-50">{title}</h3>
         {description ? (
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
             {description}
@@ -80,8 +80,8 @@ function SectionCard({ title, description, children }) {
 
 function ReportTextBlock({ title, value }) {
   return (
-    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-      <h4 className="text-sm font-semibold text-teal-950">{title}</h4>
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
+      <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">{title}</h4>
       <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
         {value || '未提供'}
       </p>
@@ -99,9 +99,9 @@ function IntensityBar({ value }) {
         <span>強度</span>
         <span>{score == null ? '未提供' : `${score}/10`}</span>
       </div>
-      <div className="h-2 rounded-full bg-slate-200/80">
+      <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-700/80">
         <div
-          className="h-2 rounded-full bg-gradient-to-r from-teal-700 to-slate-700"
+          className="h-2 rounded-full bg-gradient-to-r from-indigo-600 to-slate-600 dark:from-indigo-500 dark:to-slate-500"
           style={{ width: `${width}%` }}
         />
       </div>
@@ -113,7 +113,7 @@ function SummaryCard({ summaryRow }) {
   const summary = summaryRow.summary ?? {}
 
   return (
-    <article className="rounded-md border border-slate-200 bg-white p-4 text-sm shadow-sm">
+    <article className="rounded-md border border-slate-200 bg-white p-4 text-sm shadow-sm dark:border-slate-700 dark:bg-card">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <p className="font-medium">第 {summaryRow.turn_number} 輪微摘要</p>
@@ -121,7 +121,7 @@ function SummaryCard({ summaryRow }) {
             {formatDate(summaryRow.created_at)}
           </p>
         </div>
-        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-muted-foreground">
+        <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70">
           摘要危機標記：{summaryRow.crisis_flag ? '是' : '否'}
         </span>
       </div>
@@ -148,7 +148,7 @@ function SummaryCard({ summaryRow }) {
         <div className="mt-4 flex flex-wrap gap-2">
           {summary.themes.map((theme) => (
             <span
-              className="rounded-full border border-teal-200 bg-teal-50/80 px-2.5 py-1 text-xs text-teal-950"
+              className="rounded-full border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-xs text-indigo-950 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100"
               key={theme}
             >
               {theme}
@@ -220,8 +220,8 @@ export default function ReportPage() {
   if (!sessionId) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 pb-24">
-        <section className="rounded-md border border-slate-200/80 bg-white/92 p-6 shadow-[0_14px_40px_rgba(15,23,42,0.06)]">
-          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-teal-50 text-teal-900">
+        <section className="rounded-md border border-slate-200/80 bg-white/92 p-6 shadow-[0_14px_40px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-card dark:shadow-[0_14px_40px_rgba(0,0,0,0.28)]">
+          <div className="flex h-11 w-11 items-center justify-center rounded-full bg-indigo-50 text-indigo-900 dark:bg-indigo-950/32 dark:text-indigo-100">
             <FileText className="h-5 w-5" />
           </div>
           <h1 className="mt-4 text-2xl font-semibold">缺少會談識別碼</h1>
@@ -229,7 +229,7 @@ export default function ReportPage() {
             報告草稿需要個案與會談識別碼。請回到會談工作台，從目前個案進入報告頁。
           </p>
           <Link
-            className="mt-5 inline-flex items-center gap-2 rounded-md border border-teal-200 bg-teal-50/70 px-4 py-2 text-sm font-medium text-teal-950 hover:bg-teal-100"
+            className="mt-5 inline-flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm font-medium text-indigo-950 hover:bg-indigo-100 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100 dark:hover:bg-indigo-900/45"
             to="/"
           >
             <ArrowLeft className="h-4 w-4" />
@@ -242,9 +242,9 @@ export default function ReportPage() {
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 pb-24">
-      <section className="flex flex-col gap-4 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur lg:flex-row lg:items-end lg:justify-between">
+      <section className="flex flex-col gap-4 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-700 dark:bg-card dark:shadow-[0_10px_35px_rgba(0,0,0,0.24)] lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl">
-          <p className="text-xs font-semibold text-teal-800">
+          <p className="text-xs font-semibold text-indigo-800 dark:text-indigo-300">
             個案概念化草稿
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
@@ -257,14 +257,14 @@ export default function ReportPage() {
 
         <div className="flex flex-wrap gap-2">
           <Link
-            className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-teal-50"
+            className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
             to="/"
           >
             <ArrowLeft className="h-4 w-4" />
             回工作台
           </Link>
           <button
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-60"
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
             disabled={isGenerating || !caseId || !sessionId}
             onClick={handleGenerateReport}
             type="button"
@@ -286,17 +286,17 @@ export default function ReportPage() {
       ) : null}
 
       <section className="grid gap-3 md:grid-cols-4">
-        <div className="rounded-md border border-teal-100 bg-teal-50/55 p-4 shadow-sm">
+        <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-4 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
           <p className="text-xs text-muted-foreground">個案代碼</p>
           <p className="mt-1 font-semibold">
             {isLoading ? '載入中...' : caseInfo?.code_name ?? '未提供'}
           </p>
         </div>
-        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm md:col-span-2">
+        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 md:col-span-2">
           <p className="text-xs text-muted-foreground">會談識別碼</p>
           <p className="mt-1 truncate font-mono text-xs">{sessionId}</p>
         </div>
-        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm">
+        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
           <p className="text-xs text-muted-foreground">可用微摘要</p>
           <p className="mt-1 font-semibold">{summaries.length} 筆</p>
         </div>
@@ -310,7 +310,7 @@ export default function ReportPage() {
           {isLoading ? (
             <p className="text-sm text-muted-foreground">載入中...</p>
           ) : summaries.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/40 p-5 text-sm">
+            <div className="rounded-md border border-dashed bg-muted/40 p-5 text-sm dark:border-slate-700">
               <p className="font-medium">目前沒有可用摘要</p>
               <p className="mt-1 leading-6 text-muted-foreground">
                 請先回到會談工作台送出至少一輪內容，再產生報告草稿。
@@ -332,7 +332,7 @@ export default function ReportPage() {
               description="報告不會自動產生。請由諮商師確認摘要脈絡後，手動產生草稿。"
             >
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
                 disabled={isGenerating || !caseId || !sessionId}
                 onClick={handleGenerateReport}
                 type="button"
@@ -347,7 +347,7 @@ export default function ReportPage() {
             </SectionCard>
           ) : (
             <>
-              <section className="rounded-md border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 shadow-[0_10px_26px_rgba(146,64,14,0.08)]">
+              <section className="rounded-md border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 shadow-[0_10px_26px_rgba(146,64,14,0.08)] dark:border-amber-500/35 dark:bg-amber-950/55 dark:text-amber-100 dark:shadow-[0_10px_26px_rgba(0,0,0,0.24)]">
                 <div className="flex gap-3">
                   <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
                   <div>
@@ -366,25 +366,25 @@ export default function ReportPage() {
                 <div className="grid gap-3">
                   <ReportTextBlock title="主訴摘要" value={report.chief_complaint} />
 
-                  <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                    <h4 className="text-sm font-semibold text-teal-950">情緒模式觀察</h4>
+                  <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
+                    <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">情緒模式觀察</h4>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
                       {report.emotion_pattern?.description ?? '未提供'}
                     </p>
                     <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                      <div className="rounded-md border border-teal-100 bg-teal-50/55 p-3">
+                      <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-3 dark:border-indigo-700/60 dark:bg-indigo-950/32">
                         <p className="text-xs text-muted-foreground">強度趨勢</p>
                         <p className="mt-1 font-medium">
                           {formatTrend(report.emotion_pattern?.intensity_trend)}
                         </p>
                       </div>
-                      <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3">
+                      <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/90">
                         <p className="text-xs text-muted-foreground">高峰輪次</p>
                         <p className="mt-1 font-medium">
                           {report.emotion_pattern?.peak_turn ?? '未提供'}
                         </p>
                       </div>
-                      <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3">
+                      <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/90">
                         <p className="text-xs text-muted-foreground">主要情緒</p>
                         <p className="mt-1 font-medium">
                           {report.emotion_pattern?.dominant_emotions?.join('、') ??
@@ -403,8 +403,8 @@ export default function ReportPage() {
                     value={report.initial_conceptualization}
                   />
 
-                  <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-                    <h4 className="text-sm font-semibold text-teal-950">供審閱方向</h4>
+                  <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
+                    <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">供審閱方向</h4>
                     {report.suggested_directions?.length ? (
                       <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
                         {report.suggested_directions.map((direction) => (
@@ -418,10 +418,10 @@ export default function ReportPage() {
 
                   <ReportTextBlock title="危機摘要" value={report.crisis_summary} />
 
-                  <section className="rounded-md border border-slate-200 bg-white p-4 text-sm shadow-sm">
+                  <section className="rounded-md border border-slate-200 bg-white p-4 text-sm shadow-sm dark:border-slate-700 dark:bg-card">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span className="font-semibold">報告危機彙整</span>
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs">
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs dark:border-slate-700 dark:bg-slate-900/70">
                         has_crisis：{report.has_crisis ? 'true' : 'false'}
                       </span>
                     </div>

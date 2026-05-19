@@ -104,7 +104,7 @@ function getCrisisLabel(level) {
 function SectionShell({ children, className = '' }) {
   return (
     <section
-      className={`rounded-md border border-slate-200/80 bg-white/90 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ${className}`}
+      className={`rounded-md border border-slate-200/80 bg-white/90 shadow-[0_14px_40px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-card dark:shadow-[0_14px_40px_rgba(0,0,0,0.28)] ${className}`}
     >
       {children}
     </section>
@@ -113,7 +113,7 @@ function SectionShell({ children, className = '' }) {
 
 function EmptyState({ title, description }) {
   return (
-    <div className="rounded-md border border-dashed border-teal-200/70 bg-teal-50/45 p-5 text-sm">
+    <div className="rounded-md border border-dashed border-indigo-200/70 bg-indigo-50/45 p-5 text-sm dark:border-indigo-700/60 dark:bg-slate-700">
       <p className="font-medium text-foreground">{title}</p>
       <p className="mt-1 leading-6 text-muted-foreground">{description}</p>
     </div>
@@ -130,9 +130,9 @@ function IntensityBar({ value }) {
         <span>情緒強度</span>
         <span>{score == null ? '未提供' : `${score}/10`}</span>
       </div>
-      <div className="h-2 rounded-full bg-slate-200/80">
+      <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-700/80">
         <div
-          className="h-2 rounded-full bg-gradient-to-r from-teal-700 to-slate-700 transition-all"
+          className="h-2 rounded-full bg-gradient-to-r from-indigo-600 to-slate-600 transition-all dark:from-indigo-500 dark:to-slate-500"
           style={{ width: `${width}%` }}
         />
       </div>
@@ -163,9 +163,9 @@ function DimensionBars({ dimensions }) {
               </span>
               <span className="font-medium">{score == null ? '-' : score}</span>
             </div>
-            <div className="h-1.5 rounded-full bg-slate-200/80">
+            <div className="h-1.5 rounded-full bg-slate-200/80 dark:bg-slate-700/80">
               <div
-                className="h-1.5 rounded-full bg-teal-600"
+                className="h-1.5 rounded-full bg-indigo-600 dark:bg-indigo-500"
                 style={{ width: `${width}%` }}
               />
             </div>
@@ -383,9 +383,9 @@ export default function ConversationPage() {
 
   return (
     <div className="mx-auto flex max-w-7xl flex-col gap-5 px-4 py-6 pb-24">
-      <section className="flex flex-col gap-3 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur lg:flex-row lg:items-end lg:justify-between">
+      <section className="flex flex-col gap-3 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-700 dark:bg-card dark:shadow-[0_10px_35px_rgba(0,0,0,0.24)] lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl">
-          <p className="text-xs font-semibold text-teal-800">
+          <p className="text-xs font-semibold text-indigo-800 dark:text-indigo-300">
             諮商文件輔助工作區
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
@@ -398,7 +398,7 @@ export default function ConversationPage() {
 
         {reportUrl ? (
           <Link
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] hover:bg-teal-900"
+            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] hover:bg-indigo-900 dark:hover:bg-indigo-600"
             to={reportUrl}
           >
             <FileText className="h-4 w-4" />
@@ -415,7 +415,7 @@ export default function ConversationPage() {
 
       {crisisStatus?.crisis_level === 'high' ? (
         <section
-          className="rounded-md border border-red-300 bg-red-50/95 p-4 text-red-950 shadow-[0_12px_30px_rgba(185,28,28,0.10)]"
+          className="rounded-md border border-red-300 bg-red-50/95 p-4 text-red-950 shadow-[0_12px_30px_rgba(185,28,28,0.10)] dark:border-red-500/70 dark:bg-red-950/82 dark:text-red-100 dark:shadow-[0_12px_30px_rgba(127,29,29,0.28)]"
           role="alert"
         >
           <div className="flex gap-3">
@@ -439,7 +439,7 @@ export default function ConversationPage() {
             <label className="text-sm font-medium">
               建立個案代碼
               <input
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-input dark:bg-background dark:text-foreground dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/20"
                 value={codeName}
                 onChange={(event) => setCodeName(event.target.value)}
                 placeholder="例如：A001"
@@ -449,7 +449,7 @@ export default function ConversationPage() {
             <label className="text-sm font-medium">
               備註
               <input
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-input dark:bg-background dark:text-foreground dark:placeholder:text-slate-500 dark:focus:border-indigo-400 dark:focus:ring-indigo-500/20"
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
                 placeholder="選填，請避免可識別個資"
@@ -457,7 +457,7 @@ export default function ConversationPage() {
             </label>
 
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow-sm transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
               disabled={isCreatingCase}
               type="submit"
             >
@@ -470,7 +470,7 @@ export default function ConversationPage() {
             <label className="text-sm font-medium">
               選擇既有個案
               <select
-                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                className="mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 dark:border-input dark:bg-background dark:text-foreground dark:focus:border-indigo-400 dark:focus:ring-indigo-500/20"
                 disabled={isLoadingCases}
                 value={activeCaseId}
                 onChange={handleSelectCase}
@@ -485,7 +485,7 @@ export default function ConversationPage() {
             </label>
 
             <button
-              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md border bg-white px-4 text-sm font-medium transition hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md border bg-white px-4 text-sm font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-input dark:bg-card dark:hover:bg-slate-800"
               disabled={!activeCaseId}
               onClick={handleNewSession}
               type="button"
@@ -497,15 +497,15 @@ export default function ConversationPage() {
         </div>
 
         <div className="mt-4 grid gap-3 text-sm md:grid-cols-3">
-          <div className="rounded-md border border-teal-100 bg-teal-50/55 p-3">
+          <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-3 dark:border-indigo-700/60 dark:bg-slate-900/90">
             <p className="text-xs text-muted-foreground">目前個案</p>
             <p className="mt-1 font-medium">{activeCase?.code_name ?? '尚未選擇'}</p>
           </div>
-          <div className="rounded-md border border-slate-200 bg-white/70 p-3">
+          <div className="rounded-md border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/90">
             <p className="text-xs text-muted-foreground">會談識別碼</p>
             <p className="mt-1 truncate font-mono text-xs">{sessionId || '尚未建立'}</p>
           </div>
-          <div className="rounded-md border border-slate-200 bg-white/70 p-3">
+          <div className="rounded-md border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/90">
             <p className="text-xs text-muted-foreground">摘要數</p>
             <p className="mt-1 font-medium">{summaries.length} 筆微摘要</p>
           </div>
@@ -514,7 +514,7 @@ export default function ConversationPage() {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <SectionShell className="flex min-h-[640px] flex-col overflow-hidden ring-1 ring-white/60">
-          <div className="flex items-center justify-between gap-3 border-b bg-gradient-to-r from-white to-teal-50/55 px-4 py-3">
+          <div className="flex items-center justify-between gap-3 border-b bg-gradient-to-r from-white to-indigo-50/55 px-4 py-3 dark:border-slate-800 dark:from-slate-900 dark:to-indigo-950/18">
             <div>
               <h2 className="flex items-center gap-2 font-semibold">
                 <MessageSquareText className="h-4 w-4" />
@@ -529,7 +529,7 @@ export default function ConversationPage() {
             ) : null}
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,rgba(240,253,250,0.45),rgba(248,250,252,0.78))] p-4">
+          <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,rgba(240,253,250,0.45),rgba(248,250,252,0.78))] p-4 dark:bg-[linear-gradient(180deg,rgba(19,78,74,0.14),rgba(15,23,42,0.76))]">
             {messages.length === 0 ? (
               <EmptyState
                 title="尚無會談訊息"
@@ -545,7 +545,7 @@ export default function ConversationPage() {
                     key={message.id}
                   >
                     {!isUser ? (
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-teal-800 text-white shadow-sm">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
                         <Bot className="h-4 w-4" />
                       </div>
                     ) : null}
@@ -553,13 +553,13 @@ export default function ConversationPage() {
                     <div
                       className={`max-w-[86%] rounded-md border px-4 py-3 shadow-sm ${
                         isUser
-                          ? 'border-teal-900 bg-teal-900 text-white shadow-[0_12px_28px_rgba(19,78,74,0.16)]'
-                          : 'border-slate-200 bg-white text-card-foreground shadow-[0_10px_24px_rgba(15,23,42,0.06)]'
+                          ? 'border-primary bg-primary text-primary-foreground shadow-[0_12px_28px_rgba(30,41,59,0.16)] dark:border-indigo-500/50 dark:bg-indigo-700/80'
+                          : 'border-slate-200 bg-white text-card-foreground shadow-[0_10px_24px_rgba(15,23,42,0.06)] dark:border-slate-700 dark:bg-card'
                       }`}
                     >
                       <div
                         className={`flex flex-wrap items-center gap-2 text-xs ${
-                          isUser ? 'text-teal-100' : 'text-muted-foreground'
+                          isUser ? 'text-indigo-100' : 'text-muted-foreground'
                         }`}
                       >
                         <span>第 {message.turn_number} 輪</span>
@@ -576,7 +576,7 @@ export default function ConversationPage() {
                     </div>
 
                     {isUser ? (
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-teal-200 bg-teal-50 text-teal-900 shadow-sm">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-indigo-200 bg-indigo-50 text-indigo-900 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/35 dark:text-indigo-100">
                         <UserRound className="h-4 w-4" />
                       </div>
                     ) : null}
@@ -587,7 +587,7 @@ export default function ConversationPage() {
           </div>
 
           <form
-            className="sticky bottom-14 border-t bg-white/95 p-4 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur"
+            className="sticky bottom-14 border-t bg-white/95 p-4 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:!bg-slate-950 dark:shadow-[0_-16px_34px_rgba(0,0,0,0.26)]"
             onSubmit={handleSubmitTurn}
           >
             <label className="sr-only" htmlFor="conversation-input">
@@ -595,14 +595,14 @@ export default function ConversationPage() {
             </label>
             <div className="flex flex-col gap-3 md:flex-row">
               <textarea
-                className="min-h-24 flex-1 resize-none rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-slate-400 focus:border-teal-500 focus:bg-white focus:ring-2 focus:ring-teal-100"
+                className="min-h-24 flex-1 resize-none rounded-md border border-slate-200 bg-slate-50/70 px-3 py-2 text-sm leading-6 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:bg-white focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:!bg-slate-900 dark:text-foreground dark:placeholder:text-slate-400 dark:focus:border-indigo-400 dark:focus:bg-slate-900 dark:focus:ring-indigo-500/20"
                 id="conversation-input"
                 value={userInput}
                 onChange={(event) => setUserInput(event.target.value)}
                 placeholder="輸入本輪由個案提供、諮商師代為整理的文字..."
               />
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] transition hover:bg-teal-900 disabled:cursor-not-allowed disabled:opacity-60 md:self-end"
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600 md:self-end"
                 disabled={!activeCaseId || !sessionId || isSubmitting}
                 type="submit"
               >
@@ -626,7 +626,7 @@ export default function ConversationPage() {
                 </p>
               </div>
               {latestSummary ? (
-                <span className="rounded-full border border-teal-200 bg-teal-50 px-2 py-1 text-xs text-teal-900">
+                <span className="rounded-full border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-900 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100">
                   第 {latestSummary.turn_number} 輪
                 </span>
               ) : null}
@@ -641,7 +641,7 @@ export default function ConversationPage() {
               </div>
             ) : (
               <div className="mt-4 space-y-5 text-sm">
-                <div className="rounded-md border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-3 shadow-inner">
+                <div className="rounded-md border border-indigo-100 bg-gradient-to-br from-indigo-50 to-white p-3 shadow-inner dark:border-indigo-700/60 dark:from-indigo-950/32 dark:to-slate-900">
                   <p className="text-xs text-muted-foreground">主要情緒</p>
                   <p className="mt-1 text-base font-semibold">
                     {latestSummaryData.emotion?.primary ?? '未提供'}
@@ -666,7 +666,7 @@ export default function ConversationPage() {
                     <div className="flex flex-wrap gap-2">
                       {latestSummaryData.themes.map((theme) => (
                         <span
-                          className="rounded-full border border-teal-200 bg-teal-50/80 px-2.5 py-1 text-xs text-teal-950 shadow-sm"
+                          className="rounded-full border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-xs text-indigo-950 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100"
                           key={theme}
                         >
                           {theme}
@@ -678,7 +678,7 @@ export default function ConversationPage() {
                   )}
                 </div>
 
-                <blockquote className="rounded-md border border-slate-200 border-l-4 border-l-teal-500 bg-white/80 p-3 text-sm leading-6 text-muted-foreground shadow-sm">
+                <blockquote className="rounded-md border border-slate-200 border-l-4 border-l-indigo-500 bg-white/80 p-3 text-sm leading-6 text-muted-foreground shadow-sm dark:border-slate-700 dark:border-l-indigo-500 dark:bg-slate-900/90">
                   {latestSummaryData.key_statement ?? '尚無關鍵語句。'}
                 </blockquote>
               </div>
@@ -690,7 +690,7 @@ export default function ConversationPage() {
               <AlertTriangle className="h-4 w-4" />
               危機狀態
             </h2>
-            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/80 p-3 text-sm">
+            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/80 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/90">
               <div className="flex items-center justify-between gap-3">
                 <span className="text-muted-foreground">後端等級</span>
                 <span className="font-medium">
@@ -720,7 +720,7 @@ export default function ConversationPage() {
             </p>
             {reportUrl ? (
               <Link
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-teal-200 bg-teal-50/70 px-4 py-2 text-sm font-medium text-teal-950 transition hover:bg-teal-100"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm font-medium text-indigo-950 transition hover:bg-indigo-100 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100 dark:hover:bg-indigo-900/45"
                 to={reportUrl}
               >
                 開啟報告頁
@@ -728,7 +728,7 @@ export default function ConversationPage() {
               </Link>
             ) : (
               <button
-                className="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border bg-slate-50 px-4 py-2 text-sm font-medium opacity-60"
+                className="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border bg-slate-50 px-4 py-2 text-sm font-medium opacity-60 dark:border-slate-700 dark:bg-slate-900"
                 disabled
                 type="button"
               >

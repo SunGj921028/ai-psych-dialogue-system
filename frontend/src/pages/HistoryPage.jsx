@@ -49,9 +49,9 @@ export default function HistoryPage() {
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 pb-24">
-      <section className="flex flex-col gap-3 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur sm:flex-row sm:items-end sm:justify-between">
+      <section className="flex flex-col gap-3 rounded-md border border-slate-200/80 bg-white/65 p-5 shadow-[0_10px_35px_rgba(15,23,42,0.04)] backdrop-blur dark:border-slate-700 dark:bg-card dark:shadow-[0_10px_35px_rgba(0,0,0,0.24)] sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <p className="text-xs font-semibold text-teal-800">個案索引</p>
+          <p className="text-xs font-semibold text-indigo-800 dark:text-indigo-300">個案索引</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
             歷史個案
           </h1>
@@ -61,7 +61,7 @@ export default function HistoryPage() {
         </div>
 
         <Link
-          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(15,118,110,0.18)] transition hover:bg-teal-900"
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 dark:hover:bg-indigo-600"
           to="/"
         >
           <Plus className="h-4 w-4" />
@@ -75,8 +75,8 @@ export default function HistoryPage() {
         </div>
       ) : null}
 
-      <section className="rounded-md border border-slate-200/80 bg-white/92 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ring-1 ring-white/60">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-gradient-to-r from-white to-teal-50/55 px-4 py-3">
+      <section className="rounded-md border border-slate-200/80 bg-white/92 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ring-1 ring-white/60 dark:border-slate-700 dark:bg-card dark:shadow-[0_14px_40px_rgba(0,0,0,0.28)] dark:ring-slate-700/50">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-gradient-to-r from-white to-indigo-50/55 px-4 py-3 dark:border-slate-800 dark:from-slate-900 dark:to-indigo-950/18">
           <div>
             <h2 className="flex items-center gap-2 font-semibold">
               <FolderOpen className="h-4 w-4" />
@@ -93,7 +93,7 @@ export default function HistoryPage() {
 
         {!isLoading && cases.length === 0 ? (
           <div className="p-4">
-            <div className="rounded-md border border-dashed border-teal-200/70 bg-teal-50/45 p-5 text-sm">
+            <div className="rounded-md border border-dashed border-indigo-200/70 bg-indigo-50/45 p-5 text-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
               <p className="font-medium">尚未建立個案</p>
               <p className="mt-1 leading-6 text-muted-foreground">
                 請回到會談工作台建立第一個去識別化個案代碼。
@@ -106,7 +106,7 @@ export default function HistoryPage() {
           <div className="divide-y">
             {cases.map((caseItem) => (
               <article
-                className="grid gap-4 p-4 transition hover:bg-teal-50/45 md:grid-cols-[1fr_1.2fr_auto]"
+                className="grid gap-4 p-4 transition hover:bg-slate-50 dark:hover:bg-slate-800/70 md:grid-cols-[1fr_1.2fr_auto]"
                 key={caseItem.id}
               >
                 <div>
@@ -122,7 +122,7 @@ export default function HistoryPage() {
                 </p>
 
                 <Link
-                  className="inline-flex items-center justify-start gap-2 text-sm font-medium text-teal-900 hover:underline md:justify-center"
+                  className="inline-flex items-center justify-start gap-2 text-sm font-medium text-indigo-900 hover:underline dark:text-indigo-200 md:justify-center"
                   to="/"
                 >
                   開啟工作台
