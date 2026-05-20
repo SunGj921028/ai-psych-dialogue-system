@@ -24,32 +24,34 @@ function renderReportPage(entry) {
   )
 }
 
-function makeSummaryRow() {
+function makeSummaryRow(overrides = {}) {
+  const turnNumber = overrides.turn_number ?? 1
+
   return {
-    id: 'summary-1',
+    id: `summary-${turnNumber}`,
     case_id: caseId,
     session_id: sessionId,
-    turn_number: 1,
+    turn_number: turnNumber,
     summary: {
-      turn_number: 1,
+      turn_number: turnNumber,
       emotion: {
-        primary: 'synthetic emotion',
-        intensity: 2,
+        primary: overrides.primary ?? 'synthetic emotion',
+        intensity: overrides.intensity ?? 2,
       },
       emotion_dimensions: {
-        anxiety: 1,
-        sadness: 1,
-        anger: 0,
-        hopelessness: 0,
-        confusion: 1,
-        hope: 5,
+        anxiety: overrides.dimensions?.anxiety ?? 1,
+        sadness: overrides.dimensions?.sadness ?? 1,
+        anger: overrides.dimensions?.anger ?? 0,
+        hopelessness: overrides.dimensions?.hopelessness ?? 0,
+        confusion: overrides.dimensions?.confusion ?? 1,
+        hope: overrides.dimensions?.hope ?? 5,
       },
-      themes: ['synthetic report theme'],
-      key_statement: 'SYNTHETIC_SUMMARY_KEY',
-      crisis_flag: false,
+      themes: overrides.themes ?? ['synthetic report theme'],
+      key_statement: overrides.key_statement ?? 'SYNTHETIC_SUMMARY_KEY',
+      crisis_flag: overrides.crisis_flag ?? false,
     },
-    crisis_flag: false,
-    created_at: '2026-05-20T00:00:00Z',
+    crisis_flag: overrides.crisis_flag ?? false,
+    created_at: overrides.created_at ?? '2026-05-20T00:00:00Z',
   }
 }
 
@@ -128,5 +130,61 @@ describe('ReportPage behavior', () => {
     await user.click(screen.getAllByRole('button')[0])
 
     expect(await screen.findByText('SYNTHETIC_BACKEND_DISCLAIMER')).toBeInTheDocument()
+  })
+
+  test('renders lightweight summary review aids from loaded summaries', async () => {
+    api.getSessionSummaries.mockResolvedValue([
+      makeSummaryRow({
+        turn_number: 1,
+        intensity: 2,
+        themes: ['synthetic report theme', 'work stress'],
+        key_statement: 'SYNTHETIC_SUMMARY_KEY_ONE',
+      }),
+      makeSummaryRow({
+        turn_number: 2,
+        primary: 'synthetic worry',
+        intensity: 8,
+        dimensions: {
+          anxiety: 7,
+          sadness: 3,
+          anger: 1,
+          hopelessness: 4,
+          confusion: 5,
+          hope: 2,
+        },
+        themes: ['synthetic report theme'],
+        key_statement: 'SYNTHETIC_SUMMARY_KEY_TWO',
+        crisis_flag: true,
+      }),
+    ])
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('微摘要整理輔助')).toBeInTheDocument()
+    expect(screen.getByText('情緒強度趨勢')).toBeInTheDocument()
+    expect(screen.getByText('情緒面向平均')).toBeInTheDocument()
+    expect(screen.getByText('主題頻率')).toBeInTheDocument()
+    expect(screen.getAllByText('synthetic report theme').length).toBeGreaterThan(1)
+    expect(screen.getByText('2 次')).toBeInTheDocument()
+    expect(screen.getByText('第 2 輪')).toBeInTheDocument()
+    expect(screen.getByText('摘要危機標記：是')).toBeInTheDocument()
+    expect(screen.getByText('僅為 AI 微摘要整理，非客觀臨床量表。')).toBeInTheDocument()
+  })
+
+  test('does not write clinical report or summary content to browser storage', async () => {
+    const user = userEvent.setup()
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(screen.getAllByRole('button')[0])
+    await screen.findByText('SYNTHETIC_BACKEND_DISCLAIMER')
+
+    const storedValues = [
+      ...Object.values(window.localStorage),
+      ...Object.values(window.sessionStorage),
+    ].join('\n')
+
+    expect(storedValues).not.toContain('SYNTHETIC_SUMMARY_KEY')
+    expect(storedValues).not.toContain('SYNTHETIC_CHIEF_COMPLAINT')
+    expect(storedValues).not.toContain('SYNTHETIC_BACKEND_DISCLAIMER')
   })
 })

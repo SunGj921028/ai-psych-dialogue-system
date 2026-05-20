@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router-dom'
 import {
+  Activity,
+  AlertTriangle,
   ArrowLeft,
+  BarChart3,
   ClipboardList,
   FileText,
   Loader2,
   RefreshCcw,
   ShieldCheck,
+  Tags,
 } from 'lucide-react'
 import {
   generateReport,
@@ -62,6 +66,74 @@ function formatTrend(value) {
   return trendLabels[value] ?? value ?? '未提供'
 }
 
+const EMOTION_DIMENSION_LABELS = {
+  anxiety: '焦慮',
+  sadness: '悲傷',
+  anger: '憤怒',
+  hopelessness: '無助',
+  confusion: '困惑',
+  hope: '希望',
+}
+
+function getSummaryData(summaryRow) {
+  return summaryRow?.summary ?? {}
+}
+
+function getSummaryTurnNumber(summaryRow) {
+  return getSummaryData(summaryRow).turn_number ?? summaryRow?.turn_number ?? 0
+}
+
+function getSortedSummaries(summaries) {
+  return [...summaries].sort(
+    (a, b) => getSummaryTurnNumber(a) - getSummaryTurnNumber(b),
+  )
+}
+
+function getThemeCounts(summaries) {
+  const counts = new Map()
+
+  summaries.forEach((summaryRow) => {
+    const themes = getSummaryData(summaryRow).themes ?? []
+    themes.forEach((theme) => {
+      const normalizedTheme = String(theme ?? '').trim()
+      if (!normalizedTheme) return
+      counts.set(normalizedTheme, (counts.get(normalizedTheme) ?? 0) + 1)
+    })
+  })
+
+  return [...counts.entries()]
+    .map(([theme, count]) => ({ theme, count }))
+    .sort((a, b) => b.count - a.count || a.theme.localeCompare(b.theme, 'zh-Hant'))
+}
+
+function getEmotionDimensionAverages(summaries) {
+  return Object.entries(EMOTION_DIMENSION_LABELS).map(([key, label]) => {
+    const values = summaries
+      .map((summaryRow) => getSummaryData(summaryRow).emotion_dimensions?.[key])
+      .map(clampScore)
+      .filter((value) => value != null)
+    const average =
+      values.length > 0
+        ? values.reduce((sum, value) => sum + value, 0) / values.length
+        : null
+
+    return {
+      key,
+      label,
+      average,
+      latest: clampScore(
+        getSummaryData(summaries[summaries.length - 1])?.emotion_dimensions?.[key],
+      ),
+    }
+  })
+}
+
+function formatScore(value) {
+  const score = clampScore(value)
+  if (score == null) return '未提供'
+  return Number.isInteger(score) ? `${score}` : score.toFixed(1)
+}
+
 function SectionCard({ title, description, children }) {
   return (
     <section className="rounded-md border border-slate-200/80 bg-white/92 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ring-1 ring-white/60 dark:border-slate-700 dark:bg-card dark:shadow-[0_14px_40px_rgba(0,0,0,0.28)] dark:ring-slate-700/50">
@@ -106,6 +178,205 @@ function IntensityBar({ value }) {
         />
       </div>
     </div>
+  )
+}
+
+function ReviewAidCard({ icon: Icon, title, description, children }) {
+  return (
+    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
+      <div className="mb-3 flex items-start gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-indigo-100 bg-indigo-50 text-indigo-900 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100">
+          <Icon className="h-4 w-4" />
+        </div>
+        <div>
+          <h4 className="text-sm font-semibold text-slate-950 dark:text-slate-50">
+            {title}
+          </h4>
+          {description ? (
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              {description}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      {children}
+    </section>
+  )
+}
+
+function EmotionIntensityTrend({ summaries }) {
+  if (summaries.length === 0) {
+    return <p className="text-sm text-muted-foreground">尚無可整理的情緒強度資料。</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {summaries.map((summaryRow) => {
+        const summary = getSummaryData(summaryRow)
+        const score = clampScore(summary.emotion?.intensity)
+        const width = score == null ? 0 : score * 10
+        const turnNumber = getSummaryTurnNumber(summaryRow)
+
+        return (
+          <div className="space-y-1.5" key={summaryRow.id ?? turnNumber}>
+            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-slate-900 dark:text-slate-100">
+                  第 {turnNumber} 輪
+                </span>
+                <span className="text-muted-foreground">
+                  {summary.emotion?.primary ?? '未提供'}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {summaryRow.crisis_flag ? (
+                  <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/50 dark:text-amber-100">
+                    危機標記
+                  </span>
+                ) : null}
+                <span className="text-muted-foreground">
+                  {score == null ? '未提供' : `${score}/10`}
+                </span>
+              </div>
+            </div>
+            <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-700/80">
+              <div
+                className="h-2 rounded-full bg-gradient-to-r from-indigo-600 to-slate-600 dark:from-indigo-500 dark:to-slate-500"
+                style={{ width: `${width}%` }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ThemeFrequencyList({ themeCounts }) {
+  if (themeCounts.length === 0) {
+    return <p className="text-sm text-muted-foreground">尚無可整理的主題資料。</p>
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {themeCounts.map(({ theme, count }) => (
+        <span
+          className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50/80 px-3 py-1 text-xs text-indigo-950 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100"
+          key={theme}
+        >
+          <span>{theme}</span>
+          <span className="rounded-full bg-white/75 px-1.5 py-0.5 text-[11px] text-slate-700 dark:bg-slate-900/80 dark:text-slate-200">
+            {count} 次
+          </span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function EmotionDimensionOverview({ dimensions }) {
+  if (dimensions.every((dimension) => dimension.average == null)) {
+    return <p className="text-sm text-muted-foreground">尚無可整理的情緒面向資料。</p>
+  }
+
+  return (
+    <div className="space-y-3">
+      {dimensions.map((dimension) => {
+        const averageWidth = dimension.average == null ? 0 : dimension.average * 10
+        const latestText =
+          dimension.latest == null ? '最新：未提供' : `最新：${formatScore(dimension.latest)}/10`
+
+        return (
+          <div className="space-y-1.5" key={dimension.key}>
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="font-medium text-slate-900 dark:text-slate-100">
+                {dimension.label}
+              </span>
+              <span className="text-muted-foreground">
+                平均 {formatScore(dimension.average)}/10 · {latestText}
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-200/80 dark:bg-slate-700/80">
+              <div
+                className="h-2 rounded-full bg-slate-700 dark:bg-slate-300"
+                style={{ width: `${averageWidth}%` }}
+              />
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function CrisisOccurrenceIndicator({ summaries, report }) {
+  const flaggedTurns = summaries.filter((summaryRow) => summaryRow.crisis_flag)
+  const reportHasCrisis = report?.has_crisis === true
+  const hasAnyCrisis = flaggedTurns.length > 0 || reportHasCrisis
+
+  return (
+    <section
+      className={`rounded-md border p-4 text-sm shadow-sm ${
+        hasAnyCrisis
+          ? 'border-amber-300 bg-amber-50/90 text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/55 dark:text-amber-100'
+          : 'border-slate-200 bg-white text-slate-900 dark:border-slate-700 dark:bg-card dark:text-slate-100'
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+        <div>
+          <h4 className="font-semibold">危機標記彙整</h4>
+          <p className="mt-1 leading-6">
+            {hasAnyCrisis
+              ? `微摘要中有 ${flaggedTurns.length} 輪出現危機標記${
+                  reportHasCrisis ? '，報告資料也標示 has_crisis。' : '。'
+                }`
+              : '目前微摘要與已產生報告未標示危機發生。'}
+          </p>
+          <p className="mt-1 text-xs leading-5 opacity-80">
+            此處只整理後端欄位，不重新判斷危機嚴重度。
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function SummaryReviewAids({ summaries, report }) {
+  const sortedSummaries = getSortedSummaries(summaries)
+  const themeCounts = getThemeCounts(sortedSummaries)
+  const dimensions = getEmotionDimensionAverages(sortedSummaries)
+
+  return (
+    <SectionCard
+      title="微摘要整理輔助"
+      description="僅為 AI 微摘要整理，非客觀臨床量表。"
+    >
+      <div className="grid gap-3">
+        <CrisisOccurrenceIndicator report={report} summaries={sortedSummaries} />
+        <ReviewAidCard
+          description="依每輪微摘要的 emotion.intensity 呈現，不代表正式量表分數。"
+          icon={Activity}
+          title="情緒強度趨勢"
+        >
+          <EmotionIntensityTrend summaries={sortedSummaries} />
+        </ReviewAidCard>
+        <ReviewAidCard
+          description="以本會談各輪 emotion_dimensions 做簡單平均，並附最新一輪快照。"
+          icon={BarChart3}
+          title="情緒面向平均"
+        >
+          <EmotionDimensionOverview dimensions={dimensions} />
+        </ReviewAidCard>
+        <ReviewAidCard
+          description="統計微摘要 themes 出現次數，僅作審閱索引。"
+          icon={Tags}
+          title="主題頻率"
+        >
+          <ThemeFrequencyList themeCounts={themeCounts} />
+        </ReviewAidCard>
+      </div>
+    </SectionCard>
   )
 }
 
@@ -170,6 +441,7 @@ export default function ReportPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
+  const sortedSummaries = getSortedSummaries(summaries)
 
   const loadReportContext = useCallback(async () => {
     if (!caseId || !sessionId) return
@@ -248,11 +520,22 @@ export default function ReportPage() {
             個案概念化草稿
           </p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            結構化報告審閱
+            諮商師報告審閱工作區
           </h1>
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            本頁呈現 AI 產生的文件草稿與微摘要脈絡，供諮商師審閱、修正與判斷，不作診斷文件。
+            本頁整理會談微摘要與 AI 文件草稿，供諮商師審閱與判斷；內容不是診斷，也不是正式治療計畫。
           </p>
+          <div className="mt-3 flex flex-wrap gap-2 text-xs">
+            <span className="rounded-full border border-indigo-200 bg-indigo-50/80 px-2.5 py-1 text-indigo-950 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100">
+              手動產生草稿
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70">
+              不自動生成
+            </span>
+            <span className="rounded-full border border-slate-200 bg-white/80 px-2.5 py-1 text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70">
+              僅使用目前後端資料
+            </span>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -300,30 +583,57 @@ export default function ReportPage() {
           <p className="text-xs text-muted-foreground">可用微摘要</p>
           <p className="mt-1 font-semibold">{summaries.length} 筆</p>
         </div>
+        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 md:col-span-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs text-muted-foreground">草稿狀態</p>
+              <p className="mt-1 font-semibold">
+                {report ? `已產生於 ${formatDate(report.generated_at)}` : '尚未產生，需由諮商師手動觸發'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <ClipboardList className="h-4 w-4" />
+              <span>預覽 / 審閱用途</span>
+            </div>
+          </div>
+        </div>
       </section>
 
       <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <SectionCard
-          title="會談微摘要脈絡"
-          description="以下內容來自每輪微摘要，作為報告草稿生成與諮商師審閱的背景材料。"
-        >
+        <div className="space-y-5">
           {isLoading ? (
-            <p className="text-sm text-muted-foreground">載入中...</p>
-          ) : summaries.length === 0 ? (
-            <div className="rounded-md border border-dashed bg-muted/40 p-5 text-sm dark:border-slate-700">
-              <p className="font-medium">目前沒有可用摘要</p>
-              <p className="mt-1 leading-6 text-muted-foreground">
-                請先回到會談工作台送出至少一輪內容，再產生報告草稿。
-              </p>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {summaries.map((summaryRow) => (
-                <SummaryCard key={summaryRow.id} summaryRow={summaryRow} />
-              ))}
-            </div>
-          )}
-        </SectionCard>
+            <SectionCard
+              title="正在載入微摘要"
+              description="載入會談摘要後，這裡會整理可供審閱的輔助資訊。"
+            >
+              <p className="text-sm text-muted-foreground">載入中...</p>
+            </SectionCard>
+          ) : summaries.length > 0 ? (
+            <SummaryReviewAids report={report} summaries={summaries} />
+          ) : null}
+
+          <SectionCard
+            title="會談微摘要時間軸"
+            description="以下內容來自每輪微摘要，作為報告草稿生成與諮商師審閱的背景材料。"
+          >
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">載入中...</p>
+            ) : summaries.length === 0 ? (
+              <div className="rounded-md border border-dashed bg-muted/40 p-5 text-sm dark:border-slate-700">
+                <p className="font-medium">目前沒有可用摘要</p>
+                <p className="mt-1 leading-6 text-muted-foreground">
+                  請先回到會談工作台送出至少一輪內容，再產生報告草稿。
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {sortedSummaries.map((summaryRow) => (
+                  <SummaryCard key={summaryRow.id} summaryRow={summaryRow} />
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </div>
 
         <section className="space-y-4">
           {!report ? (
@@ -361,7 +671,7 @@ export default function ReportPage() {
 
               <SectionCard
                 title="AI 草稿報告"
-                description={`產生時間：${formatDate(report.generated_at)}。以下內容需由諮商師審閱後才可使用。`}
+                description={`產生時間：${formatDate(report.generated_at)}。以下內容需由諮商師審閱後才可使用，不作診斷文件。`}
               >
                 <div className="grid gap-3">
                   <ReportTextBlock title="主訴摘要" value={report.chief_complaint} />
@@ -404,7 +714,10 @@ export default function ReportPage() {
                   />
 
                   <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
-                    <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">供審閱方向</h4>
+                    <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">供諮商師審閱的可能取向</h4>
+                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                      以下僅為後端報告提供的取向名稱，並非具體治療指令或治療計畫。
+                    </p>
                     {report.suggested_directions?.length ? (
                       <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
                         {report.suggested_directions.map((direction) => (
