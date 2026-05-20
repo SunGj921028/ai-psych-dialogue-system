@@ -78,8 +78,15 @@ Current facts:
 - React + Vite app exists under `frontend/`.
 - Routes exist for conversation, report, history, and settings.
 - ConversationPage is integrated with the backend conversation API.
-- ReportPage is integrated with the backend report API and supports manual report
-  generation.
+- ReportPage acts as a counselor review workspace integrated with the backend
+  report API. Report generation remains manual-only.
+- ReportPage displays the backend-supplied fixed disclaimer prominently.
+- ReportPage includes summary review aids derived from loaded summaries: emotion
+  intensity trend, emotion dimension average/latest snapshot, theme frequency
+  chips, micro-summary timeline, and crisis occurrence indicator from existing
+  backend data.
+- ReportPage review aids are counselor-facing context only and are not objective
+  clinical measurements.
 - HistoryPage lists cases from the backend.
 - The app header includes navigation and a theme toggle.
 - Light/dark theme support exists and uses only the `ai-psych-theme`
@@ -90,8 +97,12 @@ Current facts:
 - `sessionStorage` may store only active case/session identifiers.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
-- Frontend deletion, PDF export, session browser, charts, Settings backend
-  integration, and MCP integration remain future work.
+- Frontend deletion, PDF export, session browser, optional charting library
+  integration, Settings backend integration, and MCP integration remain future
+  work.
+- No editable report fields, backend schema changes, LLM prompt changes, Recharts
+  integration, or final report template mirroring has been implemented for the
+  report workspace.
 
 ### Tests
 
@@ -147,8 +158,8 @@ Current facts:
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; uses backend crisis level for high-risk banner behavior. |
-| Task 12 visualization components | future | Depends on summary/report data contracts. |
-| Task 13 report page | partial | Integrated with report API and manual generation; PDF export and charts remain future work. |
+| Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual generation and prominent backend disclaimer; PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
 | Task 14 history page | partial | Lists backend cases; deletion and session browser remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -184,7 +195,8 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: deletion, PDF export, session browser,
-   charts, and Settings backend integration.
+   optional charts/Recharts, editable report review workflow, and Settings backend
+   integration.
 4. Fill remaining frontend test gaps: ReportPage error handling and
    ConversationPage submit edge cases.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
@@ -215,8 +227,13 @@ Current reality:
 - Active API includes `/health` and the Task 09 `/api` routes.
 - Backend routers are implemented.
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
-- Frontend conversation, report generation, history case listing, app navigation,
-  and light/dark theme support are implemented.
+- Frontend conversation, manual report generation, ReportPage counselor review
+  workspace, history case listing, app navigation, and light/dark theme support
+  are implemented.
+- ReportPage displays the backend disclaimer prominently and includes
+  summary-derived review aids for intensity trend, emotion dimensions, theme
+  frequency, micro-summary timeline, and crisis occurrence. These aids are not
+  objective clinical measurements.
 - Frontend deterministic tests are implemented with Vitest, React Testing
   Library, and jsdom, using mocked API helpers and no live backend/provider/network
   calls.
@@ -228,8 +245,11 @@ Current reality:
 
 Future intent:
 
-- Frontend should add deletion, PDF export, session browsing, charts, and Settings
-  backend integration.
+- Report workflow future work remains: formal report schema expansion,
+  source/evidence traceability, final PDF export, optional Recharts/charts, and
+  editable counselor review workflow.
+- Frontend should add deletion, session browsing, and Settings backend
+  integration.
 - Frontend testing should add ReportPage error handling tests, ConversationPage
   submit edge cases, optional Playwright/E2E later, and visual regression later
   if needed.
