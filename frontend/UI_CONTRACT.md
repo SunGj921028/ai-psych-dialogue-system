@@ -19,8 +19,15 @@ Current reality:
   - `/settings` via `SettingsPage`
 - ConversationPage is integrated with the backend API for case setup,
   conversation turns, assistant messages, summaries, and crisis status.
-- ReportPage is integrated with the backend API and supports manual report
-  generation.
+- ReportPage acts as a counselor review workspace integrated with the backend
+  API. Report generation remains manual-only.
+- ReportPage displays the backend-supplied fixed disclaimer prominently.
+- ReportPage includes summary review aids derived from loaded summaries: emotion
+  intensity trend, emotion dimension average/latest snapshot, theme frequency
+  chips, micro-summary timeline, and crisis occurrence indicator from existing
+  backend data.
+- ReportPage review aids are counselor-facing context only and are not objective
+  clinical measurements.
 - HistoryPage lists cases from the backend.
 - The shared header includes navigation and a theme toggle.
 - Light/dark theme support exists and stores only the theme preference under the
@@ -31,8 +38,10 @@ Current reality:
 - `sessionStorage` may store only active case/session identifiers.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
-- Frontend deletion, PDF export, session browser, charts, Settings backend
-  integration, and MCP integration are not implemented yet.
+- Frontend deletion, PDF export, session browser, optional charts/Recharts,
+  Settings backend integration, and MCP integration are not implemented yet.
+- Editable report fields, backend schema changes, LLM prompt changes, Recharts
+  integration, and final report template mirroring have not been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -43,9 +52,11 @@ Current reality:
 
 Remaining future behavior:
 
-- Complete deletion, PDF export, session browsing, visualization charts, Settings
-  backend integration, and MCP-related UI only when the corresponding tasks are
-  prioritized.
+- Complete deletion, session browsing, Settings backend integration, and
+  MCP-related UI only when the corresponding tasks are prioritized.
+- Complete report workflow future work: formal report schema expansion,
+  source/evidence traceability, final PDF export, optional Recharts/charts, and
+  editable counselor review workflow.
 - Complete remaining frontend testing gaps: ReportPage error handling tests,
   ConversationPage submit edge cases, optional Playwright/E2E later, and visual
   regression later if needed.
@@ -110,17 +121,29 @@ Route: `/report/:caseId`
 
 Responsibilities:
 
-- Load or generate a report for a selected case/session.
-- Display the fixed report disclaimer.
+- Load report workspace context for a selected case/session.
+- Generate or regenerate a report only when the counselor manually requests it.
+- Display the backend-supplied fixed report disclaimer prominently.
 - Display report text sections from `ConceptualizationReport`.
 - Display crisis summary and `has_crisis` status in counselor-review language.
+- Display summary-derived review aids:
+  - emotion intensity trend
+  - emotion dimension average/latest snapshot
+  - theme frequency chips
+  - micro-summary timeline
+  - crisis occurrence indicator from existing backend data
+- Present review aids as contextual counselor supports, not objective clinical
+  measurements.
 - Avoid presenting the report as diagnostic or final.
 
 Not currently implemented:
 
 - PDF export.
-- Emotion intensity trend charts.
-- Emotion dimension charts.
+- Editable report fields.
+- Backend schema changes.
+- LLM prompt changes.
+- Recharts or other chart library integration.
+- Final report template mirroring.
 
 ### HistoryPage
 
@@ -172,8 +195,10 @@ Expected calls:
 Expected calls:
 
 - `GET /api/cases/{case_id}` to validate/display case context.
-- `GET /api/cases/{case_id}/sessions/{session_id}/summaries` for chart data.
-- `POST /api/reports/generate` when generating or regenerating a report.
+- `GET /api/cases/{case_id}/sessions/{session_id}/summaries` for
+  summary-derived review aids.
+- `POST /api/reports/generate` only when the counselor manually generates or
+  regenerates a report.
 
 If `session_id` is not represented in the route yet, future UI work must decide
 whether to pass it through query params, navigation state, or a dedicated session route.
@@ -304,9 +329,11 @@ The banner should communicate that the system detected high-risk language and th
 the counselor must review and respond according to professional protocols. It should
 not give medical instructions to the client.
 
-## Expected Report Visualization Data
+## Expected Report Review Aid Data
 
-Visualizations should be derived from summaries and report fields.
+Report review aids should be derived from loaded summaries and existing backend
+report fields. They are counselor-facing context only and are not objective
+clinical measurements.
 
 ### Emotion Intensity Trend
 
@@ -332,7 +359,7 @@ Source:
 
 - `summary.emotion_dimensions`
 
-Expected chart data shape:
+Expected average/latest snapshot data shape:
 
 ```js
 [
@@ -345,8 +372,9 @@ Expected chart data shape:
 ]
 ```
 
-If multiple summaries exist, future UI work should decide whether to show latest
-dimensions, averages, or peak values. That choice is not finalized here.
+When multiple summaries exist, the current review workspace may show both average
+and latest values as contextual review aids. Formal charting and alternate
+aggregation choices remain future work.
 
 ### Themes
 
@@ -356,6 +384,29 @@ Source:
 - report-level conceptualization fields
 
 Themes should be displayed as counselor-review context, not as diagnostic labels.
+
+### Micro-Summary Timeline
+
+Source:
+
+- `summary.turn_number`
+- `summary.emotion.primary`
+- `summary.emotion.intensity`
+- `summary.key_statement`
+- `summary.crisis_flag`
+
+The timeline should help the counselor scan summary progression without treating
+the summaries as final clinical findings.
+
+### Crisis Occurrence Indicator
+
+Source:
+
+- existing backend summary/report crisis fields, including `crisis_flag`,
+  `crisis_level`, and/or `has_crisis` when available
+
+The indicator should reflect existing backend data only. The frontend must not
+recalculate crisis level or upgrade risk.
 
 ## UX Constraints
 
@@ -380,8 +431,10 @@ Current implemented state:
 
 - ConversationPage is wired to backend case, conversation, message, summary, and
   crisis data flows.
-- ReportPage is wired to backend report generation and supports manual report
-  generation.
+- ReportPage is a counselor review workspace wired to backend report generation,
+  supports manual-only report generation, displays the backend disclaimer
+  prominently, and includes summary-derived review aids.
+- ReportPage review aids are not objective clinical measurements.
 - HistoryPage lists backend cases.
 - Header navigation and light/dark theme toggle are implemented.
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
@@ -393,8 +446,11 @@ Current implemented state:
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
-- Add deletion, PDF export, session browser, charts, Settings backend integration,
-  and MCP-related UI when prioritized.
+- Add deletion, session browser, Settings backend integration, and MCP-related UI
+  when prioritized.
+- Complete future report work: formal report schema expansion, source/evidence
+  traceability, final PDF export, optional Recharts/charts, and editable
+  counselor review workflow.
 - Add remaining frontend tests for ReportPage error handling and ConversationPage
   submit edge cases.
 - Add optional Playwright/E2E later, and visual regression later if needed.
@@ -406,8 +462,6 @@ Future behavior:
   - route segment
   - navigation state
   - future session selector
-- How report emotion-dimension radar data should be aggregated:
-  - latest values
-  - average values
-  - peak values
-  - another method
+- Whether future report visuals should add Recharts or another charting library.
+- How a future formal report schema should support source/evidence traceability
+  and editable counselor review.

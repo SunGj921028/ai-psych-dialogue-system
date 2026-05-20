@@ -64,7 +64,9 @@ mismatches.
 - React + Vite app in `frontend/`.
 - React Router pages exist for conversation, report, history, and settings.
 - ConversationPage is integrated with the backend conversation API.
-- ReportPage is integrated with backend report generation.
+- ReportPage is integrated with backend manual report generation and now acts as
+  a counselor review workspace with a prominent backend disclaimer and
+  summary-derived review aids.
 - HistoryPage lists cases from the backend.
 - Header navigation and light/dark theme toggle are implemented.
 - Frontend deterministic tests use Vitest, React Testing Library, and jsdom.
@@ -72,8 +74,9 @@ mismatches.
   network.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted.
-- Frontend deletion, PDF export, session browser, charts, Settings backend
-  integration, and MCP integration remain future work.
+- Frontend deletion, PDF export, session browser, optional charts/Recharts,
+  editable report workflow, Settings backend integration, and MCP integration
+  remain future work.
 
 ### Active API Reality
 
