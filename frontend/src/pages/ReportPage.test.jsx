@@ -24,6 +24,13 @@ function renderReportPage(entry) {
   )
 }
 
+function getStoredBrowserData() {
+  return [
+    ...Object.entries(window.localStorage).flat(),
+    ...Object.entries(window.sessionStorage).flat(),
+  ].join('\n')
+}
+
 function makeSummaryRow(overrides = {}) {
   const turnNumber = overrides.turn_number ?? 1
 
@@ -198,5 +205,102 @@ describe('ReportPage behavior', () => {
     expect(storedValues).not.toContain('SYNTHETIC_SUMMARY_KEY')
     expect(storedValues).not.toContain('SYNTHETIC_CHIEF_COMPLAINT')
     expect(storedValues).not.toContain('SYNTHETIC_BACKEND_DISCLAIMER')
+  })
+})
+
+describe('ReportPage error handling', () => {
+  beforeEach(() => {
+    api.getCase.mockResolvedValue({
+      id: caseId,
+      code_name: 'CASE-001',
+      created_at: '2026-05-20T00:00:00Z',
+      note: null,
+    })
+    api.getSessionSummaries.mockResolvedValue([makeSummaryRow()])
+    api.generateReport.mockResolvedValue(makeReport())
+  })
+
+  test('getCase failure is sanitized and does not generate a report', async () => {
+    const rawErrorSentinel = 'RAW_CASE_LOAD_SECRET'
+    api.getCase.mockRejectedValue(new Error(rawErrorSentinel))
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await waitFor(() => {
+      expect(api.getCase).toHaveBeenCalledWith(caseId)
+      expect(api.getSessionSummaries).toHaveBeenCalledWith(caseId, sessionId)
+    })
+
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+    expect(api.generateReport).not.toHaveBeenCalled()
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain(rawErrorSentinel)
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
+  })
+
+  test('getSessionSummaries failure is sanitized and does not generate a report', async () => {
+    const rawErrorSentinel = 'RAW_SUMMARY_LOAD_SECRET'
+    const summaryFixtureText = 'SYNTHETIC_SUMMARY_FAILURE_FIXTURE'
+    api.getSessionSummaries.mockRejectedValue(new Error(rawErrorSentinel))
+    api.getCase.mockResolvedValue({
+      id: caseId,
+      code_name: 'CASE-001',
+      created_at: '2026-05-20T00:00:00Z',
+      note: summaryFixtureText,
+    })
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await waitFor(() => {
+      expect(api.getCase).toHaveBeenCalledWith(caseId)
+      expect(api.getSessionSummaries).toHaveBeenCalledWith(caseId, sessionId)
+    })
+
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+    expect(api.generateReport).not.toHaveBeenCalled()
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain(rawErrorSentinel)
+    expect(storedData).not.toContain(summaryFixtureText)
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
+  })
+
+  test('generateReport failure is sanitized and leaves generated report content absent', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_REPORT_GENERATION_SECRET'
+    api.generateReport.mockRejectedValue(new Error(rawErrorSentinel))
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await waitFor(() => {
+      expect(api.getCase).toHaveBeenCalledWith(caseId)
+      expect(api.getSessionSummaries).toHaveBeenCalledWith(caseId, sessionId)
+    })
+
+    expect(api.generateReport).not.toHaveBeenCalled()
+
+    await user.click(screen.getAllByRole('button')[0])
+
+    await waitFor(() => {
+      expect(api.generateReport).toHaveBeenCalledTimes(1)
+      expect(api.generateReport).toHaveBeenCalledWith({
+        case_id: caseId,
+        session_id: sessionId,
+      })
+    })
+
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+    expect(screen.queryByText('SYNTHETIC_BACKEND_DISCLAIMER')).not.toBeInTheDocument()
+    expect(screen.queryByText('SYNTHETIC_CHIEF_COMPLAINT')).not.toBeInTheDocument()
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain(rawErrorSentinel)
+    expect(storedData).not.toContain('SYNTHETIC_BACKEND_DISCLAIMER')
+    expect(storedData).not.toContain('SYNTHETIC_CHIEF_COMPLAINT')
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
   })
 })
