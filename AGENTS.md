@@ -165,8 +165,8 @@ These are current code facts and should not be contradicted in new work:
   If provider calls fail around JSON mode, prefer prompt-enforced JSON and robust
   parsing rather than changing the architecture.
 - Deterministic route, agent, and DB tests exist under `backend/tests/`; older
-  script-style tests may still call live providers and should remain manual checks
-  unless migrated.
+  manual checks live under `backend/manual_checks/` and may still call live
+  providers unless migrated.
 - Frontend deterministic tests exist and use Vitest, React Testing Library, and
   jsdom with mocked API helpers.
 - Future automated tests should remain deterministic pytest-style tests with mocked
@@ -227,6 +227,8 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - For DB tests, use temporary SQLite paths and avoid touching real local data.
 - Keep CI deterministic: run `backend/tests` and frontend test/build commands
   only, without provider API keys or live/manual provider scripts.
+- Do not use `backend/manual_checks/` as automated tests. Manual provider checks
+  in that directory should run only when explicitly requested.
 
 ## Documentation Map
 

@@ -3,6 +3,10 @@ import json
 import os
 import tempfile
 
+from _path import ensure_backend_path
+
+ensure_backend_path()
+
 from database.db import (
     init_db,
     create_case,
