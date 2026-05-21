@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import ConversationPage from './ConversationPage.jsx'
@@ -23,6 +23,17 @@ function setActiveSession() {
 
 function getConversationInput() {
   return document.getElementById('conversation-input')
+}
+
+function getSubmitTurnButton() {
+  return getConversationInput().closest('form').querySelector('button[type="submit"]')
+}
+
+function getStoredBrowserData() {
+  return [
+    ...Object.entries(window.localStorage).flat(),
+    ...Object.entries(window.sessionStorage).flat(),
+  ].join('\n')
 }
 
 function mockSessionData({ summaries = [] } = {}) {
@@ -320,5 +331,169 @@ describe('ConversationPage resume query behavior', () => {
         turn_number: 4,
       }),
     )
+  })
+})
+
+describe('ConversationPage submit error handling', () => {
+  test('blocks submit when no active case is selected', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([])
+    api.getSessionMessages.mockResolvedValue([])
+    api.getSessionSummaries.mockResolvedValue([])
+
+    renderWithRouter(<ConversationPage />)
+
+    await waitFor(() => {
+      expect(api.listCases).toHaveBeenCalledTimes(1)
+    })
+
+    const input = getConversationInput()
+    const submitButton = getSubmitTurnButton()
+
+    await user.type(input, 'SYNTHETIC_BLOCKED_MESSAGE')
+    expect(submitButton).toBeDisabled()
+    await user.click(submitButton)
+
+    expect(api.sendConversationTurn).not.toHaveBeenCalled()
+  })
+
+  test('sendConversationTurn failure is sanitized and does not persist sensitive input', async () => {
+    const rawErrorSentinel = 'RAW_PROVIDER_STACK_SECRET'
+    const submittedMessage = 'SYNTHETIC_SUBMITTED_MESSAGE_SHOULD_NOT_PERSIST'
+    setActiveSession()
+    mockSessionData()
+    api.sendConversationTurn.mockRejectedValue(new Error(rawErrorSentinel))
+
+    await renderReadyConversationPage()
+
+    const user = userEvent.setup()
+    const input = getConversationInput()
+    await user.type(input, submittedMessage)
+    await user.click(getSubmitTurnButton())
+
+    await waitFor(() => {
+      expect(api.sendConversationTurn).toHaveBeenCalledTimes(1)
+    })
+
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain(submittedMessage)
+    expect(storedData).not.toContain(rawErrorSentinel)
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage).sort()).toEqual([
+      'ai-psych-active-case-id',
+      'ai-psych-active-session-id',
+    ])
+  })
+
+  test('resumed session reload failure is sanitized and keeps storage safe', async () => {
+    const rawErrorSentinel = 'RAW_RELOAD_INTERNAL_SECRET'
+    const clinicalFixtureText = 'SYNTHETIC_RELOAD_CLINICAL_FIXTURE'
+    api.listCases.mockResolvedValue([
+      {
+        id: 'query-case',
+        code_name: 'CASE_QUERY',
+        created_at: '2026-05-20T00:00:00Z',
+        note: clinicalFixtureText,
+      },
+    ])
+    api.getSessionMessages.mockRejectedValue(new Error(rawErrorSentinel))
+    api.getSessionSummaries.mockResolvedValue([
+      {
+        id: 'query-summary',
+        case_id: 'query-case',
+        session_id: 'query-session',
+        turn_number: 1,
+        summary: {
+          turn_number: 1,
+          emotion: {
+            primary: 'synthetic emotion',
+            intensity: 3,
+          },
+          emotion_dimensions: {
+            anxiety: 1,
+            sadness: 1,
+            anger: 0,
+            hopelessness: 0,
+            confusion: 1,
+            hope: 5,
+          },
+          themes: [clinicalFixtureText],
+          key_statement: clinicalFixtureText,
+          crisis_flag: false,
+        },
+        crisis_flag: false,
+        created_at: '2026-05-20T00:00:00Z',
+      },
+    ])
+
+    renderWithRouter(<ConversationPage />, {
+      initialEntries: ['/?caseId=query-case&sessionId=query-session'],
+    })
+
+    await waitFor(() => {
+      expect(api.getSessionMessages).toHaveBeenCalledWith(
+        'query-case',
+        'query-session',
+      )
+      expect(api.getSessionSummaries).toHaveBeenCalledWith(
+        'query-case',
+        'query-session',
+      )
+    })
+
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain(rawErrorSentinel)
+    expect(storedData).not.toContain(clinicalFixtureText)
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage).sort()).toEqual([
+      'ai-psych-active-case-id',
+      'ai-psych-active-session-id',
+    ])
+  })
+
+  test('prevents duplicate submit while a turn request is in flight', async () => {
+    let resolveTurn
+    const pendingTurn = new Promise((resolve) => {
+      resolveTurn = resolve
+    })
+    setActiveSession()
+    mockSessionData()
+    api.sendConversationTurn.mockReturnValue(pendingTurn)
+
+    await renderReadyConversationPage()
+
+    const user = userEvent.setup()
+    const input = getConversationInput()
+    const submitButton = getSubmitTurnButton()
+
+    await user.type(input, 'SYNTHETIC_DUPLICATE_SUBMIT_MESSAGE')
+    await user.click(submitButton)
+
+    await waitFor(() => {
+      expect(api.sendConversationTurn).toHaveBeenCalledTimes(1)
+      expect(submitButton).toBeDisabled()
+    })
+
+    await user.click(submitButton)
+    expect(api.sendConversationTurn).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveTurn(
+        makeCrisisResponse({
+          crisis_flag: false,
+          crisis_level: 'none',
+          reason: 'SYNTHETIC_DUPLICATE_REASON',
+        }),
+      )
+      await pendingTurn
+    })
+
+    await waitFor(() => {
+      expect(submitButton).not.toBeDisabled()
+    })
   })
 })
