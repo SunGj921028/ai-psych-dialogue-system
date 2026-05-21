@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
   ArrowRight,
@@ -69,12 +69,21 @@ function formatDate(value) {
   }
 }
 
-function getNextTurnNumber(messages) {
-  const maxTurn = messages.reduce((currentMax, message) => {
+function getNextTurnNumber(messages, summaries = []) {
+  const maxMessageTurn = messages.reduce((currentMax, message) => {
     return Math.max(currentMax, Number(message.turn_number) || 0)
   }, 0)
 
-  return maxTurn + 1
+  const maxSummaryTurn = summaries.reduce((currentMax, summaryRow) => {
+    return Math.max(
+      currentMax,
+      Number(summaryRow.turn_number) ||
+        Number(summaryRow.summary?.turn_number) ||
+        0,
+    )
+  }, 0)
+
+  return Math.max(maxMessageTurn, maxSummaryTurn) + 1
 }
 
 function normalizeConversationHistory(messages) {
@@ -177,12 +186,15 @@ function DimensionBars({ dimensions }) {
 }
 
 export default function ConversationPage() {
+  const [searchParams] = useSearchParams()
+  const queryCaseId = searchParams.get('caseId') ?? ''
+  const querySessionId = searchParams.get('sessionId') ?? ''
   const [cases, setCases] = useState([])
   const [activeCaseId, setActiveCaseId] = useState(() => {
-    return sessionStorage.getItem(ACTIVE_CASE_KEY) ?? ''
+    return queryCaseId || sessionStorage.getItem(ACTIVE_CASE_KEY) || ''
   })
   const [sessionId, setSessionId] = useState(() => {
-    return sessionStorage.getItem(ACTIVE_SESSION_KEY) ?? ''
+    return querySessionId || sessionStorage.getItem(ACTIVE_SESSION_KEY) || ''
   })
   const [messages, setMessages] = useState([])
   const [summaries, setSummaries] = useState([])
@@ -245,6 +257,16 @@ export default function ConversationPage() {
   useEffect(() => {
     loadCases()
   }, [loadCases])
+
+  useEffect(() => {
+    if (queryCaseId && queryCaseId !== activeCaseId) {
+      setActiveCaseId(queryCaseId)
+    }
+
+    if (querySessionId && querySessionId !== sessionId) {
+      setSessionId(querySessionId)
+    }
+  }, [activeCaseId, queryCaseId, querySessionId, sessionId])
 
   useEffect(() => {
     if (!activeCaseId) {
@@ -360,7 +382,7 @@ export default function ConversationPage() {
     setIsSubmitting(true)
     setError('')
 
-    const nextTurnNumber = getNextTurnNumber(messages)
+    const nextTurnNumber = getNextTurnNumber(messages, summaries)
 
     try {
       const response = await sendConversationTurn({

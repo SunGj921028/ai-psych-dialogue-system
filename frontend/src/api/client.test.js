@@ -115,6 +115,16 @@ describe('API helper contracts', () => {
     expect(result).toEqual([])
   })
 
+  test('listCaseSessions calls the expected case sessions path', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: [] })
+    const { listCaseSessions } = await importClient()
+
+    const result = await listCaseSessions('case-1')
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith('/api/cases/case-1/sessions')
+    expect(result).toEqual([])
+  })
+
   test('getSessionSummaries calls the expected session summaries path', async () => {
     fakeApiClient.get.mockResolvedValue({ data: [] })
     const { getSessionSummaries } = await importClient()

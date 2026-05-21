@@ -57,6 +57,34 @@ def _summary_json(turn_number: int, *, crisis_flag: bool = False) -> str:
     )
 
 
+def _safe_preview_summary_json(
+    turn_number: int,
+    *,
+    primary: str = "焦慮",
+    intensity: int = 6,
+    key_statement: str = "SYNTHETIC_KEY_STATEMENT_SHOULD_NOT_LEAK",
+    crisis_flag: bool = False,
+) -> str:
+    return json.dumps(
+        {
+            "turn_number": turn_number,
+            "emotion": {"primary": primary, "intensity": intensity},
+            "emotion_dimensions": {
+                "anxiety": intensity,
+                "sadness": 1,
+                "anger": 0,
+                "hopelessness": 2,
+                "confusion": 1,
+                "hope": 3,
+            },
+            "themes": ["SYNTHETIC_THEME_SHOULD_NOT_LEAK"],
+            "key_statement": key_statement,
+            "crisis_flag": crisis_flag,
+        },
+        ensure_ascii=False,
+    )
+
+
 async def _table_names() -> set[str]:
     async with db_layer.get_db() as conn:
         cursor = await conn.execute(
@@ -186,6 +214,15 @@ async def _set_summary_created_at(summary_id: str, created_at: str) -> None:
         await conn.commit()
 
 
+async def _set_message_created_at(message_id: str, created_at: str) -> None:
+    async with db_layer.get_db() as conn:
+        await conn.execute(
+            "UPDATE messages SET created_at = ? WHERE id = ?",
+            (created_at, message_id),
+        )
+        await conn.commit()
+
+
 def test_crisis_and_latest_summary_helpers(initialized_db):
     case = anyio.run(db_layer.create_case, "A001")
 
@@ -247,3 +284,116 @@ def test_delete_case_cascades_messages_and_summaries(initialized_db):
     assert anyio.run(db_layer.get_messages_by_session, case["id"], "session-1") == []
     assert anyio.run(db_layer.get_summaries_by_session, case["id"], "session-1") == []
     assert anyio.run(db_layer.has_crisis_in_session, case["id"], "session-1") is False
+
+
+def test_session_metadata_is_derived_without_leaking_sensitive_fields(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    message_only = anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "session-message-only",
+        4,
+        "user",
+        "SYNTHETIC_PRIVATE_MESSAGE_SHOULD_NOT_LEAK",
+    )
+    anyio.run(
+        _set_message_created_at,
+        message_only["id"],
+        "2026-05-20T00:00:02+00:00",
+    )
+
+    old_message = anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "session-old",
+        1,
+        "user",
+        "older private message",
+    )
+    old_summary = anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-old",
+        3,
+        _safe_preview_summary_json(3, primary="焦慮", intensity=6, crisis_flag=True),
+        True,
+    )
+    anyio.run(_set_message_created_at, old_message["id"], "2026-05-20T00:00:01+00:00")
+    anyio.run(_set_summary_created_at, old_summary["id"], "2026-05-20T00:00:03+00:00")
+
+    newest_message = anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "session-newest",
+        2,
+        "assistant",
+        "newer private message",
+    )
+    newest_summary = anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-newest",
+        1,
+        _safe_preview_summary_json(
+            1,
+            primary="低落",
+            intensity=4,
+            key_statement="SYNTHETIC_LATEST_KEY_STATEMENT_SHOULD_NOT_LEAK",
+        ),
+        False,
+    )
+    anyio.run(
+        _set_message_created_at,
+        newest_message["id"],
+        "2026-05-20T00:00:04+00:00",
+    )
+    anyio.run(
+        _set_summary_created_at,
+        newest_summary["id"],
+        "2026-05-20T00:00:05+00:00",
+    )
+
+    sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
+
+    assert [session["session_id"] for session in sessions] == [
+        "session-newest",
+        "session-old",
+        "session-message-only",
+    ]
+
+    newest = sessions[0]
+    assert newest["message_count"] == 1
+    assert newest["summary_count"] == 1
+    assert newest["last_turn_number"] == 2
+    assert newest["last_updated"] == "2026-05-20T00:00:05+00:00"
+    assert newest["has_crisis"] is False
+    assert newest["latest_summary_preview"] == "第 1 輪 · 主要情緒：低落 · 強度 4/10"
+
+    old = sessions[1]
+    assert old["message_count"] == 1
+    assert old["summary_count"] == 1
+    assert old["last_turn_number"] == 3
+    assert old["has_crisis"] is True
+    assert old["latest_summary_preview"] == "第 3 輪 · 主要情緒：焦慮 · 強度 6/10"
+
+    message_only_session = sessions[2]
+    assert message_only_session["message_count"] == 1
+    assert message_only_session["summary_count"] == 0
+    assert message_only_session["last_turn_number"] == 4
+    assert message_only_session["has_crisis"] is False
+    assert message_only_session["latest_summary_preview"] is None
+
+    serialized = json.dumps(sessions, ensure_ascii=False)
+    assert "round" not in serialized
+    assert "summary_json" not in serialized
+    assert "SYNTHETIC_PRIVATE_MESSAGE_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_KEY_STATEMENT_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_LATEST_KEY_STATEMENT_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_THEME_SHOULD_NOT_LEAK" not in serialized
+
+
+def test_session_metadata_returns_empty_list_when_case_has_no_sessions(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    assert anyio.run(db_layer.get_session_metadata_by_case, case["id"]) == []

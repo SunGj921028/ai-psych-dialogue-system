@@ -44,6 +44,11 @@ export async function getSessionMessages(caseId, sessionId) {
   return response.data
 }
 
+export async function listCaseSessions(caseId) {
+  const response = await apiClient.get(`/api/cases/${caseId}/sessions`)
+  return response.data
+}
+
 export async function getSessionSummaries(caseId, sessionId) {
   const response = await apiClient.get(
     `/api/cases/${caseId}/sessions/${sessionId}/summaries`,

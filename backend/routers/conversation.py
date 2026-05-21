@@ -17,6 +17,7 @@ from database.db import (
     add_summary,
     get_case,
     get_messages_by_session,
+    get_session_metadata_by_case,
     get_summaries_by_session,
 )
 
@@ -61,6 +62,16 @@ class SummaryRowResponse(BaseModel):
     created_at: str
 
 
+class SessionMetadataResponse(BaseModel):
+    session_id: str
+    message_count: int
+    summary_count: int
+    last_turn_number: int
+    last_updated: str | None = None
+    has_crisis: bool
+    latest_summary_preview: str | None = None
+
+
 async def _ensure_case_exists(case_id: str) -> None:
     try:
         case = await get_case(case_id)
@@ -69,6 +80,18 @@ async def _ensure_case_exists(case_id: str) -> None:
 
     if case is None:
         raise HTTPException(status_code=404, detail="Case not found")
+
+
+@router.get(
+    "/cases/{case_id}/sessions",
+    response_model=list[SessionMetadataResponse],
+)
+async def list_case_sessions_route(case_id: str) -> list[dict]:
+    await _ensure_case_exists(case_id)
+    try:
+        return await get_session_metadata_by_case(case_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to list sessions") from exc
 
 
 @router.post("/conversation/turn", response_model=ConversationTurnResponse)
