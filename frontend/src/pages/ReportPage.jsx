@@ -442,6 +442,10 @@ export default function ReportPage() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
   const sortedSummaries = getSortedSummaries(summaries)
+  const conversationUrl =
+    caseId && sessionId
+      ? `/?caseId=${encodeURIComponent(caseId)}&sessionId=${encodeURIComponent(sessionId)}`
+      : '/'
 
   const loadReportContext = useCallback(async () => {
     if (!caseId || !sessionId) return
@@ -541,7 +545,7 @@ export default function ReportPage() {
         <div className="flex flex-wrap gap-2">
           <Link
             className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
-            to="/"
+            to={conversationUrl}
           >
             <ArrowLeft className="h-4 w-4" />
             回工作台

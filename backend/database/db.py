@@ -271,6 +271,28 @@ def _parse_summary_row(row: aiosqlite.Row) -> dict:
     return d
 
 
+def _build_latest_summary_preview(summary_json: str | None) -> str | None:
+    if not summary_json:
+        return None
+
+    try:
+        summary = json.loads(summary_json)
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+    turn_number = summary.get("turn_number")
+    emotion = summary.get("emotion")
+    if not isinstance(emotion, dict):
+        return None
+
+    primary = emotion.get("primary")
+    intensity = emotion.get("intensity")
+    if turn_number is None or not primary or intensity is None:
+        return None
+
+    return f"第 {turn_number} 輪 · 主要情緒：{primary} · 強度 {intensity}/10"
+
+
 async def get_summaries_by_session(case_id: str, session_id: str) -> list[dict]:
     async with get_db() as db:
         cur = await db.execute(
@@ -283,6 +305,109 @@ async def get_summaries_by_session(case_id: str, session_id: str) -> list[dict]:
         )
         rows = await cur.fetchall()
     return [_parse_summary_row(r) for r in rows]
+
+
+async def get_session_metadata_by_case(case_id: str) -> list[dict]:
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            WITH session_ids AS (
+                SELECT session_id FROM messages WHERE case_id = ?
+                UNION
+                SELECT session_id FROM summaries WHERE case_id = ?
+            )
+            SELECT
+                session_ids.session_id,
+                (
+                    SELECT COUNT(*)
+                    FROM messages
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS message_count,
+                (
+                    SELECT COUNT(*)
+                    FROM summaries
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS summary_count,
+                (
+                    SELECT MAX(round)
+                    FROM messages
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS message_last_turn,
+                (
+                    SELECT MAX(round)
+                    FROM summaries
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS summary_last_turn,
+                (
+                    SELECT MAX(created_at)
+                    FROM messages
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS message_last_updated,
+                (
+                    SELECT MAX(created_at)
+                    FROM summaries
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS summary_last_updated,
+                (
+                    SELECT COALESCE(MAX(crisis_flag), 0)
+                    FROM summaries
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS has_crisis,
+                (
+                    SELECT summary_json
+                    FROM summaries
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    ORDER BY created_at DESC, round DESC
+                    LIMIT 1
+                ) AS latest_summary_json
+            FROM session_ids
+            """,
+            (
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+                case_id,
+            ),
+        )
+        rows = await cur.fetchall()
+
+    sessions = []
+    for row in rows:
+        message_last_turn = row["message_last_turn"] or 0
+        summary_last_turn = row["summary_last_turn"] or 0
+        message_last_updated = row["message_last_updated"]
+        summary_last_updated = row["summary_last_updated"]
+
+        last_updated_values = [
+            value for value in (message_last_updated, summary_last_updated) if value
+        ]
+        last_updated = max(last_updated_values) if last_updated_values else None
+
+        sessions.append(
+            {
+                "session_id": row["session_id"],
+                "message_count": int(row["message_count"] or 0),
+                "summary_count": int(row["summary_count"] or 0),
+                "last_turn_number": max(message_last_turn, summary_last_turn),
+                "last_updated": last_updated,
+                "has_crisis": bool(row["has_crisis"]),
+                "latest_summary_preview": _build_latest_summary_preview(
+                    row["latest_summary_json"]
+                ),
+            }
+        )
+
+    return sorted(
+        sessions,
+        key=lambda session: session["last_updated"] or "",
+        reverse=True,
+    )
 
 
 async def get_latest_summaries(case_id: str, limit: int = 10) -> list[dict]:

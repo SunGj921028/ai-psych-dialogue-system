@@ -109,6 +109,18 @@ describe('ReportPage behavior', () => {
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 
+  test('back to conversation link preserves case and session query params', async () => {
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await waitFor(() => {
+      expect(api.getCase).toHaveBeenCalledWith(caseId)
+    })
+
+    expect(
+      document.querySelector(`a[href="/?caseId=${caseId}&sessionId=${sessionId}"]`),
+    ).toBeInTheDocument()
+  })
+
   test('clicking generate calls generateReport with case_id and session_id', async () => {
     const user = userEvent.setup()
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)

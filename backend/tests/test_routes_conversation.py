@@ -102,3 +102,106 @@ def test_conversation_turn_missing_case_returns_404(client):
     )
 
     assert response.status_code == 404
+
+
+def test_list_case_sessions_returns_derived_metadata(client, monkeypatch):
+    case_id = _create_case(client)
+
+    async def fake_generate_response(user_input, conversation_history):
+        return ConversationResponse(
+            content="SYNTHETIC_ASSISTANT_REPLY",
+            is_safe=True,
+            warning=None,
+        )
+
+    async def fake_detect_crisis(user_input):
+        return CrisisDetectionResult(
+            crisis_flag=True,
+            crisis_level="high",
+            reason="SYNTHETIC_CRISIS_REASON_SHOULD_NOT_LEAK",
+        )
+
+    async def fake_generate_summary(turn_number, user_input, assistant_response, crisis_flag):
+        return TurnSummary(
+            turn_number=turn_number,
+            emotion=EmotionDetail(primary="焦慮", intensity=6),
+            emotion_dimensions=EmotionDimensions(anxiety=6),
+            themes=["SYNTHETIC_THEME_SHOULD_NOT_LEAK"],
+            key_statement="SYNTHETIC_KEY_STATEMENT_SHOULD_NOT_LEAK",
+            crisis_flag=crisis_flag,
+        )
+
+    monkeypatch.setattr("routers.conversation.generate_response", fake_generate_response)
+    monkeypatch.setattr("routers.conversation.detect_crisis", fake_detect_crisis)
+    monkeypatch.setattr("routers.conversation.generate_summary", fake_generate_summary)
+
+    turn_response = client.post(
+        "/api/conversation/turn",
+        json={
+            "case_id": case_id,
+            "session_id": "session-1",
+            "turn_number": 3,
+            "user_input": "SYNTHETIC_PRIVATE_MESSAGE_SHOULD_NOT_LEAK",
+            "conversation_history": [],
+        },
+    )
+    assert turn_response.status_code == 200
+
+    response = client.get(f"/api/cases/{case_id}/sessions")
+
+    assert response.status_code == 200
+    sessions = response.json()
+    assert len(sessions) == 1
+    assert sessions[0]["session_id"] == "session-1"
+    assert sessions[0]["message_count"] == 2
+    assert sessions[0]["summary_count"] == 1
+    assert sessions[0]["last_turn_number"] == 3
+    assert sessions[0]["has_crisis"] is True
+    assert sessions[0]["latest_summary_preview"] == "第 3 輪 · 主要情緒：焦慮 · 強度 6/10"
+
+    serialized = str(sessions)
+    assert "round" not in serialized
+    assert "summary_json" not in serialized
+    assert "SYNTHETIC_PRIVATE_MESSAGE_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_KEY_STATEMENT_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_CRISIS_REASON_SHOULD_NOT_LEAK" not in serialized
+
+
+def test_list_case_sessions_existing_case_with_no_sessions_returns_empty_list(client):
+    case_id = _create_case(client)
+
+    response = client.get(f"/api/cases/{case_id}/sessions")
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+def test_list_case_sessions_missing_case_returns_404(client):
+    response = client.get("/api/cases/missing-case/sessions")
+
+    assert response.status_code == 404
+
+
+def test_list_case_sessions_db_failure_returns_generic_500(client, monkeypatch):
+    case_id = _create_case(client)
+
+    async def fail_get_session_metadata_by_case(case_id):
+        raise RuntimeError(
+            "SYNTHETIC_INTERNAL_SECRET summary_json round key_statement crisis reason"
+        )
+
+    monkeypatch.setattr(
+        "routers.conversation.get_session_metadata_by_case",
+        fail_get_session_metadata_by_case,
+        raising=False,
+    )
+
+    response = client.get(f"/api/cases/{case_id}/sessions")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to list sessions"}
+    assert "SYNTHETIC_INTERNAL_SECRET" not in response.text
+    assert "summary_json" not in response.text
+    assert "key_statement" not in response.text
+    assert "crisis reason" not in response.text
+    assert "round" not in response.text

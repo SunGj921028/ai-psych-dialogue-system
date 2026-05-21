@@ -207,3 +207,118 @@ describe('ConversationPage crisis behavior', () => {
     expect(fetchSpy).not.toHaveBeenCalled()
   })
 })
+
+describe('ConversationPage resume query behavior', () => {
+  beforeEach(() => {
+    window.sessionStorage.setItem('ai-psych-active-case-id', 'stale-case')
+    window.sessionStorage.setItem('ai-psych-active-session-id', 'stale-session')
+    api.listCases.mockResolvedValue([
+      {
+        id: 'query-case',
+        code_name: 'CASE_QUERY',
+        created_at: '2026-05-20T00:00:00Z',
+        note: 'SYNTHETIC_CASE_NOTE_SHOULD_NOT_PERSIST',
+      },
+    ])
+    api.getSessionMessages.mockResolvedValue([
+      {
+        id: 'query-message',
+        case_id: 'query-case',
+        session_id: 'query-session',
+        turn_number: 2,
+        role: 'user',
+        content: 'SYNTHETIC_RESUMED_MESSAGE',
+        created_at: '2026-05-20T00:00:00Z',
+      },
+    ])
+    api.getSessionSummaries.mockResolvedValue([
+      {
+        id: 'query-summary',
+        case_id: 'query-case',
+        session_id: 'query-session',
+        turn_number: 3,
+        summary: {
+          turn_number: 3,
+          emotion: {
+            primary: 'synthetic emotion',
+            intensity: 5,
+          },
+          emotion_dimensions: {
+            anxiety: 5,
+            sadness: 1,
+            anger: 0,
+            hopelessness: 1,
+            confusion: 1,
+            hope: 3,
+          },
+          themes: ['SYNTHETIC_RESUMED_SUMMARY'],
+          key_statement: 'SYNTHETIC_RESUMED_SUMMARY',
+          crisis_flag: false,
+        },
+        crisis_flag: false,
+        created_at: '2026-05-20T00:00:00Z',
+      },
+    ])
+  })
+
+  test('query params take precedence over stale storage and load the resumed session', async () => {
+    renderWithRouter(<ConversationPage />, {
+      initialEntries: ['/?caseId=query-case&sessionId=query-session'],
+    })
+
+    await waitFor(() => {
+      expect(api.getSessionMessages).toHaveBeenCalledWith(
+        'query-case',
+        'query-session',
+      )
+      expect(api.getSessionSummaries).toHaveBeenCalledWith(
+        'query-case',
+        'query-session',
+      )
+    })
+
+    expect(window.sessionStorage.getItem('ai-psych-active-case-id')).toBe(
+      'query-case',
+    )
+    expect(window.sessionStorage.getItem('ai-psych-active-session-id')).toBe(
+      'query-session',
+    )
+    expect(await screen.findByText('SYNTHETIC_RESUMED_MESSAGE')).toBeInTheDocument()
+    expect(
+      document.querySelector(
+        'a[href="/report/query-case?sessionId=query-session"]',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  test('resumed session uses loaded messages and summaries for the next turn number', async () => {
+    api.sendConversationTurn.mockResolvedValue(
+      makeCrisisResponse({
+        crisis_flag: false,
+        crisis_level: 'none',
+        reason: 'SYNTHETIC_NONE_REASON',
+      }),
+    )
+
+    renderWithRouter(<ConversationPage />, {
+      initialEntries: ['/?caseId=query-case&sessionId=query-session'],
+    })
+
+    await waitFor(() => {
+      expect(api.getSessionMessages).toHaveBeenCalledWith(
+        'query-case',
+        'query-session',
+      )
+    })
+
+    await submitSyntheticTurn()
+
+    expect(api.sendConversationTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        case_id: 'query-case',
+        session_id: 'query-session',
+        turn_number: 4,
+      }),
+    )
+  })
+})

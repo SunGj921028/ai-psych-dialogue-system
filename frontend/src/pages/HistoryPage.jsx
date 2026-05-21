@@ -1,7 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, Clock, FolderOpen, Plus } from 'lucide-react'
-import { listCases } from '../api/client.js'
+import {
+  ArrowRight,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  FileText,
+  FolderOpen,
+  Plus,
+} from 'lucide-react'
+import { listCaseSessions, listCases } from '../api/client.js'
 
 function getFriendlyError(error) {
   if (!error?.response) {
@@ -26,6 +34,10 @@ function formatDate(value) {
 
 export default function HistoryPage() {
   const [cases, setCases] = useState([])
+  const [expandedCaseIds, setExpandedCaseIds] = useState(() => new Set())
+  const [sessionsByCaseId, setSessionsByCaseId] = useState({})
+  const [loadingSessionsByCaseId, setLoadingSessionsByCaseId] = useState({})
+  const [sessionErrorsByCaseId, setSessionErrorsByCaseId] = useState({})
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,6 +58,49 @@ export default function HistoryPage() {
 
     loadCases()
   }, [])
+
+  async function handleToggleSessions(caseItem) {
+    const isExpanded = expandedCaseIds.has(caseItem.id)
+    const nextExpandedCaseIds = new Set(expandedCaseIds)
+
+    if (isExpanded) {
+      nextExpandedCaseIds.delete(caseItem.id)
+      setExpandedCaseIds(nextExpandedCaseIds)
+      return
+    }
+
+    nextExpandedCaseIds.add(caseItem.id)
+    setExpandedCaseIds(nextExpandedCaseIds)
+
+    if (sessionsByCaseId[caseItem.id]) return
+
+    setLoadingSessionsByCaseId((current) => ({
+      ...current,
+      [caseItem.id]: true,
+    }))
+    setSessionErrorsByCaseId((current) => ({
+      ...current,
+      [caseItem.id]: '',
+    }))
+
+    try {
+      const sessions = await listCaseSessions(caseItem.id)
+      setSessionsByCaseId((current) => ({
+        ...current,
+        [caseItem.id]: sessions,
+      }))
+    } catch (sessionError) {
+      setSessionErrorsByCaseId((current) => ({
+        ...current,
+        [caseItem.id]: getFriendlyError(sessionError),
+      }))
+    } finally {
+      setLoadingSessionsByCaseId((current) => ({
+        ...current,
+        [caseItem.id]: false,
+      }))
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-6 pb-24">
@@ -128,6 +183,92 @@ export default function HistoryPage() {
                   開啟工作台
                   <ArrowRight className="h-4 w-4" />
                 </Link>
+
+                <button
+                  aria-label={`${expandedCaseIds.has(caseItem.id) ? 'Hide' : 'Show'} sessions for ${caseItem.code_name}`}
+                  className="inline-flex items-center justify-start gap-2 rounded-md border bg-white px-3 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800 md:justify-center"
+                  onClick={() => handleToggleSessions(caseItem)}
+                  type="button"
+                >
+                  {expandedCaseIds.has(caseItem.id) ? (
+                    <ChevronUp className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                  Sessions
+                </button>
+
+                {expandedCaseIds.has(caseItem.id) ? (
+                  <div className="md:col-span-3">
+                    {sessionErrorsByCaseId[caseItem.id] ? (
+                      <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+                        {sessionErrorsByCaseId[caseItem.id]}
+                      </div>
+                    ) : null}
+                    {loadingSessionsByCaseId[caseItem.id] ? (
+                      <p className="text-sm text-muted-foreground">é ›ï£ï…¯éŠ?..</p>
+                    ) : null}
+                    {!loadingSessionsByCaseId[caseItem.id] &&
+                    !sessionErrorsByCaseId[caseItem.id] &&
+                    (sessionsByCaseId[caseItem.id] ?? []).length === 0 ? (
+                      <div className="rounded-md border border-dashed border-slate-200 bg-white/70 p-4 text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/70">
+                        No persisted sessions yet.
+                      </div>
+                    ) : null}
+                    {(sessionsByCaseId[caseItem.id] ?? []).length > 0 ? (
+                      <div className="grid gap-3">
+                        {(sessionsByCaseId[caseItem.id] ?? []).map((session) => (
+                          <section
+                            className="rounded-md border border-slate-200 bg-white/80 p-4 text-sm shadow-sm dark:border-slate-700 dark:bg-slate-900/80"
+                            key={session.session_id}
+                          >
+                            <div className="flex flex-wrap items-start justify-between gap-3">
+                              <div>
+                                <p className="font-mono text-xs">{session.session_id}</p>
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  {formatDate(session.last_updated)}
+                                </p>
+                              </div>
+                              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+                                <span>messages: {session.message_count}</span>
+                                <span>summaries: {session.summary_count}</span>
+                                <span>last turn: {session.last_turn_number}</span>
+                                {session.has_crisis ? (
+                                  <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/50 dark:text-amber-100">
+                                    crisis metadata
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            {session.latest_summary_preview ? (
+                              <p className="mt-3 rounded-md bg-slate-50 p-3 text-sm leading-6 text-muted-foreground dark:bg-slate-800/75">
+                                {session.latest_summary_preview}
+                              </p>
+                            ) : null}
+
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              <Link
+                                className="inline-flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-sm font-medium text-indigo-950 transition hover:bg-indigo-100 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100 dark:hover:bg-indigo-900/45"
+                                to={`/?caseId=${encodeURIComponent(caseItem.id)}&sessionId=${encodeURIComponent(session.session_id)}`}
+                              >
+                                <ArrowRight className="h-4 w-4" />
+                                Resume conversation
+                              </Link>
+                              <Link
+                                className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                                to={`/report/${caseItem.id}?sessionId=${encodeURIComponent(session.session_id)}`}
+                              >
+                                <FileText className="h-4 w-4" />
+                                Open report
+                              </Link>
+                            </div>
+                          </section>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
               </article>
             ))}
           </div>

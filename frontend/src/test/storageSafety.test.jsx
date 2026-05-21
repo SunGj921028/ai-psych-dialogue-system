@@ -1,7 +1,8 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react'
+import { fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import ConversationPage from '../pages/ConversationPage.jsx'
+import HistoryPage from '../pages/HistoryPage.jsx'
 import { renderWithRouter } from './renderWithRouter.jsx'
 import * as api from '../api/client.js'
 
@@ -9,6 +10,7 @@ vi.mock('../api/client.js', () => ({
   createCase: vi.fn(),
   getSessionMessages: vi.fn(),
   getSessionSummaries: vi.fn(),
+  listCaseSessions: vi.fn(),
   listCases: vi.fn(),
   sendConversationTurn: vi.fn(),
 }))
@@ -93,6 +95,17 @@ describe('browser storage safety', () => {
       },
     ])
     api.getSessionSummaries.mockResolvedValue([makeSummaryRow()])
+    api.listCaseSessions.mockResolvedValue([
+      {
+        session_id: activeSessionId,
+        message_count: 2,
+        summary_count: 1,
+        last_turn_number: 1,
+        last_updated: '2026-05-20T00:00:00Z',
+        has_crisis: true,
+        latest_summary_preview: 'SYNTHETIC_SESSION_PREVIEW_SECRET',
+      },
+    ])
     api.sendConversationTurn.mockResolvedValue({
       case_id: activeCaseId,
       session_id: activeSessionId,
@@ -139,5 +152,47 @@ describe('browser storage safety', () => {
     )
     expectStorageDoesNotContainClinicalSentinels(window.localStorage)
     expectStorageDoesNotContainClinicalSentinels(window.sessionStorage)
+  })
+
+  test('session listing and resume do not persist session metadata previews', async () => {
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_STORAGE_SAFE')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_STORAGE_SAFE/i,
+      }),
+    )
+
+    expect(await screen.findByText('SYNTHETIC_SESSION_PREVIEW_SECRET')).toBeInTheDocument()
+
+    renderWithRouter(<ConversationPage />, {
+      initialEntries: [
+        `/?caseId=${activeCaseId}&sessionId=${activeSessionId}`,
+      ],
+    })
+
+    await waitFor(() => {
+      expect(api.getSessionMessages).toHaveBeenCalledWith(
+        activeCaseId,
+        activeSessionId,
+      )
+      expect(api.getSessionSummaries).toHaveBeenCalledWith(
+        activeCaseId,
+        activeSessionId,
+      )
+    })
+
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage).sort()).toEqual([
+      'ai-psych-active-case-id',
+      'ai-psych-active-session-id',
+    ])
+    expectStorageDoesNotContainClinicalSentinels(window.localStorage)
+    expectStorageDoesNotContainClinicalSentinels(window.sessionStorage)
+    expect(JSON.stringify(storageEntries(window.sessionStorage))).not.toContain(
+      'SYNTHETIC_SESSION_PREVIEW_SECRET',
+    )
   })
 })
