@@ -2,7 +2,8 @@
 
 This document describes backend testing direction and current test status. The
 repository now includes deterministic pytest tests for routes, agents, and the
-SQLite data layer, while older live-provider scripts remain manual checks.
+SQLite data layer, while older live-provider scripts live under
+`backend/manual_checks/` as manual checks.
 
 ## Testing Direction
 
@@ -43,20 +44,21 @@ occur.
 
 ## Existing Test / Script Inventory
 
-Current backend scripts:
+Current backend manual check scripts:
 
 | File | Current role | Notes |
 |---|---|---|
-| `backend/db_smoke_test.py` | legacy/manual smoke test | Uses a temporary DB but remains outside the default deterministic pytest commands. |
-| `backend/test_crisis_agent.py` | live/manual script | Calls the crisis agent and may call Groq. |
-| `backend/test_summary_agent.py` | live/manual script | Calls the summary agent and may call Groq. |
-| `backend/test_conversation_agent.py` | live/manual script | Calls the conversation agent and may call Gemini. |
-| `backend/test_analysis_agent.py` | live/manual script | Calls the analysis agent and may call Gemini depending on summary count. |
-| `backend/test_providers.py` | live/manual script | Explicit provider connectivity check. |
+| `backend/manual_checks/check_db_smoke.py` | legacy/manual smoke check | Uses a temporary DB but remains outside the default deterministic pytest commands. |
+| `backend/manual_checks/check_crisis_agent.py` | live/manual script | Calls the crisis agent and may call Groq. |
+| `backend/manual_checks/check_summary_agent.py` | live/manual script | Calls the summary agent and may call Groq. |
+| `backend/manual_checks/check_conversation_agent.py` | live/manual script | Calls the conversation agent and may call Gemini. |
+| `backend/manual_checks/check_analysis_agent.py` | live/manual script | Calls the analysis agent and may call Gemini depending on summary count. |
+| `backend/manual_checks/check_providers.py` | live/manual script | Explicit provider connectivity check. |
 
-These files should not be included in the default deterministic test command yet.
-They are manual/live or legacy smoke scripts and may require provider keys, network
-access, or model behavior.
+These files are named `check_*.py` to avoid pytest test discovery. They should not
+be included in the default deterministic test command. They are manual/live or
+legacy smoke scripts and may require provider keys, network access, or model
+behavior.
 
 ## Recommended Test Layout
 
@@ -64,6 +66,15 @@ Current and recommended layout:
 
 ```text
 backend/
+  manual_checks/
+    README.md
+    _path.py
+    check_analysis_agent.py
+    check_conversation_agent.py
+    check_crisis_agent.py
+    check_db_smoke.py
+    check_providers.py
+    check_summary_agent.py
   tests/
     conftest.py
     helpers.py
@@ -79,7 +90,7 @@ backend/
 ```
 
 This layout now exists. Additional deterministic tests should continue to be added
-under `backend/tests/` rather than expanding the top-level manual scripts.
+under `backend/tests/` rather than expanding manual check scripts.
 
 ## Testing The Database
 
@@ -164,10 +175,9 @@ On Windows, if temp/cache folders are locked by local tools, use a unique
 python -m pytest backend/tests -q --basetemp=.tmp_pytest_backend_local_1 -p no:cacheprovider
 ```
 
-Do not run `python -m pytest backend` as the default automated suite while
-top-level `backend/test_*.py` live/manual scripts remain, because broad discovery
-may collect those scripts. Do not run live provider scripts unless explicitly
-requested.
+Do not run `python -m pytest backend` as the default automated suite unless you
+have confirmed discovery behavior for the current tree. Do not run live provider
+scripts unless explicitly requested.
 
 CI runs only `backend/tests`:
 
@@ -184,9 +194,10 @@ Guidance:
 - Require explicit user intent before running them.
 - Expect provider keys and network access to be necessary.
 - Do not make live provider checks part of CI or default automated verification.
-- Treat `backend/test_providers.py` as a connectivity script, not a unit test.
-- Keep `backend/db_smoke_test.py` as a legacy/manual smoke script unless a future
-  task explicitly migrates or removes it.
+- Treat `backend/manual_checks/check_providers.py` as a connectivity script, not
+  a unit test.
+- Keep `backend/manual_checks/check_db_smoke.py` as a legacy/manual smoke script
+  unless a future task explicitly migrates or removes it.
 
 ## Safety Regression Tests
 

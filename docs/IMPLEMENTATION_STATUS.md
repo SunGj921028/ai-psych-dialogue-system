@@ -134,9 +134,10 @@ Current facts:
   behavior where provider calls would otherwise occur.
 - Agent tests monkeypatch LLM clients and do not require API keys, network access,
   or live providers.
-- Top-level `backend/test_*.py` files remain script-style live/manual checks.
-- `backend/db_smoke_test.py` remains a legacy/manual smoke script outside the
-  default deterministic pytest commands.
+- Manual/live backend scripts live under `backend/manual_checks/` as `check_*.py`
+  files to avoid pytest discovery.
+- `backend/manual_checks/check_db_smoke.py` remains a legacy/manual smoke script
+  outside the default deterministic pytest commands.
 - Future automated tests should continue to be pytest-style and should mock LLM
   clients by default.
 - Live provider scripts should remain manual checks, not required automated tests.
@@ -164,8 +165,7 @@ Current facts:
   visual regression later if needed.
 - GitHub Actions CI exists and runs deterministic backend tests under
   `backend/tests/` plus frontend `npm run test` and `npm run build`.
-- CI does not run live provider/manual scripts, top-level `backend/test_*.py`
-  scripts, or `backend/db_smoke_test.py`.
+- CI does not run live provider/manual scripts under `backend/manual_checks/`.
 
 ## Task / Status Table
 
@@ -211,7 +211,8 @@ Status categories:
   Groq/Gemini split.
 - Deterministic backend tests now exist under `backend/tests/`, and deterministic
   frontend tests now cover core UI/API/storage behavior; legacy live-provider
-  scripts still remain outside the default deterministic test suite.
+  scripts live under `backend/manual_checks/` outside the default deterministic
+  test suite.
 
 ## Recommended Implementation Order
 
