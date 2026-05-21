@@ -19,6 +19,7 @@ source code remains the implementation truth.
 | GET | `/api/cases/{case_id}` | implemented | Returns 404 when missing. |
 | DELETE | `/api/cases/{case_id}` | implemented | Deletes one case; DB cascades related rows. |
 | POST | `/api/conversation/turn` | implemented | Runs conversation/crisis agents, persists messages and summary. |
+| GET | `/api/cases/{case_id}/sessions` | implemented | Returns derived session metadata for a case. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/messages` | implemented | Returns messages with `turn_number`. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/summaries` | implemented | Returns parsed summary data. |
 | POST | `/api/reports/generate` | implemented | Generates a `ConceptualizationReport` for a case/session. |
@@ -208,6 +209,57 @@ Implementation notes:
 - `summary.crisis_flag` must use the crisis detector result.
 - The frontend-generated `session_id` should be accepted; the backend does not generate it.
 
+### Session Listing
+
+#### List Case Sessions
+
+Status: implemented
+
+`GET /api/cases/{case_id}/sessions`
+
+Response:
+
+```json
+[
+  {
+    "session_id": "session uuid",
+    "message_count": 2,
+    "summary_count": 1,
+    "last_turn_number": 3,
+    "last_updated": "ISO-8601 UTC",
+    "has_crisis": false,
+    "latest_summary_preview": "metadata-only summary preview"
+  }
+]
+```
+
+Response fields:
+
+- `session_id`: frontend-generated session identifier.
+- `message_count`: number of persisted messages in the session.
+- `summary_count`: number of persisted summaries in the session.
+- `last_turn_number`: highest public turn number from available messages or summaries.
+- `last_updated`: latest message or summary timestamp.
+- `has_crisis`: true when persisted summary metadata indicates a crisis flag.
+- `latest_summary_preview`: metadata-only preview derived from turn, emotion, and
+  intensity when available.
+
+Implementation notes:
+
+- Use `database.db.get_session_metadata_by_case()`.
+- Sessions are derived from existing messages and summaries.
+- No dedicated sessions table exists yet.
+- Return 404 if the case does not exist.
+- Return `[]` for an existing case with no derived sessions.
+- On helper failures, return 500 with a generic non-leaking message.
+- Do not expose DB-internal `round`.
+- Do not expose raw `summary_json`.
+- Do not expose raw messages.
+- Do not expose summary `key_statement`.
+- Do not expose crisis reasons.
+- `latest_summary_preview` must remain metadata-only and should be derived only
+  from turn, emotion, and intensity when available.
+
 ### Session Messages
 
 #### Get Session Messages
@@ -336,19 +388,20 @@ Implementation notes:
 
 These are not required for Task 09:
 
-- Session listing and session metadata endpoints.
 - Latest summaries endpoint for dashboards.
 - PDF export endpoint.
 - Prompt/settings management endpoints.
 - MCP-related HTTP bridge endpoints.
 
-## Remaining Frontend Coordination Decision
+## Frontend Session Navigation Contract
 
 - Backend report generation receives `session_id` in the
   `POST /api/reports/generate` request body.
-- Future frontend work still needs to decide how `session_id` reaches report views
-  in the browser, such as query parameter, route segment, navigation state, or a
-  future session selector.
+- Frontend resume links use `/?caseId={caseId}&sessionId={sessionId}`.
+- Frontend report links use `/report/{caseId}?sessionId={sessionId}`.
+- Conversation query params take precedence over stale `sessionStorage`
+  identifiers.
+- ReportPage back-to-conversation links preserve the active case and session IDs.
 
 ## Expected Backend Data Flow
 
@@ -371,6 +424,13 @@ These are not required for Task 09:
 4. Call `generate_report()`.
 5. Return `ConceptualizationReport`.
 
+### Session Listing Flow
+
+1. Validate request and confirm `case_id` exists.
+2. Load derived session metadata from persisted messages and summaries.
+3. Return one metadata object per derived session.
+4. Return `[]` when the case exists but has no persisted sessions.
+
 ## DB / API Mapping Rules
 
 - Public API uses `turn_number`.
@@ -379,10 +439,17 @@ These are not required for Task 09:
 - DB summary rows contain raw `summary_json`, but DB helper return values expose parsed
   `summary`.
 - When persisting a summary, serialize the `TurnSummary` model to JSON.
+- Session metadata is derived from existing message and summary rows; there is no
+  sessions table yet.
+- Session metadata responses must not expose raw messages, raw `summary_json`,
+  `key_statement`, crisis reasons, or DB-internal `round`.
 
 ## Error Handling Expectations
 
 - Missing case: return 404.
+- Session listing for an existing case with no derived sessions: return `[]`.
+- Session listing helper failure: return 500 with a generic message that does not
+  leak clinical content or implementation details.
 - Missing session data for report generation: return a valid insufficient-data report
   if the analysis agent supports that path, or return 404 only if the case/session is
   clearly invalid. Prefer preserving existing `analysis_agent.generate_report()` behavior.

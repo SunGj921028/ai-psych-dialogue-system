@@ -53,11 +53,18 @@ Current facts:
   - `GET /api/cases/{case_id}`
   - `DELETE /api/cases/{case_id}`
   - `POST /api/conversation/turn`
+  - `GET /api/cases/{case_id}/sessions`
   - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
   - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
   - `POST /api/reports/generate`
 - Public route responses expose `turn_number`, not DB-internal `round`.
 - Summary responses expose parsed summary data, not raw `summary_json`.
+- Session listing is derived from existing messages and summaries. There is no
+  dedicated sessions table yet, so empty sessions without persisted messages or
+  summaries cannot be listed.
+- Session metadata responses expose only metadata fields and do not expose raw
+  messages, raw `summary_json`, summary `key_statement`, crisis reasons, or
+  DB-internal `round`.
 
 ### MCP Server
 
@@ -77,7 +84,9 @@ Current facts:
 
 - React + Vite app exists under `frontend/`.
 - Routes exist for conversation, report, history, and settings.
-- ConversationPage is integrated with the backend conversation API.
+- ConversationPage is integrated with the backend conversation API and supports
+  query-param resume with `caseId` and `sessionId`; query params take precedence
+  over stale `sessionStorage` identifiers.
 - ReportPage acts as a counselor review workspace integrated with the backend
   report API. Report generation remains manual-only.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
@@ -87,7 +96,11 @@ Current facts:
   backend data.
 - ReportPage review aids are counselor-facing context only and are not objective
   clinical measurements.
-- HistoryPage lists cases from the backend.
+- HistoryPage lists cases from the backend and can lazily expand multiple cases
+  to show derived session metadata, resume links, and report links.
+- HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
+- HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
+- ReportPage back-to-conversation links preserve the active case and session IDs.
 - The app header includes navigation and a theme toggle.
 - Light/dark theme support exists and uses only the `ai-psych-theme`
   localStorage key.
@@ -95,11 +108,12 @@ Current facts:
   summaries, report text, crisis reasons, and case notes are not persisted to
   browser storage.
 - `sessionStorage` may store only active case/session identifiers.
+- Session metadata and preview text are not persisted to browser storage.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
-- Frontend deletion, PDF export, session browser, optional charting library
-  integration, Settings backend integration, and MCP integration remain future
-  work.
+- Frontend deletion, PDF export, session deletion/archive, session titles, richer
+  session metadata, optional charting library integration, Settings backend
+  integration, and MCP integration remain future work.
 - No editable report fields, backend schema changes, LLM prompt changes, Recharts
   integration, or final report template mirroring has been implemented for the
   report workspace.
@@ -130,11 +144,15 @@ Current facts:
   and jsdom.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
   network.
+- Backend DB and route tests cover derived session metadata, missing-case 404,
+  existing-case empty-list behavior, and generic non-leaking session-listing
+  failure handling.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
-  localStorage usage, ConversationPage crisis UI behavior, ReportPage missing
-  `sessionId` handling, manual report generation, disclaimer display, API helper
-  path/payload contracts, HistoryPage list/empty/error/no-future-controls
-  behavior, and browser storage safety regressions.
+  localStorage usage, ConversationPage crisis UI behavior and query-param resume,
+  ReportPage missing `sessionId` handling, manual report generation, disclaimer
+  display, back-to-conversation link preservation, API helper path/payload
+  contracts, HistoryPage list/empty/error/session-expansion behavior, and browser
+  storage safety regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted to browser
   storage.
@@ -160,7 +178,7 @@ Current facts:
 | Task 11 conversation page | implemented | Integrated with backend conversation API; uses backend crisis level for high-risk banner behavior. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
 | Task 13 report page | partial | Counselor review workspace exists with manual generation and prominent backend disclaimer; PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
-| Task 14 history page | partial | Lists backend cases; deletion and session browser remain future work. |
+| Task 14 history page | partial | Lists backend cases and derived sessions; deletion, archive, titles, labels, and richer session metadata remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
 | Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
@@ -194,9 +212,9 @@ Status categories:
 
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
-3. Complete remaining frontend workflows: deletion, PDF export, session browser,
-   optional charts/Recharts, editable report review workflow, and Settings backend
-   integration.
+3. Complete remaining frontend workflows: deletion, session deletion/archive,
+   session titles, PDF export, optional charts/Recharts, editable report review
+   workflow, and Settings backend integration.
 4. Fill remaining frontend test gaps: ReportPage error handling and
    ConversationPage submit edge cases.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
@@ -228,8 +246,8 @@ Current reality:
 - Backend routers are implemented.
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
 - Frontend conversation, manual report generation, ReportPage counselor review
-  workspace, history case listing, app navigation, and light/dark theme support
-  are implemented.
+  workspace, history case/session listing, query-param resume, app navigation,
+  and light/dark theme support are implemented.
 - ReportPage displays the backend disclaimer prominently and includes
   summary-derived review aids for intensity trend, emotion dimensions, theme
   frequency, micro-summary timeline, and crisis occurrence. These aids are not
@@ -241,15 +259,18 @@ Current reality:
   crisis reasons, or case notes in browser storage.
 - `localStorage` is used only for `ai-psych-theme`; `sessionStorage` may store
   only active case/session identifiers.
+- Session metadata and preview text are not stored in browser storage.
 - MCP is not implemented.
 
 Future intent:
 
+- Add a dedicated sessions table later for empty sessions, titles,
+  archive/delete, labels, report status, and other richer session metadata.
+- Add session deletion/archive and session titles.
 - Report workflow future work remains: formal report schema expansion,
   source/evidence traceability, final PDF export, optional Recharts/charts, and
   editable counselor review workflow.
-- Frontend should add deletion, session browsing, and Settings backend
-  integration.
+- Frontend should add deletion and Settings backend integration.
 - Frontend testing should add ReportPage error handling tests, ConversationPage
   submit edge cases, optional Playwright/E2E later, and visual regression later
   if needed.

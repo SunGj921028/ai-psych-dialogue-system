@@ -67,16 +67,22 @@ mismatches.
 - ReportPage is integrated with backend manual report generation and now acts as
   a counselor review workspace with a prominent backend disclaimer and
   summary-derived review aids.
-- HistoryPage lists cases from the backend.
+- HistoryPage lists cases from the backend and can lazily expand multiple cases
+  to show derived session metadata.
 - Header navigation and light/dark theme toggle are implemented.
 - Frontend deterministic tests use Vitest, React Testing Library, and jsdom.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
   network.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted.
-- Frontend deletion, PDF export, session browser, optional charts/Recharts,
-  editable report workflow, Settings backend integration, and MCP integration
-  remain future work.
+- ConversationPage supports query-param resume, and ReportPage preserves case and
+  session IDs when linking back to conversation.
+- Session metadata and previews are not stored in browser storage.
+- Frontend deletion, PDF export, session deletion/archive, session titles, richer
+  session metadata, optional charts/Recharts, editable report workflow, Settings
+  backend integration, and MCP integration remain future work.
+- A dedicated sessions table remains future work for empty sessions, titles,
+  archive/delete, labels, report status, and richer metadata.
 
 ### Active API Reality
 
@@ -88,6 +94,7 @@ The current active HTTP API includes:
 - `GET /api/cases/{case_id}`
 - `DELETE /api/cases/{case_id}`
 - `POST /api/conversation/turn`
+- `GET /api/cases/{case_id}/sessions`
 - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
 - `POST /api/reports/generate`

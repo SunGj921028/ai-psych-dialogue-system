@@ -26,13 +26,14 @@ Current deterministic tests live under `backend/tests/`:
 |---|---|---|
 | `backend/tests/conftest.py` | pytest fixtures | Uses a temporary SQLite database through `DATABASE_PATH`. |
 | `backend/tests/helpers.py` | test helpers | Provides fake OpenAI-compatible LLM response objects for agent tests. |
-| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, crisis/session helpers, limits, and cascade behavior. |
+| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, crisis/session helpers, derived session metadata, limits, and cascade behavior. |
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
 | `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, and fallback. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
-| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence and public response shape. |
+| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, public response shape, and session-listing metadata behavior. |
+| `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session helper failures. |
 | `backend/tests/test_routes_reports.py` | automated route tests | Covers report route summary conversion and insufficient-data behavior. |
 
 These tests are network-free, do not require API keys, and should be treated as the
@@ -73,6 +74,7 @@ backend/
     test_analysis_agent.py
     test_routes_cases.py
     test_routes_conversation.py
+    test_routes_errors.py
     test_routes_reports.py
 ```
 
@@ -137,6 +139,9 @@ Task 09 route tests verify:
   - persists summary.
   - returns `turn_number`, assistant response, crisis result, and summary.
 - Summary/message retrieval routes do not expose DB-internal `round`.
+- Session listing routes derive metadata from existing messages/summaries, return
+  404 for missing cases, return `[]` for existing cases without sessions, and
+  return generic non-leaking 500 responses for helper failures.
 - Report route converts parsed DB summaries into `TurnSummary` models before analysis.
 - Report route preserves the real insufficient-data behavior without live provider calls.
 
@@ -157,7 +162,7 @@ python -m pytest backend\tests\test_crisis_agent.py backend\tests\test_summary_a
 ```
 
 ```powershell
-python -m pytest backend\tests\test_routes_cases.py backend\tests\test_routes_conversation.py backend\tests\test_routes_reports.py -q --basetemp=.tmp_pytest_routes -p no:cacheprovider
+python -m pytest backend\tests\test_routes_cases.py backend\tests\test_routes_conversation.py backend\tests\test_routes_errors.py backend\tests\test_routes_reports.py -q --basetemp=.tmp_pytest_routes -p no:cacheprovider
 ```
 
 Do not run broad discovery such as `python -m pytest backend` as the default
