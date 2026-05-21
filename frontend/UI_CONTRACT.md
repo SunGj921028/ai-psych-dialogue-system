@@ -28,7 +28,13 @@ Current reality:
   backend data.
 - ReportPage review aids are counselor-facing context only and are not objective
   clinical measurements.
-- HistoryPage lists cases from the backend.
+- HistoryPage lists cases from the backend and can lazily expand multiple cases
+  to show derived session metadata.
+- HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
+- HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
+- ConversationPage supports query-param resume, and query params take precedence
+  over stale `sessionStorage` identifiers.
+- ReportPage back-to-conversation links preserve active case/session IDs.
 - The shared header includes navigation and a theme toggle.
 - Light/dark theme support exists and stores only the theme preference under the
   `ai-psych-theme` localStorage key.
@@ -36,10 +42,12 @@ Current reality:
   crisis reasons, or case notes in browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
+- Session metadata and session preview text are not stored in browser storage.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
-- Frontend deletion, PDF export, session browser, optional charts/Recharts,
-  Settings backend integration, and MCP integration are not implemented yet.
+- Frontend deletion, PDF export, session deletion/archive, session titles, richer
+  session metadata, optional charts/Recharts, Settings backend integration, and
+  MCP integration are not implemented yet.
 - Editable report fields, backend schema changes, LLM prompt changes, Recharts
   integration, and final report template mirroring have not been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
@@ -52,8 +60,9 @@ Current reality:
 
 Remaining future behavior:
 
-- Complete deletion, session browsing, Settings backend integration, and
-  MCP-related UI only when the corresponding tasks are prioritized.
+- Complete deletion, session deletion/archive, session titles, richer session
+  metadata, Settings backend integration, and MCP-related UI only when the
+  corresponding tasks are prioritized.
 - Complete report workflow future work: formal report schema expansion,
   source/evidence traceability, final PDF export, optional Recharts/charts, and
   editable counselor review workflow.
@@ -73,7 +82,10 @@ Coverage includes:
 - ReportPage missing `sessionId` handling, manual generation, and disclaimer
   display.
 - API helper path and payload contract tests.
-- HistoryPage list, empty, error, and no-future-controls behavior.
+- HistoryPage list, empty, error, lazy session expansion, and session navigation
+  link behavior.
+- ConversationPage query-param resume behavior.
+- ReportPage back-to-conversation link preservation.
 - Browser storage safety regression coverage.
 
 Test boundaries:
@@ -84,6 +96,7 @@ Test boundaries:
   crisis reasons, and case notes are not persisted to browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
+- Session metadata and preview text are not persisted to browser storage.
 
 Remaining future testing work:
 
@@ -102,6 +115,9 @@ Responsibilities:
 
 - Let the counselor select or create a case context.
 - Maintain or create a frontend-generated `session_id`.
+- Resume a session from `caseId` and `sessionId` query parameters.
+- Treat query parameters as higher priority than stale `sessionStorage`
+  identifiers.
 - Let the counselor enter client-provided text.
 - Send each conversation turn to the backend.
 - Display user and assistant messages.
@@ -112,7 +128,6 @@ Responsibilities:
 
 Not currently implemented:
 
-- Session browser.
 - Emotion trend charts.
 
 ### ReportPage
@@ -135,6 +150,7 @@ Responsibilities:
 - Present review aids as contextual counselor supports, not objective clinical
   measurements.
 - Avoid presenting the report as diagnostic or final.
+- Preserve case/session IDs in the back-to-conversation link.
 
 Not currently implemented:
 
@@ -152,13 +168,19 @@ Route: `/history`
 Responsibilities:
 
 - Display available cases.
-- Let the counselor open a case.
+- Lazily expand cases to list derived session metadata.
+- Allow multiple cases to remain expanded.
+- Let the counselor resume a conversation through
+  `/?caseId={caseId}&sessionId={sessionId}`.
+- Let the counselor open a report workspace through
+  `/report/{caseId}?sessionId={sessionId}`.
 
 Not currently implemented:
 
 - Case deletion.
-- Session browser.
-- Direct access to stored session summaries or reports from history.
+- Session deletion/archive.
+- Session titles.
+- Labels, report status, and richer session metadata.
 
 ### SettingsPage
 
@@ -200,18 +222,19 @@ Expected calls:
 - `POST /api/reports/generate` only when the counselor manually generates or
   regenerates a report.
 
-If `session_id` is not represented in the route yet, future UI work must decide
-whether to pass it through query params, navigation state, or a dedicated session route.
+`sessionId` is represented as a query parameter on the report route.
 
 ### HistoryPage
 
 Expected calls:
 
 - `GET /api/cases` to list cases.
+- `GET /api/cases/{case_id}/sessions` when a case is expanded.
 - `GET /api/cases/{case_id}` to inspect a selected case when the UI needs case
   detail.
 
-Future calls may include deletion and session listing once implemented.
+Future calls may include case deletion, session deletion/archive, session title,
+label, and report-status endpoints once implemented.
 
 ### SettingsPage
 
@@ -274,6 +297,29 @@ Notes:
   created_at: 'ISO-8601 UTC'
 }
 ```
+
+### Session Metadata
+
+```js
+{
+  session_id: 'session uuid',
+  message_count: 2,
+  summary_count: 1,
+  last_turn_number: 3,
+  last_updated: 'ISO-8601 UTC',
+  has_crisis: false,
+  latest_summary_preview: 'metadata-only preview'
+}
+```
+
+Notes:
+
+- Session metadata is derived from persisted messages and summaries.
+- The backend does not have a dedicated sessions table yet.
+- UI state must not include DB-internal `round`, raw `summary_json`, raw
+  messages, `key_statement`, or crisis reasons.
+- `latest_summary_preview` is metadata-only and should be treated as a compact
+  scan aid, not clinical content for browser storage.
 
 ### Crisis Status
 
@@ -422,6 +468,7 @@ Inherited constraints:
   or case notes in browser storage.
 - Browser `localStorage` is used only for the `ai-psych-theme` preference.
 - Browser `sessionStorage` may store only active case/session identifiers.
+- Session metadata and preview text must not be written to browser storage.
 - Use API data contracts rather than guessing backend internals.
 - Do not reference DB-internal `round` in UI code.
 
@@ -435,19 +482,25 @@ Current implemented state:
   supports manual-only report generation, displays the backend disclaimer
   prominently, and includes summary-derived review aids.
 - ReportPage review aids are not objective clinical measurements.
-- HistoryPage lists backend cases.
+- HistoryPage lists backend cases and lazily expands cases to show derived
+  session metadata.
+- ConversationPage supports query-param resume, and query params take precedence
+  over stale `sessionStorage` identifiers.
+- ReportPage back-to-conversation links preserve case/session IDs.
 - Header navigation and light/dark theme toggle are implemented.
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
 - Clinical message content, summaries, report text, crisis reasons, and case
   notes are not stored in browser storage.
+- Session metadata and preview text are not stored in browser storage.
 - Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
   using mocked API helpers and no live backend/provider/network calls.
 
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
-- Add deletion, session browser, Settings backend integration, and MCP-related UI
-  when prioritized.
+- Add deletion, session deletion/archive, session titles, labels, report status,
+  richer session metadata, Settings backend integration, and MCP-related UI when
+  prioritized.
 - Complete future report work: formal report schema expansion, source/evidence
   traceability, final PDF export, optional Recharts/charts, and editable
   counselor review workflow.
@@ -457,11 +510,8 @@ Future behavior:
 
 ## Open Decisions
 
-- How `session_id` should reach `ReportPage`:
-  - query parameter
-  - route segment
-  - navigation state
-  - future session selector
 - Whether future report visuals should add Recharts or another charting library.
+- Whether future session data should use a dedicated sessions table for empty
+  sessions, titles, archive/delete, labels, report status, and richer metadata.
 - How a future formal report schema should support source/evidence traceability
   and editable counselor review.
