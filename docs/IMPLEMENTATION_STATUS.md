@@ -162,6 +162,10 @@ Current facts:
 - Remaining future frontend testing work includes ReportPage error handling
   tests, ConversationPage submit edge cases, optional Playwright/E2E later, and
   visual regression later if needed.
+- GitHub Actions CI exists and runs deterministic backend tests under
+  `backend/tests/` plus frontend `npm run test` and `npm run build`.
+- CI does not run live provider/manual scripts, top-level `backend/test_*.py`
+  scripts, or `backend/db_smoke_test.py`.
 
 ## Task / Status Table
 
@@ -182,6 +186,7 @@ Current facts:
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
 | Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
+| CI deterministic validation | implemented | GitHub Actions runs `backend/tests`, frontend tests, and frontend build without provider keys or live/manual scripts. |
 | Task 16 end-to-end tests | future | Optional Playwright/E2E coverage can be added later after remaining workflows stabilize. |
 | Task 17 prompt iteration | future | Should continue to include safety regression tests. |
 
@@ -260,6 +265,8 @@ Current reality:
 - `localStorage` is used only for `ai-psych-theme`; `sessionStorage` may store
   only active case/session identifiers.
 - Session metadata and preview text are not stored in browser storage.
+- GitHub Actions CI runs deterministic backend tests plus frontend test/build
+  validation without live provider checks.
 - MCP is not implemented.
 
 Future intent:
@@ -267,9 +274,9 @@ Future intent:
 - Add a dedicated sessions table later for empty sessions, titles,
   archive/delete, labels, report status, and other richer session metadata.
 - Add session deletion/archive and session titles.
-- Report workflow future work remains: formal report schema expansion,
-  source/evidence traceability, final PDF export, optional Recharts/charts, and
-  editable counselor review workflow.
+- Report workflow future work remains: Report Schema v2 / formal report schema
+  expansion, source/evidence traceability, final PDF export, optional
+  Recharts/charts, and editable counselor review workflow.
 - Frontend should add deletion and Settings backend integration.
 - Frontend testing should add ReportPage error handling tests, ConversationPage
   submit edge cases, optional Playwright/E2E later, and visual regression later
