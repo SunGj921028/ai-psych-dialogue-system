@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.tmp_pytest*/
+
+# Local environment
+.env
+.env.*
+!.env.example
+
+# SQLite/runtime data
+cases.db
+*.db-wal
+*.db-shm
+*.db-journal
+
+# Frontend
+node_modules/
+dist/
+coverage/
+*.local

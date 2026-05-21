@@ -148,26 +148,32 @@ Task 09 route tests verify:
 For route tests, prefer monkeypatching agent functions instead of mocking provider clients
 deep inside each agent.
 
-## Proposed Deterministic Commands
+## Default Deterministic Commands
 
-Run deterministic tests from the repository root with explicit Windows-safe temp
-directories and pytest cache disabled:
-
-```powershell
-python -m pytest backend\tests\test_db.py -q --basetemp=.tmp_pytest_db -p no:cacheprovider
-```
+Run the full deterministic backend suite from the repository root with an explicit
+temp directory and pytest cache disabled:
 
 ```powershell
-python -m pytest backend\tests\test_crisis_agent.py backend\tests\test_summary_agent.py backend\tests\test_conversation_agent.py backend\tests\test_analysis_agent.py -q --basetemp=.tmp_pytest_agents -p no:cacheprovider
+python -m pytest backend/tests -q --basetemp=.tmp_pytest_backend -p no:cacheprovider
 ```
+
+On Windows, if temp/cache folders are locked by local tools, use a unique
+`--basetemp` value for the run:
 
 ```powershell
-python -m pytest backend\tests\test_routes_cases.py backend\tests\test_routes_conversation.py backend\tests\test_routes_errors.py backend\tests\test_routes_reports.py -q --basetemp=.tmp_pytest_routes -p no:cacheprovider
+python -m pytest backend/tests -q --basetemp=.tmp_pytest_backend_local_1 -p no:cacheprovider
 ```
 
-Do not run broad discovery such as `python -m pytest backend` as the default
-automated suite while top-level `backend/test_*.py` live/manual scripts remain.
-Do not run live provider scripts unless explicitly requested.
+Do not run `python -m pytest backend` as the default automated suite while
+top-level `backend/test_*.py` live/manual scripts remain, because broad discovery
+may collect those scripts. Do not run live provider scripts unless explicitly
+requested.
+
+CI runs only `backend/tests`:
+
+```bash
+python -m pytest backend/tests -q --basetemp=.tmp_pytest_ci -p no:cacheprovider
+```
 
 ## Manual Live Provider Checks
 

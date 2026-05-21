@@ -225,6 +225,8 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - Mock LLM clients by default.
 - Do not run live LLM/provider tests unless the user explicitly asks.
 - For DB tests, use temporary SQLite paths and avoid touching real local data.
+- Keep CI deterministic: run `backend/tests` and frontend test/build commands
+  only, without provider API keys or live/manual provider scripts.
 
 ## Documentation Map
 
