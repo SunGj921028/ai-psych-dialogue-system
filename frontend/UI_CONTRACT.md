@@ -34,6 +34,15 @@ Current reality:
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - ConversationPage supports query-param resume, and query params take precedence
   over stale `sessionStorage` identifiers.
+- ConversationPage uses a bounded, scrollable message log. The message area
+  should not grow the whole page awkwardly with each turn, and the latest message
+  should remain visible above the composer.
+- ConversationPage input behavior is stabilized: Enter submits, Shift+Enter
+  inserts a newline, IME composing Enter does not submit, the textarea remains
+  editable while submitting, the send button is locked while submitting, and
+  duplicate submits are guarded.
+- Starting a new session from a resumed session keeps the selected case, creates
+  a new frontend `session_id`, and clears the current message and summary UI.
 - ReportPage back-to-conversation links preserve active case/session IDs.
 - The shared header includes navigation and a theme toggle.
 - Light/dark theme support exists and stores only the theme preference under the
@@ -45,11 +54,24 @@ Current reality:
 - Session metadata and session preview text are not stored in browser storage.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
+- The default/no-crisis wording is 「未偵測到危機」.
+- Loaded summaries that contain `crisis_flag` but no persisted `crisis_level`
+  show safe counselor-review metadata such as
+  「最新摘要有危機註記，請諮商師重新檢視」.
+- The frontend must not infer low/high crisis level from `summary.crisis_flag`.
+- The high-risk modal/dialog appears only when a backend response has
+  `crisis.crisis_level === 'high'`; dismissing the modal does not remove
+  high-risk page metadata, and low/default crisis states do not open the modal.
+- Generated reports are currently transient. `POST /api/reports/generate`
+  returns a report response but does not persist it, and ReportPage displays a
+  note that draft reports are only temporarily shown on the page and must be
+  regenerated after leaving or reloading.
 - Frontend deletion, PDF export, session deletion/archive, session titles, richer
   session metadata, optional charts/Recharts, Settings backend integration, and
   MCP integration are not implemented yet.
-- Editable report fields, backend schema changes, LLM prompt changes, Recharts
-  integration, and final report template mirroring have not been implemented.
+- Persisted report drafts, persisted `crisis_level` for summaries, editable report
+  fields, backend schema changes, LLM prompt changes, Recharts integration, and
+  final report template mirroring have not been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -61,14 +83,16 @@ Current reality:
 Remaining future behavior:
 
 - Complete deletion, session deletion/archive, session titles, richer session
-  metadata, Settings backend integration, and MCP-related UI only when the
-  corresponding tasks are prioritized.
-- Complete report workflow future work: formal report schema expansion,
-  source/evidence traceability, final PDF export, optional Recharts/charts, and
-  editable counselor review workflow.
+  metadata, persisted `crisis_level` if exact crisis level should survive
+  reload/navigation, Settings backend integration, and MCP-related UI only when
+  the corresponding tasks are prioritized.
+- Complete report workflow future work: formal Report Schema v2 after the
+  template stabilizes, persisted report drafts, source/evidence traceability,
+  final PDF export, optional Recharts/charts, and editable counselor review
+  workflow.
+- Smarter scroll behavior can be considered later as an optional UX refinement.
 - Complete remaining frontend testing gaps: ReportPage error handling tests,
-  ConversationPage submit edge cases, optional Playwright/E2E later, and visual
-  regression later if needed.
+  optional Playwright/E2E later, and visual regression later if needed.
 
 ## Current Frontend Test Coverage
 
@@ -78,13 +102,15 @@ Coverage includes:
 
 - Header navigation and theme toggle behavior.
 - Safe theme localStorage usage.
-- ConversationPage crisis UI behavior.
+- ConversationPage input behavior.
+- ConversationPage crisis modal and fallback behavior.
+- ConversationPage query-param resume and new-session behavior.
 - ReportPage missing `sessionId` handling, manual generation, and disclaimer
   display.
+- ReportPage transient report note.
 - API helper path and payload contract tests.
 - HistoryPage list, empty, error, lazy session expansion, and session navigation
   link behavior.
-- ConversationPage query-param resume behavior.
 - ReportPage back-to-conversation link preservation.
 - Browser storage safety regression coverage.
 
@@ -101,7 +127,6 @@ Test boundaries:
 Remaining future testing work:
 
 - ReportPage error handling tests.
-- ConversationPage submit edge cases.
 - Optional Playwright/E2E later.
 - Visual regression later if needed.
 
@@ -118,9 +143,19 @@ Responsibilities:
 - Resume a session from `caseId` and `sessionId` query parameters.
 - Treat query parameters as higher priority than stale `sessionStorage`
   identifiers.
+- Starting a new session from a resumed session must keep the selected case,
+  generate a new frontend `session_id`, and clear the visible message and summary
+  state.
 - Let the counselor enter client-provided text.
+- Submit with Enter, insert a newline with Shift+Enter, and ignore Enter while an
+  IME composition is active.
+- Keep the textarea editable while a turn is submitting.
+- Lock the send button while submitting and guard duplicate submit attempts.
 - Send each conversation turn to the backend.
 - Display user and assistant messages.
+- Display messages in a bounded scrollable log so the page does not grow
+  awkwardly with each turn and the latest message is not hidden behind the
+  composer.
 - Display the latest JSON micro-summary.
 - Display summary and crisis context returned by the backend.
 - Display a red crisis banner only for `crisis_level == "high"`.
@@ -138,6 +173,10 @@ Responsibilities:
 
 - Load report workspace context for a selected case/session.
 - Generate or regenerate a report only when the counselor manually requests it.
+- Treat generated report data as transient unless/until a backend persistence
+  feature is implemented.
+- Display a note that draft reports are temporarily shown on the page and must be
+  regenerated after leaving or reloading.
 - Display the backend-supplied fixed report disclaimer prominently.
 - Display report text sections from `ConceptualizationReport`.
 - Display crisis summary and `has_crisis` status in counselor-review language.
@@ -151,9 +190,11 @@ Responsibilities:
   measurements.
 - Avoid presenting the report as diagnostic or final.
 - Preserve case/session IDs in the back-to-conversation link.
+- Do not store report text in browser storage.
 
 Not currently implemented:
 
+- Persisted report drafts.
 - PDF export.
 - Editable report fields.
 - Backend schema changes.
@@ -335,6 +376,12 @@ Notes:
 
 - Red banner only when `crisis_level === 'high'`.
 - The frontend should not reinterpret or recalculate crisis level.
+- Loaded summary rows may only include `summary.crisis_flag`; the frontend must
+  not infer `low` or `high` from that flag.
+- If loaded summaries contain `crisis_flag` but no persisted `crisis_level`, show
+  safe metadata such as 「最新摘要有危機註記，請諮商師重新檢視」.
+- Persisting exact summary-level `crisis_level` remains future work if exact
+  crisis level should survive reload/navigation.
 
 ### Report Data
 
@@ -368,7 +415,13 @@ Rules:
 - Show a prominent red warning only for `crisis_level === 'high'`.
 - Do not show the red banner for `none`.
 - Do not upgrade `low` to `high` in frontend code.
+- Do not infer `low` or `high` from `summary.crisis_flag`.
 - Do not hide a `high` result because assistant response generation succeeded.
+- Use 「未偵測到危機」 for the default/no-crisis state.
+- Open the high-risk modal/dialog only when a backend response has
+  `crisis.crisis_level === 'high'`.
+- Dismissing the high-risk modal/dialog must not remove high-risk page metadata.
+- Low/default crisis states must not open the modal/dialog.
 - Keep banner language counselor-facing and review-oriented.
 
 The banner should communicate that the system detected high-risk language and that
@@ -454,6 +507,10 @@ Source:
 The indicator should reflect existing backend data only. The frontend must not
 recalculate crisis level or upgrade risk.
 
+When loaded summaries only include `crisis_flag` without a persisted
+`crisis_level`, the indicator should show safe counselor-review metadata rather
+than an inferred low/high level.
+
 ## UX Constraints
 
 Inherited constraints:
@@ -478,9 +535,17 @@ Current implemented state:
 
 - ConversationPage is wired to backend case, conversation, message, summary, and
   crisis data flows.
+- ConversationPage uses a bounded scrollable message log, keeps the latest
+  message visible above the composer, supports Enter/Shift+Enter/IME-safe input,
+  keeps the textarea editable while submitting, locks the send button while
+  submitting, and guards duplicate submits.
+- Starting a new session from a resumed session preserves the selected case,
+  creates a new frontend session ID, and clears message/summary UI.
 - ReportPage is a counselor review workspace wired to backend report generation,
   supports manual-only report generation, displays the backend disclaimer
   prominently, and includes summary-derived review aids.
+- ReportPage generated reports are transient, displays a temporary-report note,
+  and does not store report text in browser storage.
 - ReportPage review aids are not objective clinical measurements.
 - HistoryPage lists backend cases and lazily expands cases to show derived
   session metadata.
@@ -492,6 +557,8 @@ Current implemented state:
 - Clinical message content, summaries, report text, crisis reasons, and case
   notes are not stored in browser storage.
 - Session metadata and preview text are not stored in browser storage.
+- Crisis UI uses backend `crisis_level` only. Summary-only `crisis_flag` fallback
+  metadata is counselor-review wording, not a low/high inference.
 - Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
   using mocked API helpers and no live backend/provider/network calls.
 
@@ -501,11 +568,13 @@ Future behavior:
 - Add deletion, session deletion/archive, session titles, labels, report status,
   richer session metadata, Settings backend integration, and MCP-related UI when
   prioritized.
-- Complete future report work: formal report schema expansion, source/evidence
-  traceability, final PDF export, optional Recharts/charts, and editable
-  counselor review workflow.
-- Add remaining frontend tests for ReportPage error handling and ConversationPage
-  submit edge cases.
+- Add persisted `crisis_level` later if exact crisis level should survive
+  reload/navigation.
+- Complete future report work after the report template stabilizes: formal Report
+  Schema v2, persisted report drafts, source/evidence traceability, final PDF
+  export, optional Recharts/charts, and editable counselor review workflow.
+- Smarter scroll behavior remains optional future UX work.
+- Add remaining frontend tests for ReportPage error handling.
 - Add optional Playwright/E2E later, and visual regression later if needed.
 
 ## Open Decisions
@@ -515,3 +584,6 @@ Future behavior:
   sessions, titles, archive/delete, labels, report status, and richer metadata.
 - How a future formal report schema should support source/evidence traceability
   and editable counselor review.
+- Whether and where to persist report drafts.
+- Whether summary rows should persist exact `crisis_level` for reload/navigation
+  fidelity.
