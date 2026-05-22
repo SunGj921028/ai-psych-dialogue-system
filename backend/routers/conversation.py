@@ -15,10 +15,13 @@ from agents.summary_agent import TurnSummary, generate_summary
 from database.db import (
     add_message,
     add_summary,
+    create_session,
+    ensure_session,
     get_case,
     get_messages_by_session,
     get_session_metadata_by_case,
     get_summaries_by_session,
+    touch_session,
 )
 
 
@@ -72,6 +75,11 @@ class SessionMetadataResponse(BaseModel):
     latest_summary_preview: str | None = None
 
 
+class CreateSessionRequest(BaseModel):
+    session_id: str | None = None
+    title: str | None = None
+
+
 async def _ensure_case_exists(case_id: str) -> None:
     try:
         case = await get_case(case_id)
@@ -94,6 +102,25 @@ async def list_case_sessions_route(case_id: str) -> list[dict]:
         raise HTTPException(status_code=500, detail="Failed to list sessions") from exc
 
 
+@router.post(
+    "/cases/{case_id}/sessions",
+    response_model=SessionMetadataResponse,
+)
+async def create_session_route(
+    case_id: str,
+    request: CreateSessionRequest | None = None,
+) -> dict:
+    await _ensure_case_exists(case_id)
+    try:
+        return await create_session(
+            case_id=case_id,
+            session_id=request.session_id if request else None,
+            title=request.title if request else None,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to create session") from exc
+
+
 @router.post("/conversation/turn", response_model=ConversationTurnResponse)
 async def conversation_turn_route(request: ConversationTurnRequest) -> ConversationTurnResponse:
     await _ensure_case_exists(request.case_id)
@@ -108,6 +135,11 @@ async def conversation_turn_route(request: ConversationTurnRequest) -> Conversat
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to generate conversation turn") from exc
+
+    try:
+        await ensure_session(request.case_id, request.session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to create session") from exc
 
     try:
         await add_message(
@@ -145,6 +177,7 @@ async def conversation_turn_route(request: ConversationTurnRequest) -> Conversat
             summary_json=summary.model_dump_json(),
             crisis_flag=crisis.crisis_flag,
         )
+        await touch_session(request.case_id, request.session_id)
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to persist summary") from exc
 

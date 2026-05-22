@@ -3,6 +3,7 @@ from __future__ import annotations
 from contextlib import suppress
 import json
 from pathlib import Path
+import sqlite3
 import tempfile
 import uuid
 
@@ -85,12 +86,90 @@ def _safe_preview_summary_json(
     )
 
 
+def _create_legacy_database_without_sessions(db_path: Path, case_id: str) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            PRAGMA foreign_keys=ON;
+
+            CREATE TABLE cases (
+                id TEXT PRIMARY KEY,
+                code_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                note TEXT
+            );
+
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                case_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                round INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                CHECK (role IN ('user', 'assistant')),
+                FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE summaries (
+                id TEXT PRIMARY KEY,
+                case_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                round INTEGER NOT NULL,
+                summary_json TEXT NOT NULL,
+                crisis_flag INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO cases (id, code_name, created_at, note) VALUES (?, ?, ?, ?)",
+            (case_id, "LEGACY", "2026-05-20T00:00:00+00:00", None),
+        )
+        conn.execute(
+            """
+            INSERT INTO messages (
+                id, case_id, session_id, round, role, content, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-message",
+                case_id,
+                "legacy-session",
+                2,
+                "user",
+                "SYNTHETIC_LEGACY_RAW_MESSAGE_SHOULD_NOT_LEAK",
+                "2026-05-20T00:00:01+00:00",
+            ),
+        )
+        conn.execute(
+            """
+            INSERT INTO summaries (
+                id, case_id, session_id, round, summary_json, crisis_flag, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                "legacy-summary",
+                case_id,
+                "legacy-session",
+                3,
+                _safe_preview_summary_json(3, primary="焦慮", intensity=6),
+                1,
+                "2026-05-20T00:00:04+00:00",
+            ),
+        )
+        conn.commit()
+
+
 async def _table_names() -> set[str]:
     async with db_layer.get_db() as conn:
         cursor = await conn.execute(
             """
             SELECT name FROM sqlite_master
-            WHERE type = 'table' AND name IN ('cases', 'messages', 'summaries')
+            WHERE type = 'table' AND name IN ('cases', 'messages', 'summaries', 'sessions')
             """
         )
         rows = await cursor.fetchall()
@@ -104,10 +183,61 @@ async def _journal_mode() -> str:
     return str(row[0]).lower()
 
 
+async def _raw_session_count(case_id: str) -> int:
+    async with db_layer.get_db() as conn:
+        cursor = await conn.execute(
+            "SELECT COUNT(*) AS n FROM sessions WHERE case_id = ?",
+            (case_id,),
+        )
+        row = await cursor.fetchone()
+    return int(row["n"])
+
+
+async def _set_session_timestamps(
+    case_id: str,
+    session_id: str,
+    created_at: str,
+    updated_at: str,
+    last_activity_at: str | None,
+) -> None:
+    async with db_layer.get_db() as conn:
+        await conn.execute(
+            """
+            UPDATE sessions
+            SET created_at = ?, updated_at = ?, last_activity_at = ?
+            WHERE case_id = ? AND session_id = ?
+            """,
+            (created_at, updated_at, last_activity_at, case_id, session_id),
+        )
+        await conn.commit()
+
+
 def test_init_db_creates_required_tables_and_preserves_wal(initialized_db):
     assert initialized_db.exists()
-    assert anyio.run(_table_names) == {"cases", "messages", "summaries"}
+    assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
     assert anyio.run(_journal_mode) == "wal"
+
+
+def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy.db"
+    case_id = "legacy-case"
+    _create_legacy_database_without_sessions(db_path, case_id)
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+
+    anyio.run(db_layer.init_db)
+    anyio.run(db_layer.init_db)
+
+    assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
+    assert anyio.run(_raw_session_count, case_id) == 1
+
+    session = anyio.run(db_layer.get_session, case_id, "legacy-session")
+    assert session["session_id"] == "legacy-session"
+    assert session["message_count"] == 1
+    assert session["summary_count"] == 1
+    assert session["last_turn_number"] == 3
+    assert session["last_updated"] == "2026-05-20T00:00:04+00:00"
+    assert session["has_crisis"] is True
+    assert session["latest_summary_preview"] == "第 3 輪 · 主要情緒：焦慮 · 強度 6/10"
 
 
 def test_case_crud_uses_current_missing_case_behavior(initialized_db):
@@ -128,6 +258,157 @@ def test_case_crud_uses_current_missing_case_behavior(initialized_db):
     assert anyio.run(db_layer.delete_case, "missing-case") is False
     assert anyio.run(db_layer.delete_case, created["id"]) is True
     assert anyio.run(db_layer.get_case, created["id"]) is None
+
+
+def test_create_session_creates_empty_durable_session_metadata(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    session = anyio.run(db_layer.create_session, case["id"], None, None)
+
+    assert session["session_id"]
+    assert session["message_count"] == 0
+    assert session["summary_count"] == 0
+    assert session["last_turn_number"] == 0
+    assert session["last_updated"] == session["created_at"]
+    assert session["has_crisis"] is False
+    assert session["latest_summary_preview"] is None
+    assert "title" not in session
+    assert "round" not in session
+    assert "summary_json" not in session
+
+    fetched = anyio.run(db_layer.get_session, case["id"], session["session_id"])
+    assert fetched == session
+
+
+def test_create_session_with_existing_id_is_idempotent(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    first = anyio.run(db_layer.create_session, case["id"], "session-explicit", None)
+    second = anyio.run(db_layer.create_session, case["id"], "session-explicit", "unused")
+
+    assert second == first
+    sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
+    assert [session["session_id"] for session in sessions] == ["session-explicit"]
+
+
+def test_get_session_returns_none_for_missing_session(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    assert anyio.run(db_layer.get_session, case["id"], "missing-session") is None
+
+
+def test_ensure_session_creates_once_and_touch_updates_activity(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    ensured = anyio.run(db_layer.ensure_session, case["id"], "session-touch")
+    ensured_again = anyio.run(db_layer.ensure_session, case["id"], "session-touch")
+    touched = anyio.run(
+        db_layer.touch_session,
+        case["id"],
+        "session-touch",
+        "2099-05-22T10:30:00+00:00",
+    )
+
+    assert ensured["session_id"] == "session-touch"
+    assert ensured_again["session_id"] == "session-touch"
+    assert anyio.run(_raw_session_count, case["id"]) == 1
+    assert touched["last_updated"] == "2099-05-22T10:30:00+00:00"
+    assert touched["message_count"] == 0
+    assert anyio.run(db_layer.get_session, case["id"], "session-touch")["last_updated"] == (
+        "2099-05-22T10:30:00+00:00"
+    )
+
+
+def test_session_metadata_includes_explicit_empty_sessions(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    created = anyio.run(db_layer.create_session, case["id"], "empty-session", None)
+
+    sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
+
+    assert sessions == [
+        {
+            "session_id": "empty-session",
+            "message_count": 0,
+            "summary_count": 0,
+            "last_turn_number": 0,
+            "last_updated": created["created_at"],
+            "has_crisis": False,
+            "latest_summary_preview": None,
+        }
+    ]
+
+
+def test_session_metadata_combines_explicit_empty_and_legacy_derived_sessions(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "empty-explicit", None)
+    anyio.run(
+        _set_session_timestamps,
+        case["id"],
+        "empty-explicit",
+        "2026-05-20T00:00:03+00:00",
+        "2026-05-20T00:00:03+00:00",
+        None,
+    )
+
+    legacy_message = anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "legacy-derived",
+        5,
+        "user",
+        "SYNTHETIC_LEGACY_PRIVATE_MESSAGE_SHOULD_NOT_LEAK",
+    )
+    legacy_summary = anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "legacy-derived",
+        4,
+        _safe_preview_summary_json(
+            4,
+            primary="焦慮",
+            intensity=7,
+            key_statement="SYNTHETIC_LEGACY_KEY_STATEMENT_SHOULD_NOT_LEAK",
+            crisis_flag=True,
+        ),
+        True,
+    )
+    anyio.run(
+        _set_message_created_at,
+        legacy_message["id"],
+        "2026-05-20T00:00:01+00:00",
+    )
+    anyio.run(
+        _set_summary_created_at,
+        legacy_summary["id"],
+        "2026-05-20T00:00:02+00:00",
+    )
+
+    sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
+
+    assert [session["session_id"] for session in sessions] == [
+        "empty-explicit",
+        "legacy-derived",
+    ]
+    assert sessions[0]["message_count"] == 0
+    assert sessions[0]["summary_count"] == 0
+    assert sessions[0]["last_turn_number"] == 0
+    assert sessions[0]["last_updated"] == "2026-05-20T00:00:03+00:00"
+    assert sessions[0]["has_crisis"] is False
+    assert sessions[0]["latest_summary_preview"] is None
+
+    assert sessions[1]["message_count"] == 1
+    assert sessions[1]["summary_count"] == 1
+    assert sessions[1]["last_turn_number"] == 5
+    assert sessions[1]["last_updated"] == "2026-05-20T00:00:02+00:00"
+    assert sessions[1]["has_crisis"] is True
+    assert sessions[1]["latest_summary_preview"] == "第 4 輪 · 主要情緒：焦慮 · 強度 7/10"
+
+    serialized = json.dumps(sessions, ensure_ascii=False)
+    assert "round" not in serialized
+    assert "summary_json" not in serialized
+    assert "SYNTHETIC_LEGACY_PRIVATE_MESSAGE_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_LEGACY_KEY_STATEMENT_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_THEME_SHOULD_NOT_LEAK" not in serialized
 
 
 def test_messages_are_persisted_ordered_and_publicly_mapped(initialized_db):
@@ -270,6 +551,7 @@ def test_crisis_and_latest_summary_helpers(initialized_db):
 
 def test_delete_case_cascades_messages_and_summaries(initialized_db):
     case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-1", None)
     anyio.run(db_layer.add_message, case["id"], "session-1", 1, "user", "hello")
     anyio.run(
         db_layer.add_summary,
@@ -281,6 +563,7 @@ def test_delete_case_cascades_messages_and_summaries(initialized_db):
     )
 
     assert anyio.run(db_layer.delete_case, case["id"]) is True
+    assert anyio.run(_raw_session_count, case["id"]) == 0
     assert anyio.run(db_layer.get_messages_by_session, case["id"], "session-1") == []
     assert anyio.run(db_layer.get_summaries_by_session, case["id"], "session-1") == []
     assert anyio.run(db_layer.has_crisis_in_session, case["id"], "session-1") is False
