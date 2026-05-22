@@ -87,8 +87,21 @@ Current facts:
 - ConversationPage is integrated with the backend conversation API and supports
   query-param resume with `caseId` and `sessionId`; query params take precedence
   over stale `sessionStorage` identifiers.
+- ConversationPage uses a bounded, scrollable message log so conversation turns
+  do not awkwardly grow the whole page, and the latest message remains visible
+  above the composer.
+- ConversationPage input behavior is stabilized: Enter submits, Shift+Enter adds
+  a newline, IME composing Enter does not submit, the textarea remains editable
+  while submitting, the send button is locked while submitting, and duplicate
+  submits are guarded.
+- Starting a new session from a resumed session keeps the selected case, creates
+  a new frontend `session_id`, and clears the current message and summary UI.
 - ReportPage acts as a counselor review workspace integrated with the backend
   report API. Report generation remains manual-only.
+- Generated reports are currently transient: `POST /api/reports/generate` returns
+  a report response but does not persist it, and ReportPage tells counselors that
+  draft reports are shown only temporarily and must be regenerated after leaving
+  or reloading the page.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
 - ReportPage includes summary review aids derived from loaded summaries: emotion
   intensity trend, emotion dimension average/latest snapshot, theme frequency
@@ -111,12 +124,20 @@ Current facts:
 - Session metadata and preview text are not persisted to browser storage.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
+- The default/no-crisis wording is 「未偵測到危機」.
+- If loaded summaries contain `crisis_flag` but no persisted `crisis_level`, the
+  frontend shows safe counselor-review metadata such as
+  「最新摘要有危機註記，請諮商師重新檢視」 and does not infer low/high risk from
+  `summary.crisis_flag`.
+- The high-risk modal/dialog opens only when a backend response includes
+  `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
+  metadata, and low/default crisis states do not open the modal.
 - Frontend deletion, PDF export, session deletion/archive, session titles, richer
   session metadata, optional charting library integration, Settings backend
   integration, and MCP integration remain future work.
-- No editable report fields, backend schema changes, LLM prompt changes, Recharts
-  integration, or final report template mirroring has been implemented for the
-  report workspace.
+- No persisted report drafts, persisted `crisis_level` on summaries, editable
+  report fields, backend schema changes, LLM prompt changes, Recharts integration,
+  or final report template mirroring has been implemented for the report workspace.
 
 ### Tests
 
@@ -149,9 +170,10 @@ Current facts:
   existing-case empty-list behavior, and generic non-leaking session-listing
   failure handling.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
-  localStorage usage, ConversationPage crisis UI behavior and query-param resume,
-  ReportPage missing `sessionId` handling, manual report generation, disclaimer
-  display, back-to-conversation link preservation, API helper path/payload
+  localStorage usage, ConversationPage input behavior, crisis modal/fallback
+  behavior, query-param resume and new-session behavior, ReportPage missing
+  `sessionId` handling, manual report generation, disclaimer display, transient
+  report note, back-to-conversation link preservation, API helper path/payload
   contracts, HistoryPage list/empty/error/session-expansion behavior, and browser
   storage safety regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
@@ -160,9 +182,8 @@ Current facts:
 - Frontend storage expectations are explicit: `localStorage` is used only for
   `ai-psych-theme`, and `sessionStorage` may store only active case/session
   identifiers.
-- Remaining future frontend testing work includes ReportPage error handling
-  tests, ConversationPage submit edge cases, optional Playwright/E2E later, and
-  visual regression later if needed.
+- Remaining future frontend testing work includes ReportPage error handling tests,
+  optional Playwright/E2E later, and visual regression later if needed.
 - GitHub Actions CI exists and runs deterministic backend tests under
   `backend/tests/` plus frontend `npm run test` and `npm run build`.
 - CI does not run live provider/manual scripts under `backend/manual_checks/`.
@@ -179,9 +200,9 @@ Current facts:
 | Task 06 analysis agent | implemented | Computes report metadata in code. |
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests. |
-| Task 11 conversation page | implemented | Integrated with backend conversation API; uses backend crisis level for high-risk banner behavior. |
+| Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, new-session reset behavior, and backend-level-only crisis UI behavior. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
-| Task 13 report page | partial | Counselor review workspace exists with manual generation and prominent backend disclaimer; PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
 | Task 14 history page | partial | Lists backend cases and derived sessions; deletion, archive, titles, labels, and richer session metadata remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -219,10 +240,11 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: deletion, session deletion/archive,
-   session titles, PDF export, optional charts/Recharts, editable report review
-   workflow, and Settings backend integration.
-4. Fill remaining frontend test gaps: ReportPage error handling and
-   ConversationPage submit edge cases.
+   session titles, persisted report drafts, persisted `crisis_level` if exact
+   crisis level should survive reload/navigation, PDF export, optional
+   charts/Recharts, editable report review workflow, and Settings backend
+   integration.
+4. Fill remaining frontend test gaps: ReportPage error handling.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
    needed.
 6. Implement MCP Task 07 after HTTP and frontend behavior are stable.
@@ -254,6 +276,19 @@ Current reality:
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
   and light/dark theme support are implemented.
+- ConversationPage uses a bounded scrollable message log, keeps the latest
+  message visible above the composer, supports Enter/Shift+Enter/IME-safe input
+  behavior, keeps the textarea editable while submitting, locks the send button
+  while submitting, and guards duplicate submits.
+- Starting a new session from a resumed session preserves the selected case,
+  creates a new frontend session ID, and clears current message and summary UI.
+- ReportPage generated reports are transient; report text is not persisted by the
+  backend or browser storage and must be regenerated after leaving or reloading
+  the page.
+- Crisis UI uses the backend crisis level only. Loaded summaries that only expose
+  `crisis_flag` produce safe counselor-review metadata instead of inferred
+  low/high risk; high-risk modal behavior is limited to backend responses with
+  `crisis.crisis_level === "high"`.
 - ReportPage displays the backend disclaimer prominently and includes
   summary-derived review aids for intensity trend, emotion dimensions, theme
   frequency, micro-summary timeline, and crisis occurrence. These aids are not
@@ -276,12 +311,15 @@ Future intent:
   archive/delete, labels, report status, and other richer session metadata.
 - Add session deletion/archive and session titles.
 - Report workflow future work remains: Report Schema v2 / formal report schema
-  expansion, source/evidence traceability, final PDF export, optional
-  Recharts/charts, and editable counselor review workflow.
+  expansion, persisted report drafts, source/evidence traceability, final PDF
+  export, optional Recharts/charts, and editable counselor review workflow.
+- Persist `crisis_level` with summaries later if exact crisis level should survive
+  reload/navigation; until then, do not infer low/high from summary-level
+  `crisis_flag`.
+- Smarter scroll behavior can be considered later as optional UX refinement.
 - Frontend should add deletion and Settings backend integration.
-- Frontend testing should add ReportPage error handling tests, ConversationPage
-  submit edge cases, optional Playwright/E2E later, and visual regression later
-  if needed.
+- Frontend testing should add ReportPage error handling tests, optional
+  Playwright/E2E later, and visual regression later if needed.
 - MCP should provide case-query tools after the core HTTP and frontend workflows
   are clarified.
 
