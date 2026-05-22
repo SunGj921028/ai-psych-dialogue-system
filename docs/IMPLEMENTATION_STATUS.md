@@ -19,6 +19,15 @@ Current facts:
 - Public-facing code should expose `turn_number`.
 - Summary query helpers return parsed summary dictionaries in `summary`, not raw
   `summary_json`.
+- A dedicated `sessions` table exists for safe operational metadata only:
+  `case_id`, `session_id`, `created_at`, `updated_at`, `last_activity_at`, and
+  nullable `title`.
+- Session rows are linked to cases and cascade when a case is deleted.
+- Existing message/summary-derived sessions are backfilled idempotently.
+- Empty sessions can now exist durably through backend session creation.
+- Session metadata must not store or expose raw messages, summaries,
+  `summary_json`, `key_statement`, themes, crisis reasons, report text,
+  DB-internal `round`, or exact `crisis_level`.
 
 ### Backend Agents
 
@@ -52,6 +61,7 @@ Current facts:
   - `GET /api/cases`
   - `GET /api/cases/{case_id}`
   - `DELETE /api/cases/{case_id}`
+  - `POST /api/cases/{case_id}/sessions`
   - `POST /api/conversation/turn`
   - `GET /api/cases/{case_id}/sessions`
   - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
@@ -59,12 +69,20 @@ Current facts:
   - `POST /api/reports/generate`
 - Public route responses expose `turn_number`, not DB-internal `round`.
 - Summary responses expose parsed summary data, not raw `summary_json`.
-- Session listing is derived from existing messages and summaries. There is no
-  dedicated sessions table yet, so empty sessions without persisted messages or
-  summaries cannot be listed.
+- `POST /api/cases/{case_id}/sessions` creates durable session metadata. The
+  backend may generate `session_id` when omitted, duplicate same-case/session
+  creation is idempotent, missing cases return 404, and helper failures return
+  generic non-leaking 500 responses.
+- `GET /api/cases/{case_id}/sessions` remains backward-compatible and includes
+  explicit sessions plus legacy sessions derived from existing messages and
+  summaries.
+- Existing cases with no explicit or derived sessions still return `[]`.
+- `POST /api/conversation/turn` ensures/touches a session row while preserving
+  the existing conversation response shape and crisis logic.
 - Session metadata responses expose only metadata fields and do not expose raw
-  messages, raw `summary_json`, summary `key_statement`, crisis reasons, or
-  DB-internal `round`.
+  messages, summaries, raw `summary_json`, summary `key_statement`, themes,
+  crisis reasons, report text, DB-internal `round`, or exact `crisis_level`.
+- Exact `crisis_level` is not persisted in this milestone.
 
 ### MCP Server
 
@@ -110,7 +128,7 @@ Current facts:
 - ReportPage review aids are counselor-facing context only and are not objective
   clinical measurements.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
-  to show derived session metadata, resume links, and report links.
+  to show backend session metadata, resume links, and report links.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - ReportPage back-to-conversation links preserve the active case and session IDs.
@@ -132,10 +150,11 @@ Current facts:
 - The high-risk modal/dialog opens only when a backend response includes
   `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
   metadata, and low/default crisis states do not open the modal.
-- Frontend deletion, PDF export, session deletion/archive, session titles, richer
-  session metadata, optional charting library integration, Settings backend
-  integration, and MCP integration remain future work.
-- No persisted report drafts, persisted `crisis_level` on summaries, editable
+- Frontend durable session integration, deletion, PDF export, session
+  deletion/archive, session titles, richer session metadata, optional charting
+  library integration, Settings backend integration, and MCP integration remain
+  future work.
+- No persisted report drafts, persisted exact `crisis_level` on summaries, editable
   report fields, backend schema changes, LLM prompt changes, Recharts integration,
   or final report template mirroring has been implemented for the report workspace.
 
@@ -166,9 +185,17 @@ Current facts:
   and jsdom.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
   network.
-- Backend DB and route tests cover derived session metadata, missing-case 404,
+- Backend DB and route tests cover session metadata, missing-case 404,
   existing-case empty-list behavior, and generic non-leaking session-listing
   failure handling.
+- Backend DB tests cover sessions table creation, idempotent backfill,
+  create/get/ensure/touch helpers, explicit empty sessions, legacy derived
+  compatibility, sorting, no-leak metadata, and cascade behavior.
+- Backend route tests cover POST session creation, idempotency, missing case, GET
+  inclusion, conversation ensure/touch behavior, and generic non-leaking
+  failures.
+- Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
+  lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
   localStorage usage, ConversationPage input behavior, crisis modal/fallback
   behavior, query-param resume and new-session behavior, ReportPage missing
@@ -199,11 +226,11 @@ Current facts:
 | Task 05 conversation agent | implemented | Non-streaming, Gemini-based, safety fallback. |
 | Task 06 analysis agent | implemented | Computes report metadata in code. |
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
-| Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests. |
+| Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, new-session reset behavior, and backend-level-only crisis UI behavior. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
 | Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
-| Task 14 history page | partial | Lists backend cases and derived sessions; deletion, archive, titles, labels, and richer session metadata remain future work. |
+| Task 14 history page | partial | Lists backend cases and session metadata; durable session creation integration, deletion, archive, titles, labels, and richer session metadata remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
 | Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
@@ -239,11 +266,11 @@ Status categories:
 
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
-3. Complete remaining frontend workflows: deletion, session deletion/archive,
-   session titles, persisted report drafts, persisted `crisis_level` if exact
-   crisis level should survive reload/navigation, PDF export, optional
-   charts/Recharts, editable report review workflow, and Settings backend
-   integration.
+3. Complete remaining frontend workflows: durable session integration, deletion,
+   session deletion/archive, session titles, persisted report drafts, persisted
+   exact `crisis_level` if exact crisis level should survive reload/navigation,
+   PDF export, optional charts/Recharts, editable report review workflow, report
+   status, and Settings backend integration.
 4. Fill remaining frontend test gaps: ReportPage error handling.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
    needed.
@@ -272,6 +299,14 @@ Current reality:
 - DB and agents are the usable backend foundation.
 - Active API includes `/health` and the Task 09 `/api` routes.
 - Backend routers are implemented.
+- A dedicated backend sessions table exists for safe operational metadata,
+  supports durable empty sessions, backfills legacy message/summary-derived
+  sessions idempotently, and cascades on case deletion.
+- Session listing includes explicit sessions plus legacy derived sessions while
+  preserving backward-compatible empty-list behavior for existing cases with no
+  sessions.
+- Conversation turn persistence now ensures/touches session metadata without
+  changing the conversation response shape or crisis logic.
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
@@ -307,21 +342,21 @@ Current reality:
 
 Future intent:
 
-- Add a dedicated sessions table later for empty sessions, titles,
-  archive/delete, labels, report status, and other richer session metadata.
-- Add session deletion/archive and session titles.
+- Add frontend durable session creation/use, session deletion/archive, and
+  session titles.
 - Report workflow future work remains: Report Schema v2 / formal report schema
   expansion, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
-- Persist `crisis_level` with summaries later if exact crisis level should survive
-  reload/navigation; until then, do not infer low/high from summary-level
+- Add report status and persisted report drafts when prioritized.
+- Persist exact `crisis_level` with summaries later if exact crisis level should
+  survive reload/navigation; until then, do not infer low/high from summary-level
   `crisis_flag`.
 - Smarter scroll behavior can be considered later as optional UX refinement.
 - Frontend should add deletion and Settings backend integration.
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
-- MCP should provide case-query tools after the core HTTP and frontend workflows
-  are clarified.
+- Report Schema v2, PDF export, charts/Recharts, and MCP should remain out of
+  scope until core HTTP and frontend workflows are clarified.
 
 ## Related Context Documents
 

@@ -29,7 +29,7 @@ Current reality:
 - ReportPage review aids are counselor-facing context only and are not objective
   clinical measurements.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
-  to show derived session metadata.
+  to show backend session metadata.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - ConversationPage supports query-param resume, and query params take precedence
@@ -66,12 +66,13 @@ Current reality:
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
   regenerated after leaving or reloading.
-- Frontend deletion, PDF export, session deletion/archive, session titles, richer
-  session metadata, optional charts/Recharts, Settings backend integration, and
-  MCP integration are not implemented yet.
-- Persisted report drafts, persisted `crisis_level` for summaries, editable report
-  fields, backend schema changes, LLM prompt changes, Recharts integration, and
-  final report template mirroring have not been implemented.
+- Frontend durable session creation/use, deletion, PDF export, session
+  deletion/archive, session titles, richer session metadata, optional
+  charts/Recharts, Settings backend integration, and MCP integration are not
+  implemented yet.
+- Persisted report drafts, persisted exact `crisis_level` for summaries,
+  editable report fields, LLM prompt changes, Recharts integration, and final
+  report template mirroring have not been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -82,10 +83,11 @@ Current reality:
 
 Remaining future behavior:
 
-- Complete deletion, session deletion/archive, session titles, richer session
-  metadata, persisted `crisis_level` if exact crisis level should survive
-  reload/navigation, Settings backend integration, and MCP-related UI only when
-  the corresponding tasks are prioritized.
+- Complete durable session integration, deletion, session deletion/archive,
+  session titles, richer session metadata, persisted exact `crisis_level` if
+  exact crisis level should survive reload/navigation, Settings backend
+  integration, and MCP-related UI only when the corresponding tasks are
+  prioritized.
 - Complete report workflow future work: formal Report Schema v2 after the
   template stabilizes, persisted report drafts, source/evidence traceability,
   final PDF export, optional Recharts/charts, and editable counselor review
@@ -209,7 +211,7 @@ Route: `/history`
 Responsibilities:
 
 - Display available cases.
-- Lazily expand cases to list derived session metadata.
+- Lazily expand cases to list backend session metadata.
 - Allow multiple cases to remain expanded.
 - Let the counselor resume a conversation through
   `/?caseId={caseId}&sessionId={sessionId}`.
@@ -274,7 +276,8 @@ Expected calls:
 - `GET /api/cases/{case_id}` to inspect a selected case when the UI needs case
   detail.
 
-Future calls may include case deletion, session deletion/archive, session title,
+Future calls may include `POST /api/cases/{case_id}/sessions` for durable empty
+session creation, plus case deletion, session deletion/archive, session title,
 label, and report-status endpoints once implemented.
 
 ### SettingsPage
@@ -344,6 +347,10 @@ Notes:
 ```js
 {
   session_id: 'session uuid',
+  title: 'optional counselor-facing title',
+  created_at: 'ISO-8601 UTC',
+  updated_at: 'ISO-8601 UTC',
+  last_activity_at: 'ISO-8601 UTC',
   message_count: 2,
   summary_count: 1,
   last_turn_number: 3,
@@ -355,10 +362,13 @@ Notes:
 
 Notes:
 
-- Session metadata is derived from persisted messages and summaries.
-- The backend does not have a dedicated sessions table yet.
+- Backend session metadata now includes explicit sessions plus legacy sessions
+  derived from persisted messages and summaries.
+- Empty sessions can exist durably through backend session creation, but
+  frontend durable session integration remains future work.
 - UI state must not include DB-internal `round`, raw `summary_json`, raw
-  messages, `key_statement`, or crisis reasons.
+  messages, full summaries, `key_statement`, themes, crisis reasons, report
+  text, or exact `crisis_level`.
 - `latest_summary_preview` is metadata-only and should be treated as a compact
   scan aid, not clinical content for browser storage.
 
@@ -547,7 +557,7 @@ Current implemented state:
 - ReportPage generated reports are transient, displays a temporary-report note,
   and does not store report text in browser storage.
 - ReportPage review aids are not objective clinical measurements.
-- HistoryPage lists backend cases and lazily expands cases to show derived
+- HistoryPage lists backend cases and lazily expands cases to show backend
   session metadata.
 - ConversationPage supports query-param resume, and query params take precedence
   over stale `sessionStorage` identifiers.
@@ -565,10 +575,10 @@ Current implemented state:
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
-- Add deletion, session deletion/archive, session titles, labels, report status,
-  richer session metadata, Settings backend integration, and MCP-related UI when
-  prioritized.
-- Add persisted `crisis_level` later if exact crisis level should survive
+- Add durable session integration, deletion, session deletion/archive, session
+  titles, labels, report status, richer session metadata, Settings backend
+  integration, and MCP-related UI when prioritized.
+- Add persisted exact `crisis_level` later if exact crisis level should survive
   reload/navigation.
 - Complete future report work after the report template stabilizes: formal Report
   Schema v2, persisted report drafts, source/evidence traceability, final PDF
@@ -580,8 +590,6 @@ Future behavior:
 ## Open Decisions
 
 - Whether future report visuals should add Recharts or another charting library.
-- Whether future session data should use a dedicated sessions table for empty
-  sessions, titles, archive/delete, labels, report status, and richer metadata.
 - How a future formal report schema should support source/evidence traceability
   and editable counselor review.
 - Whether and where to persist report drafts.
