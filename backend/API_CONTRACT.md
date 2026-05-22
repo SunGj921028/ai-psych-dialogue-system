@@ -18,8 +18,9 @@ source code remains the implementation truth.
 | GET | `/api/cases` | implemented | Lists cases using DB helper ordering. |
 | GET | `/api/cases/{case_id}` | implemented | Returns 404 when missing. |
 | DELETE | `/api/cases/{case_id}` | implemented | Deletes one case; DB cascades related rows. |
+| POST | `/api/cases/{case_id}/sessions` | implemented | Creates or returns durable safe session metadata. |
 | POST | `/api/conversation/turn` | implemented | Runs conversation/crisis agents, persists messages and summary. |
-| GET | `/api/cases/{case_id}/sessions` | implemented | Returns derived session metadata for a case. |
+| GET | `/api/cases/{case_id}/sessions` | implemented | Returns explicit session metadata plus legacy derived sessions for a case. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/messages` | implemented | Returns messages with `turn_number`. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/summaries` | implemented | Returns parsed summary data. |
 | POST | `/api/reports/generate` | implemented | Generates a `ConceptualizationReport` for a case/session. |
@@ -206,10 +207,59 @@ Implementation notes:
 - Persist both user and assistant messages through `database.db.add_message()`.
 - Generate summary after the assistant response and crisis result are available.
 - Persist summary through `database.db.add_summary()`.
+- Ensure/touch a durable session row for the case/session.
 - `summary.crisis_flag` must use the crisis detector result.
-- The frontend-generated `session_id` should be accepted; the backend does not generate it.
+- The frontend-generated `session_id` should be accepted for conversation turns.
+- Conversation response shape and crisis logic are unchanged.
+- Exact `crisis_level` is not persisted in this milestone.
 
 ### Session Listing
+
+#### Create Case Session
+
+Status: implemented
+
+`POST /api/cases/{case_id}/sessions`
+
+Request body is optional:
+
+```json
+{
+  "session_id": "optional-session-uuid",
+  "title": "optional counselor-facing title"
+}
+```
+
+Response:
+
+```json
+{
+  "session_id": "session uuid",
+  "title": "optional counselor-facing title",
+  "created_at": "ISO-8601 UTC",
+  "updated_at": "ISO-8601 UTC",
+  "last_activity_at": "ISO-8601 UTC",
+  "message_count": 0,
+  "summary_count": 0,
+  "last_turn_number": null,
+  "last_updated": "ISO-8601 UTC",
+  "has_crisis": false,
+  "latest_summary_preview": null
+}
+```
+
+Implementation notes:
+
+- Use the sessions helper in `database.db` to create or return metadata.
+- The backend may generate `session_id` when omitted.
+- Duplicate same-case/session creation is idempotent and returns existing
+  metadata.
+- Return 404 if the case does not exist.
+- Return 500 with a generic non-leaking message on helper failures.
+- The response shape matches the current session metadata response.
+- Session metadata is safe operational metadata only. It must not store or expose
+  raw messages, summaries, raw `summary_json`, summary `key_statement`, themes,
+  crisis reasons, report text, DB-internal `round`, or exact `crisis_level`.
 
 #### List Case Sessions
 
@@ -223,6 +273,10 @@ Response:
 [
   {
     "session_id": "session uuid",
+    "title": "optional counselor-facing title",
+    "created_at": "ISO-8601 UTC",
+    "updated_at": "ISO-8601 UTC",
+    "last_activity_at": "ISO-8601 UTC",
     "message_count": 2,
     "summary_count": 1,
     "last_turn_number": 3,
@@ -235,7 +289,10 @@ Response:
 
 Response fields:
 
-- `session_id`: frontend-generated session identifier.
+- `session_id`: backend-generated or frontend-provided session identifier.
+- `title`: nullable counselor-facing title stored as safe operational metadata.
+- `created_at`, `updated_at`, `last_activity_at`: safe operational timestamps
+  from the durable session row when available.
 - `message_count`: number of persisted messages in the session.
 - `summary_count`: number of persisted summaries in the session.
 - `last_turn_number`: highest public turn number from available messages or summaries.
@@ -247,16 +304,25 @@ Response fields:
 Implementation notes:
 
 - Use `database.db.get_session_metadata_by_case()`.
-- Sessions are derived from existing messages and summaries.
-- No dedicated sessions table exists yet.
+- A dedicated `sessions` table exists for safe operational metadata only:
+  `case_id`, `session_id`, `created_at`, `updated_at`, `last_activity_at`, and
+  nullable `title`.
+- Session rows are linked to cases and cascade when a case is deleted.
+- Existing message/summary-derived sessions are backfilled idempotently.
+- Session listing remains backward-compatible and includes explicit sessions plus
+  legacy sessions derived from existing messages and summaries.
 - Return 404 if the case does not exist.
-- Return `[]` for an existing case with no derived sessions.
+- Return `[]` for an existing case with no explicit or derived sessions.
 - On helper failures, return 500 with a generic non-leaking message.
 - Do not expose DB-internal `round`.
 - Do not expose raw `summary_json`.
 - Do not expose raw messages.
+- Do not expose full parsed summaries.
 - Do not expose summary `key_statement`.
+- Do not expose themes.
 - Do not expose crisis reasons.
+- Do not expose report text.
+- Do not expose exact `crisis_level`.
 - `latest_summary_preview` must remain metadata-only and should be derived only
   from turn, emotion, and intensity when available.
 
@@ -408,13 +474,23 @@ These are not required for Task 09:
 ### Conversation Turn Flow
 
 1. Validate request and confirm `case_id` exists.
-2. Convert `conversation_history` into existing `ConversationMessage` models.
-3. Run `generate_response()` and `detect_crisis()` concurrently.
-4. Persist user message with role `user`.
-5. Persist assistant message with role `assistant`.
-6. Generate `TurnSummary` with the crisis detector's `crisis_flag`.
-7. Persist summary JSON and crisis flag.
-8. Return assistant response, crisis result, and summary.
+2. Ensure/touch the durable session row for `case_id` and `session_id`.
+3. Convert `conversation_history` into existing `ConversationMessage` models.
+4. Run `generate_response()` and `detect_crisis()` concurrently.
+5. Persist user message with role `user`.
+6. Persist assistant message with role `assistant`.
+7. Generate `TurnSummary` with the crisis detector's `crisis_flag`.
+8. Persist summary JSON and crisis flag.
+9. Return assistant response, crisis result, and summary.
+
+### Session Creation Flow
+
+1. Validate request and confirm `case_id` exists.
+2. Accept optional `session_id` and `title`.
+3. Generate a `session_id` when omitted.
+4. Create a durable session row or return the existing same-case/session row
+   idempotently.
+5. Return the current session metadata response shape.
 
 ### Report Generation Flow
 
@@ -427,9 +503,10 @@ These are not required for Task 09:
 ### Session Listing Flow
 
 1. Validate request and confirm `case_id` exists.
-2. Load derived session metadata from persisted messages and summaries.
-3. Return one metadata object per derived session.
-4. Return `[]` when the case exists but has no persisted sessions.
+2. Load explicit session metadata and legacy metadata derived from persisted
+   messages and summaries.
+3. Return one safe metadata object per explicit or derived session.
+4. Return `[]` when the case exists but has no explicit or derived sessions.
 
 ## DB / API Mapping Rules
 
@@ -439,17 +516,25 @@ These are not required for Task 09:
 - DB summary rows contain raw `summary_json`, but DB helper return values expose parsed
   `summary`.
 - When persisting a summary, serialize the `TurnSummary` model to JSON.
-- Session metadata is derived from existing message and summary rows; there is no
-  sessions table yet.
-- Session metadata responses must not expose raw messages, raw `summary_json`,
-  `key_statement`, crisis reasons, or DB-internal `round`.
+- The `sessions` table stores safe operational metadata only: `case_id`,
+  `session_id`, `created_at`, `updated_at`, `last_activity_at`, and nullable
+  `title`.
+- Session rows are linked to cases and cascade on case delete.
+- Existing message/summary-derived sessions are backfilled idempotently.
+- Session metadata responses must not expose raw messages, summaries, raw
+  `summary_json`, `key_statement`, themes, crisis reasons, report text,
+  DB-internal `round`, or exact `crisis_level`.
+- Exact `crisis_level` is not persisted in this milestone.
 
 ## Error Handling Expectations
 
 - Missing case: return 404.
-- Session listing for an existing case with no derived sessions: return `[]`.
-- Session listing helper failure: return 500 with a generic message that does not
-  leak clinical content or implementation details.
+- Session creation for an existing same-case/session pair is idempotent and
+  returns existing metadata.
+- Session listing for an existing case with no explicit or derived sessions:
+  return `[]`.
+- Session creation/listing helper failure: return 500 with a generic message that
+  does not leak clinical content or implementation details.
 - Missing session data for report generation: return a valid insufficient-data report
   if the analysis agent supports that path, or return 404 only if the case/session is
   clearly invalid. Prefer preserving existing `analysis_agent.generate_report()` behavior.

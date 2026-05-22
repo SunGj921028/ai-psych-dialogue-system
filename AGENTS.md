@@ -50,6 +50,8 @@ mismatches.
 
 - FastAPI application in `backend/main.py`.
 - SQLite data layer in `backend/database/db.py` using `aiosqlite`.
+- Dedicated `sessions` table stores safe operational metadata only and supports
+  durable empty sessions.
 - Four implemented async agent modules in `backend/agents/`:
   - `crisis_agent.py`: crisis detection, Groq provider, fail-safe fallback.
   - `summary_agent.py`: per-turn JSON micro-summary, Groq provider.
@@ -68,7 +70,7 @@ mismatches.
   a counselor review workspace with a prominent backend disclaimer and
   summary-derived review aids.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
-  to show derived session metadata.
+  to show backend session metadata.
 - Header navigation and light/dark theme toggle are implemented.
 - Frontend deterministic tests use Vitest, React Testing Library, and jsdom.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
@@ -78,11 +80,12 @@ mismatches.
 - ConversationPage supports query-param resume, and ReportPage preserves case and
   session IDs when linking back to conversation.
 - Session metadata and previews are not stored in browser storage.
-- Frontend deletion, PDF export, session deletion/archive, session titles, richer
-  session metadata, optional charts/Recharts, editable report workflow, Settings
-  backend integration, and MCP integration remain future work.
-- A dedicated sessions table remains future work for empty sessions, titles,
-  archive/delete, labels, report status, and richer metadata.
+- Frontend durable session integration, deletion, PDF export, session
+  deletion/archive, session titles, richer session metadata, optional
+  charts/Recharts, editable report workflow, Settings backend integration, and
+  MCP integration remain future work.
+- Session archive/delete, report status, persisted report drafts, and exact
+  persisted `crisis_level` remain future work.
 
 ### Active API Reality
 
@@ -93,6 +96,7 @@ The current active HTTP API includes:
 - `GET /api/cases`
 - `GET /api/cases/{case_id}`
 - `DELETE /api/cases/{case_id}`
+- `POST /api/cases/{case_id}/sessions`
 - `POST /api/conversation/turn`
 - `GET /api/cases/{case_id}/sessions`
 - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
@@ -104,13 +108,15 @@ next major product integration blockers.
 
 ## Current Development Priority
 
-Integrate frontend pages with the implemented HTTP API before MCP work.
+Integrate frontend pages with the implemented HTTP API before MCP work, with
+durable backend session creation/use as the next frontend integration slice.
 
 Recommended order:
 
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
-3. Complete remaining frontend workflows and focused frontend test gaps.
+3. Complete remaining frontend workflows, including durable session integration,
+   and focused frontend test gaps.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
@@ -154,6 +160,16 @@ These are current code facts and should not be contradicted in new work:
 - Public-facing API/data models should use `turn_number`, not `round`.
 - `get_summaries_by_session()` and `get_latest_summaries()` return parsed summary
   data in a `summary` field, not raw `summary_json`.
+- A dedicated `sessions` table stores only `case_id`, `session_id`, `created_at`,
+  `updated_at`, `last_activity_at`, and nullable `title`; session rows cascade on
+  case delete.
+- `GET /api/cases/{case_id}/sessions` includes explicit sessions plus legacy
+  message/summary-derived sessions and remains backward-compatible.
+- `POST /api/conversation/turn` ensures/touches a session row without changing
+  response shape or crisis logic.
+- Session metadata must not store or expose raw messages, summaries,
+  `summary_json`, `key_statement`, themes, crisis reasons, report text,
+  DB-internal `round`, or exact `crisis_level`.
 - Existing Pydantic models inside agent files should be reused instead of duplicated:
   - `ConversationMessage`, `ConversationResponse`
   - `CrisisDetectionResult`
