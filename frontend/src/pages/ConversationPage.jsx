@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
@@ -106,8 +106,12 @@ function clampScore(value) {
 function getCrisisLabel(level) {
   if (level === 'high') return '高風險'
   if (level === 'low') return '需留意'
-  if (level === 'none') return '未偵測'
-  return '尚無資料'
+  if (level === 'none') return '未偵測到危機'
+  return '未偵測到危機'
+}
+
+function summaryHasCrisisFlag(summaryRow) {
+  return summaryRow?.crisis_flag === true || summaryRow?.summary?.crisis_flag === true
 }
 
 function SectionShell({ children, className = '' }) {
@@ -189,6 +193,8 @@ export default function ConversationPage() {
   const [searchParams] = useSearchParams()
   const queryCaseId = searchParams.get('caseId') ?? ''
   const querySessionId = searchParams.get('sessionId') ?? ''
+  const messageListRef = useRef(null)
+  const appliedQuerySessionRef = useRef('')
   const [cases, setCases] = useState([])
   const [activeCaseId, setActiveCaseId] = useState(() => {
     return queryCaseId || sessionStorage.getItem(ACTIVE_CASE_KEY) || ''
@@ -199,6 +205,7 @@ export default function ConversationPage() {
   const [messages, setMessages] = useState([])
   const [summaries, setSummaries] = useState([])
   const [crisisStatus, setCrisisStatus] = useState(null)
+  const [showHighCrisisDialog, setShowHighCrisisDialog] = useState(false)
   const [codeName, setCodeName] = useState('')
   const [note, setNote] = useState('')
   const [userInput, setUserInput] = useState('')
@@ -207,6 +214,7 @@ export default function ConversationPage() {
   const [isLoadingSession, setIsLoadingSession] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [submitFailed, setSubmitFailed] = useState(false)
 
   const activeCase = useMemo(() => {
     return cases.find((item) => item.id === activeCaseId) ?? null
@@ -214,11 +222,56 @@ export default function ConversationPage() {
 
   const latestSummary = summaries.at(-1) ?? null
   const latestSummaryData = latestSummary?.summary ?? null
+  const latestSummaryHasCrisisFlag = summaryHasCrisisFlag(latestSummary)
+  const hasSummaryCrisisFlag = summaries.some(summaryHasCrisisFlag)
+  const isResumedFromQuery = Boolean(
+    queryCaseId &&
+      querySessionId &&
+      activeCaseId === queryCaseId &&
+      sessionId === querySessionId,
+  )
 
   const reportUrl =
     activeCaseId && sessionId
       ? `/report/${activeCaseId}?sessionId=${encodeURIComponent(sessionId)}`
       : ''
+  const emptyMessagesTitle = isLoadingSession
+    ? '正在載入會談'
+    : activeCaseId && sessionId
+      ? '尚未開始本次會談'
+      : '尚未選擇個案'
+  const emptyMessagesDescription = isLoadingSession
+    ? '正在讀取此會談的既有訊息與摘要。'
+    : activeCaseId && sessionId
+      ? '可在下方輸入個案提供的第一段文字，送出後會顯示 AI 文件輔助回應與微摘要。'
+      : '請先建立新個案，或選擇既有個案後再輸入會談內容。'
+  const crisisDisplay = useMemo(() => {
+    if (crisisStatus?.crisis_level) {
+      return {
+        label: getCrisisLabel(crisisStatus.crisis_level),
+        description: crisisStatus.reason || '後端未提供額外說明。',
+      }
+    }
+
+    if (latestSummaryHasCrisisFlag) {
+      return {
+        label: '摘要危機註記',
+        description: '最新摘要有危機註記，請諮商師重新檢視',
+      }
+    }
+
+    if (hasSummaryCrisisFlag) {
+      return {
+        label: '摘要危機註記',
+        description: '此會談摘要曾有危機註記，請諮商師重新檢視',
+      }
+    }
+
+    return {
+      label: '未偵測到危機',
+      description: '尚無本頁即時危機等級；目前載入摘要未標示危機註記。',
+    }
+  }, [crisisStatus, hasSummaryCrisisFlag, latestSummaryHasCrisisFlag])
 
   const loadCases = useCallback(async () => {
     setIsLoadingCases(true)
@@ -259,6 +312,15 @@ export default function ConversationPage() {
   }, [loadCases])
 
   useEffect(() => {
+    const querySessionKey =
+      queryCaseId && querySessionId ? `${queryCaseId}:${querySessionId}` : ''
+
+    if (!querySessionKey || appliedQuerySessionRef.current === querySessionKey) {
+      return
+    }
+
+    appliedQuerySessionRef.current = querySessionKey
+
     if (queryCaseId && queryCaseId !== activeCaseId) {
       setActiveCaseId(queryCaseId)
     }
@@ -274,6 +336,7 @@ export default function ConversationPage() {
       setMessages([])
       setSummaries([])
       setCrisisStatus(null)
+      setShowHighCrisisDialog(false)
       return
     }
 
@@ -286,6 +349,7 @@ export default function ConversationPage() {
       setMessages([])
       setSummaries([])
       setCrisisStatus(null)
+      setShowHighCrisisDialog(false)
       return
     }
 
@@ -295,6 +359,15 @@ export default function ConversationPage() {
   useEffect(() => {
     loadSessionData(activeCaseId, sessionId)
   }, [activeCaseId, loadSessionData, sessionId])
+
+  useEffect(() => {
+    if (isLoadingSession) return
+
+    const messageList = messageListRef.current
+    if (!messageList) return
+
+    messageList.scrollTop = messageList.scrollHeight
+  }, [isLoadingSession, messages, summaries])
 
   async function handleCreateCase(event) {
     event.preventDefault()
@@ -323,8 +396,10 @@ export default function ConversationPage() {
       setMessages([])
       setSummaries([])
       setCrisisStatus(null)
+      setShowHighCrisisDialog(false)
       setCodeName('')
       setNote('')
+      setSubmitFailed(false)
     } catch (createError) {
       setError(getFriendlyError(createError, '無法建立個案，請稍後再試。'))
     } finally {
@@ -338,6 +413,8 @@ export default function ConversationPage() {
     setMessages([])
     setSummaries([])
     setCrisisStatus(null)
+    setShowHighCrisisDialog(false)
+    setSubmitFailed(false)
 
     if (selectedCaseId) {
       setSessionId(createSessionId())
@@ -356,11 +433,17 @@ export default function ConversationPage() {
     setMessages([])
     setSummaries([])
     setCrisisStatus(null)
+    setShowHighCrisisDialog(false)
     setError('')
+    setSubmitFailed(false)
   }
 
   async function handleSubmitTurn(event) {
     event.preventDefault()
+
+    if (isSubmitting) {
+      return
+    }
 
     const trimmedInput = userInput.trim()
 
@@ -381,6 +464,7 @@ export default function ConversationPage() {
 
     setIsSubmitting(true)
     setError('')
+    setSubmitFailed(false)
 
     const nextTurnNumber = getNextTurnNumber(messages, summaries)
 
@@ -394,13 +478,31 @@ export default function ConversationPage() {
       })
 
       setCrisisStatus(response.crisis)
+      setShowHighCrisisDialog(response.crisis?.crisis_level === 'high')
       setUserInput('')
       await loadSessionData(activeCaseId, sessionId)
     } catch (submitError) {
       setError(getFriendlyError(submitError, '無法送出本輪內容，請稍後再試。'))
+      setSubmitFailed(true)
     } finally {
       setIsSubmitting(false)
     }
+  }
+
+  function handleInputKeyDown(event) {
+    const isComposing =
+      event.nativeEvent?.isComposing === true || event.isComposing === true
+
+    if (event.key !== 'Enter' || event.shiftKey || isComposing) {
+      return
+    }
+
+    if (!userInput.trim() || isSubmitting || !activeCaseId || !sessionId) {
+      return
+    }
+
+    event.preventDefault()
+    void handleSubmitTurn(event)
   }
 
   return (
@@ -429,6 +531,12 @@ export default function ConversationPage() {
         ) : null}
       </section>
 
+      {isResumedFromQuery ? (
+        <div className="w-fit rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-950 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100">
+          已從歷史紀錄恢復此會談
+        </div>
+      ) : null}
+
       {error ? (
         <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
           {error}
@@ -453,6 +561,38 @@ export default function ConversationPage() {
             </div>
           </div>
         </section>
+      ) : null}
+
+      {showHighCrisisDialog ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 px-4 backdrop-blur-sm">
+          <section
+            aria-labelledby="high-crisis-dialog-title"
+            aria-modal="true"
+            className="w-full max-w-md rounded-md border border-red-300 bg-white p-5 text-slate-950 shadow-[0_24px_80px_rgba(127,29,29,0.35)] dark:border-red-500/70 dark:bg-slate-950 dark:text-slate-50"
+            role="dialog"
+          >
+            <div className="flex gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-red-100 text-red-800 dark:bg-red-950 dark:text-red-100">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold" id="high-crisis-dialog-title">
+                  高風險提醒
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  後端危機偵測回傳高風險等級。請諮商師先審閱本輪內容，並依專業流程處理。
+                </p>
+              </div>
+            </div>
+            <button
+              className="mt-5 inline-flex w-full items-center justify-center rounded-md bg-red-700 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-red-300 dark:bg-red-600 dark:hover:bg-red-500"
+              onClick={() => setShowHighCrisisDialog(false)}
+              type="button"
+            >
+              我已了解
+            </button>
+          </section>
+        </div>
       ) : null}
 
       <SectionShell className="p-4 ring-1 ring-white/60">
@@ -535,7 +675,7 @@ export default function ConversationPage() {
       </SectionShell>
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <SectionShell className="flex min-h-[640px] flex-col overflow-hidden ring-1 ring-white/60">
+        <SectionShell className="flex h-[82vh] min-h-[680px] max-h-[920px] flex-col overflow-hidden ring-1 ring-white/60">
           <div className="flex items-center justify-between gap-3 border-b bg-gradient-to-r from-white to-indigo-50/55 px-4 py-3 dark:border-slate-800 dark:from-slate-900 dark:to-indigo-950/18">
             <div>
               <h2 className="flex items-center gap-2 font-semibold">
@@ -551,11 +691,16 @@ export default function ConversationPage() {
             ) : null}
           </div>
 
-          <div className="flex-1 space-y-4 overflow-y-auto bg-[linear-gradient(180deg,rgba(240,253,250,0.45),rgba(248,250,252,0.78))] p-4 dark:bg-[linear-gradient(180deg,rgba(19,78,74,0.14),rgba(15,23,42,0.76))]">
+          <div
+            aria-label="會談訊息列表"
+            className="min-h-0 flex-1 space-y-4 overflow-y-auto scroll-pb-6 bg-[linear-gradient(180deg,rgba(240,253,250,0.45),rgba(248,250,252,0.78))] p-4 dark:bg-[linear-gradient(180deg,rgba(19,78,74,0.14),rgba(15,23,42,0.76))]"
+            ref={messageListRef}
+            role="log"
+          >
             {messages.length === 0 ? (
               <EmptyState
-                title="尚無會談訊息"
-                description="選擇或建立個案後，在下方輸入個案提供的文字，即可產生本輪回應與微摘要。"
+                title={emptyMessagesTitle}
+                description={emptyMessagesDescription}
               />
             ) : (
               messages.map((message) => {
@@ -609,7 +754,7 @@ export default function ConversationPage() {
           </div>
 
           <form
-            className="sticky bottom-14 border-t bg-white/95 p-4 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:!bg-slate-950 dark:shadow-[0_-16px_34px_rgba(0,0,0,0.26)]"
+            className="shrink-0 border-t bg-white/95 p-4 shadow-[0_-16px_34px_rgba(15,23,42,0.08)] backdrop-blur dark:border-slate-700 dark:!bg-slate-950 dark:shadow-[0_-16px_34px_rgba(0,0,0,0.26)]"
             onSubmit={handleSubmitTurn}
           >
             <label className="sr-only" htmlFor="conversation-input">
@@ -621,10 +766,11 @@ export default function ConversationPage() {
                 id="conversation-input"
                 value={userInput}
                 onChange={(event) => setUserInput(event.target.value)}
+                onKeyDown={handleInputKeyDown}
                 placeholder="輸入本輪由個案提供、諮商師代為整理的文字..."
               />
               <button
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600 md:self-end"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600 md:w-auto md:self-end"
                 disabled={!activeCaseId || !sessionId || isSubmitting}
                 type="submit"
               >
@@ -632,6 +778,18 @@ export default function ConversationPage() {
                 {isSubmitting ? '送出中' : '送出本輪'}
               </button>
             </div>
+            {isSubmitting || submitFailed ? (
+              <p
+                aria-live="polite"
+                className={`mt-3 text-xs leading-5 ${
+                  submitFailed ? 'text-destructive' : 'text-muted-foreground'
+                }`}
+              >
+                {isSubmitting
+                  ? '正在送出並等待回覆...'
+                  : '送出失敗，內容仍保留，可稍後再試。'}
+              </p>
+            ) : null}
           </form>
         </SectionShell>
 
@@ -716,13 +874,11 @@ export default function ConversationPage() {
               <div className="flex items-center justify-between gap-3">
                 <span className="text-muted-foreground">後端等級</span>
                 <span className="font-medium">
-                  {getCrisisLabel(crisisStatus?.crisis_level)}
+                  {crisisDisplay.label}
                 </span>
               </div>
               <p className="mt-3 leading-6 text-muted-foreground">
-                {crisisStatus
-                  ? crisisStatus.reason || '後端未提供額外說明。'
-                  : '尚無本輪危機偵測結果；重新載入的摘要不會在前端重新推估危機等級。'}
+                {crisisDisplay.description}
               </p>
             </div>
             {crisisStatus?.crisis_level === 'low' ? (

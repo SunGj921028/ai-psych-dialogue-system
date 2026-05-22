@@ -113,6 +113,9 @@ describe('ReportPage behavior', () => {
       expect(api.getSessionSummaries).toHaveBeenCalledWith(caseId, sessionId)
     })
     expect(await screen.findByText('SYNTHETIC_SUMMARY_KEY')).toBeInTheDocument()
+    expect(
+      screen.getByText('目前草稿報告僅在本頁暫時顯示，離開或重新整理後需重新產生。'),
+    ).toBeInTheDocument()
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 

@@ -542,27 +542,32 @@ export default function ReportPage() {
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Link
-            className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
-            to={conversationUrl}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            回工作台
-          </Link>
-          <button
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
-            disabled={isGenerating || !caseId || !sessionId}
-            onClick={handleGenerateReport}
-            type="button"
-          >
-            {isGenerating ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <RefreshCcw className="h-4 w-4" />
-            )}
-            {report ? '重新產生草稿' : '產生報告草稿'}
-          </button>
+        <div className="space-y-2">
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+              to={conversationUrl}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              回工作台
+            </Link>
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
+              disabled={isGenerating || !caseId || !sessionId}
+              onClick={handleGenerateReport}
+              type="button"
+            >
+              {isGenerating ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <RefreshCcw className="h-4 w-4" />
+              )}
+              {report ? '重新產生草稿' : '產生報告草稿'}
+            </button>
+          </div>
+          <p className="max-w-sm text-xs leading-5 text-muted-foreground">
+            目前草稿報告僅在本頁暫時顯示，離開或重新整理後需重新產生。
+          </p>
         </div>
       </section>
 
