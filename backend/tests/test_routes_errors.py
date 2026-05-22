@@ -226,6 +226,28 @@ def test_existing_case_missing_session_returns_empty_message_and_summary_lists(c
     assert summaries_response.json() == []
 
 
+def test_create_session_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_CREATE_SESSION_ERROR_DO_NOT_LEAK"
+
+    async def fake_create_session(case_id, session_id=None, title=None):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.conversation.create_session", fake_create_session)
+
+    response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "session-secret"},
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to create session"}
+    _assert_response_does_not_leak(response, exception_text, "session-secret")
+
+
 def test_report_route_preserves_code_owned_report_fields_with_mocked_llm(
     client,
     monkeypatch,

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import anyio
+
 from agents.conversation_agent import ConversationResponse
 from agents.crisis_agent import CrisisDetectionResult
 from agents.summary_agent import EmotionDetail, EmotionDimensions, TurnSummary
+import database.db as db_layer
 
 
 def _create_case(client) -> str:
@@ -87,6 +90,13 @@ def test_conversation_turn_persists_messages_and_summary(client, monkeypatch):
     assert summaries[0]["summary"]["crisis_flag"] is True
     assert "summary_json" not in summaries[0]
     assert "round" not in summaries[0]
+
+    session = anyio.run(db_layer.get_session, case_id, "session-1")
+    assert session["session_id"] == "session-1"
+    assert session["message_count"] == 2
+    assert session["summary_count"] == 1
+    assert session["last_turn_number"] == 1
+    assert session["last_updated"]
 
 
 def test_conversation_turn_missing_case_returns_404(client):
@@ -174,6 +184,71 @@ def test_list_case_sessions_existing_case_with_no_sessions_returns_empty_list(cl
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+def test_create_session_route_creates_empty_durable_session(client):
+    case_id = _create_case(client)
+
+    response = client.post(f"/api/cases/{case_id}/sessions")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"]
+    assert data["message_count"] == 0
+    assert data["summary_count"] == 0
+    assert data["last_turn_number"] == 0
+    assert data["last_updated"]
+    assert data["has_crisis"] is False
+    assert data["latest_summary_preview"] is None
+    assert "title" not in data
+    assert "round" not in data
+    assert "summary_json" not in data
+
+    sessions_response = client.get(f"/api/cases/{case_id}/sessions")
+    assert sessions_response.status_code == 200
+    assert sessions_response.json() == [data]
+
+
+def test_create_session_route_accepts_optional_session_id_and_is_idempotent(client):
+    case_id = _create_case(client)
+
+    first_response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "frontend-session", "title": "unused title"},
+    )
+    second_response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "frontend-session", "title": "different unused title"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.json() == first_response.json()
+    assert second_response.json()["session_id"] == "frontend-session"
+    assert "title" not in second_response.json()
+
+
+def test_create_session_route_missing_case_returns_404(client):
+    response = client.post(
+        "/api/cases/missing-case/sessions",
+        json={"session_id": "frontend-session"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_list_case_sessions_includes_empty_explicit_session(client):
+    case_id = _create_case(client)
+
+    create_response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "empty-explicit"},
+    )
+    response = client.get(f"/api/cases/{case_id}/sessions")
+
+    assert create_response.status_code == 200
+    assert response.status_code == 200
+    assert response.json() == [create_response.json()]
 
 
 def test_list_case_sessions_missing_case_returns_404(client):
