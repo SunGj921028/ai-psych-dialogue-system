@@ -147,6 +147,53 @@ describe('HistoryPage behavior', () => {
     )
   })
 
+  test('renders backend-provided empty durable sessions without preview or crisis chip', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        session_id: 'empty-session-id',
+        message_count: 0,
+        summary_count: 0,
+        last_turn_number: null,
+        has_crisis: false,
+        latest_summary_preview: null,
+      }),
+    ])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(api.listCaseSessions).toHaveBeenCalledWith('case-alpha-id')
+    })
+
+    expect(await screen.findByText('empty-session-id')).toBeInTheDocument()
+    expect(screen.getByText(/messages: 0/i)).toBeInTheDocument()
+    expect(screen.getByText(/summaries: 0/i)).toBeInTheDocument()
+    expect(screen.getByText(/last turn:/i)).toBeInTheDocument()
+    expect(screen.queryByText(/crisis metadata/i)).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('蝚?3 頛?繚 銝餉???嚗??繚 撘瑕漲 6/10'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /resume conversation/i }),
+    ).toHaveAttribute(
+      'href',
+      '/?caseId=case-alpha-id&sessionId=empty-session-id',
+    )
+    expect(screen.getByRole('link', { name: /open report/i })).toHaveAttribute(
+      'href',
+      '/report/case-alpha-id?sessionId=empty-session-id',
+    )
+  })
+
   test('session load failure shows friendly error without leaking raw text', async () => {
     api.listCases.mockResolvedValue([makeCase()])
     api.listCaseSessions.mockRejectedValue(

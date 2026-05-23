@@ -49,6 +49,14 @@ export async function listCaseSessions(caseId) {
   return response.data
 }
 
+export async function createSession(caseId, payload = {}) {
+  const response = await apiClient.post(
+    `/api/cases/${caseId}/sessions`,
+    payload,
+  )
+  return response.data
+}
+
 export async function getSessionSummaries(caseId, sessionId) {
   const response = await apiClient.get(
     `/api/cases/${caseId}/sessions/${sessionId}/summaries`,

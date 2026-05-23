@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import {
   createCase,
+  createSession,
   getSessionMessages,
   getSessionSummaries,
   listCases,
@@ -22,6 +23,8 @@ import {
 
 const ACTIVE_CASE_KEY = 'ai-psych-active-case-id'
 const ACTIVE_SESSION_KEY = 'ai-psych-active-session-id'
+const SESSION_PARTIAL_CREATE_ERROR =
+  '個案已建立，但會談尚未建立，請稍後再試或點選新會談。'
 
 const emotionDimensionLabels = {
   anxiety: '焦慮',
@@ -30,10 +33,6 @@ const emotionDimensionLabels = {
   hopelessness: '無望',
   confusion: '困惑',
   hope: '希望',
-}
-
-function createSessionId() {
-  return crypto.randomUUID()
 }
 
 function getFriendlyError(error, fallback = '操作失敗，請稍後再試。') {
@@ -211,6 +210,7 @@ export default function ConversationPage() {
   const [userInput, setUserInput] = useState('')
   const [isLoadingCases, setIsLoadingCases] = useState(false)
   const [isCreatingCase, setIsCreatingCase] = useState(false)
+  const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [isLoadingSession, setIsLoadingSession] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -388,11 +388,10 @@ export default function ConversationPage() {
         code_name: trimmedCodeName,
         note: trimmedNote || null,
       })
-      const newSessionId = createSessionId()
 
       setCases((currentCases) => [newCase, ...currentCases])
       setActiveCaseId(newCase.id)
-      setSessionId(newSessionId)
+      setSessionId('')
       setMessages([])
       setSummaries([])
       setCrisisStatus(null)
@@ -400,6 +399,13 @@ export default function ConversationPage() {
       setCodeName('')
       setNote('')
       setSubmitFailed(false)
+
+      try {
+        const newSession = await createSession(newCase.id)
+        setSessionId(newSession.session_id)
+      } catch {
+        setError(SESSION_PARTIAL_CREATE_ERROR)
+      }
     } catch (createError) {
       setError(getFriendlyError(createError, '無法建立個案，請稍後再試。'))
     } finally {
@@ -410,32 +416,37 @@ export default function ConversationPage() {
   function handleSelectCase(event) {
     const selectedCaseId = event.target.value
     setActiveCaseId(selectedCaseId)
-    setMessages([])
-    setSummaries([])
-    setCrisisStatus(null)
-    setShowHighCrisisDialog(false)
-    setSubmitFailed(false)
-
-    if (selectedCaseId) {
-      setSessionId(createSessionId())
-    } else {
-      setSessionId('')
-    }
-  }
-
-  function handleNewSession() {
-    if (!activeCaseId) {
-      setError('請先選擇或建立個案。')
-      return
-    }
-
-    setSessionId(createSessionId())
+    setSessionId('')
     setMessages([])
     setSummaries([])
     setCrisisStatus(null)
     setShowHighCrisisDialog(false)
     setError('')
     setSubmitFailed(false)
+  }
+
+  async function handleNewSession() {
+    if (!activeCaseId) {
+      setError('請先選擇或建立個案。')
+      return
+    }
+
+    setIsCreatingSession(true)
+    setError('')
+
+    try {
+      const newSession = await createSession(activeCaseId)
+      setSessionId(newSession.session_id)
+      setMessages([])
+      setSummaries([])
+      setCrisisStatus(null)
+      setShowHighCrisisDialog(false)
+      setSubmitFailed(false)
+    } catch (createError) {
+      setError(getFriendlyError(createError, '無法建立會談，請稍後再試。'))
+    } finally {
+      setIsCreatingSession(false)
+    }
   }
 
   async function handleSubmitTurn(event) {
@@ -648,7 +659,7 @@ export default function ConversationPage() {
 
             <button
               className="inline-flex h-10 items-center justify-center gap-2 self-end rounded-md border bg-white px-4 text-sm font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-input dark:bg-card dark:hover:bg-slate-800"
-              disabled={!activeCaseId}
+              disabled={!activeCaseId || isCreatingSession}
               onClick={handleNewSession}
               type="button"
             >
