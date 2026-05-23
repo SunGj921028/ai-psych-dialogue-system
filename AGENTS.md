@@ -71,6 +71,10 @@ mismatches.
   summary-derived review aids.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
+- SettingsPage is implemented as a static counselor-facing informational page
+  covering system purpose, safety boundaries, storage/privacy behavior, theme
+  preference behavior, backend-managed provider/model configuration, and
+  counselor review reminders.
 - Header navigation and light/dark theme toggle are implemented.
 - Frontend deterministic tests use Vitest, React Testing Library, and jsdom.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
@@ -84,8 +88,8 @@ mismatches.
 - Session metadata, previews, titles, drafts, and clinical content are not stored
   in browser storage.
 - PDF export, session deletion/archive, session titles, richer session metadata,
-  optional charts/Recharts, editable report workflow, Settings backend
-  integration, and MCP integration remain future work.
+  optional charts/Recharts, editable report workflow, optional secret-safe
+  runtime/provider status, and MCP integration remain future work.
 - Session archive/delete, report status, persisted report drafts, and exact
   persisted `crisis_level` remain future work.
 

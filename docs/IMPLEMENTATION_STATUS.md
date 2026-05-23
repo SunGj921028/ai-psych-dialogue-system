@@ -143,6 +143,16 @@ Current facts:
   backend returns them, plus resume links and report links.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
+- SettingsPage is implemented as a static counselor-facing informational page.
+  It explains the system purpose, safety boundaries, browser storage/privacy,
+  theme preference behavior, backend-managed model/service configuration, and
+  counselor review reminders.
+- SettingsPage states that the system is counseling documentation support only,
+  does not provide diagnosis, does not generate formal treatment plans, does not
+  provide medication or dosage advice, is not an emergency service replacement,
+  and leaves the counselor as final reviewer and decision-maker.
+- SettingsPage performs no storage writes, exposes no API keys or `.env` values,
+  includes no provider/model selection, and does not add a second theme toggle.
 - ReportPage back-to-conversation links preserve the active case and session IDs.
 - The app header includes navigation and a theme toggle.
 - Light/dark theme support exists and uses only the `ai-psych-theme`
@@ -164,8 +174,10 @@ Current facts:
   `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
   metadata, and low/default crisis states do not open the modal.
 - PDF export, session deletion/archive, session title UI, richer session
-  metadata, optional charting library integration, Settings backend integration,
-  and MCP integration remain future work.
+  metadata, optional charting library integration, runtime/provider status
+  endpoint if needed, and MCP integration remain future work.
+- Any future runtime/provider status endpoint must avoid leaking secrets. Real
+  provider settings UI remains out of scope unless explicitly designed.
 - No persisted report drafts, persisted exact `crisis_level` on summaries, editable
   report fields, backend schema changes, LLM prompt changes, Recharts integration,
   or final report template mirroring has been implemented for the report workspace.
@@ -216,7 +228,9 @@ Current facts:
   report generation, disclaimer display, transient report note,
   back-to-conversation link preservation, API helper path/payload contracts,
   HistoryPage list/empty/error/session-expansion behavior, empty durable session
-  rendering, and browser storage safety regressions.
+  rendering, SettingsPage rendering, absence of secret/input controls, no API
+  helper calls from SettingsPage, no clinical sentinel persistence, no new
+  storage keys, and browser storage safety regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted to browser
   storage.
@@ -245,7 +259,7 @@ Current facts:
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
 | Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; deletion, archive, titles, labels, and richer session metadata remain future work. |
-| Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
+| Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
 | Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
 | CI deterministic validation | implemented | GitHub Actions runs `backend/tests`, frontend tests, and frontend build without provider keys or live/manual scripts. |
@@ -283,8 +297,8 @@ Status categories:
 3. Complete remaining frontend workflows: deletion, session deletion/archive,
    session title UI, persisted report drafts, persisted exact `crisis_level` if
    exact crisis level should survive reload/navigation, PDF export, optional
-   charts/Recharts, editable report review workflow, report status, and Settings
-   backend integration.
+   charts/Recharts, editable report review workflow, report status, and optional
+   runtime/provider status if needed without leaking secrets.
 4. Fill remaining frontend test gaps: ReportPage error handling.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
    needed.
@@ -324,7 +338,8 @@ Current reality:
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
-  and light/dark theme support are implemented.
+  SettingsPage static informational guidance, and light/dark theme support are
+  implemented.
 - Frontend durable session creation/use is implemented for create-case and
   new-session flows through `createSession(caseId, payload = {})`, using backend
   generated `session_id` values for normal frontend-created sessions.
@@ -349,6 +364,11 @@ Current reality:
   summary-derived review aids for intensity trend, emotion dimensions, theme
   frequency, micro-summary timeline, and crisis occurrence. These aids are not
   objective clinical measurements.
+- SettingsPage explains system purpose, safety boundaries, browser
+  storage/privacy, theme preference behavior, backend-managed model/service
+  configuration, and counselor review reminders. It performs no storage writes,
+  exposes no provider keys or `.env` values, provides no provider/model
+  selection, and adds no theme toggle beyond the shared header toggle.
 - Frontend deterministic tests are implemented with Vitest, React Testing
   Library, and jsdom, using mocked API helpers and no live backend/provider/network
   calls.
@@ -374,11 +394,13 @@ Future intent:
   survive reload/navigation; until then, do not infer low/high from summary-level
   `crisis_flag`.
 - Smarter scroll behavior can be considered later as optional UX refinement.
-- Frontend should add deletion and Settings backend integration.
+- Frontend should add deletion. Runtime/provider status may be added later if
+  needed, but must not expose secrets; real provider settings UI remains out of
+  scope unless explicitly designed.
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
-- Report Schema v2, PDF export, charts/Recharts, and MCP remain out of scope for
-  the current durable-session status update.
+- Report Schema v2, PDF export, charts/Recharts, MCP, and real provider settings
+  UI remain separate future work.
 
 ## Related Context Documents
 
