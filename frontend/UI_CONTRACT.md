@@ -36,6 +36,17 @@ Current reality:
   to show backend session metadata.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
+- SettingsPage is implemented as a static counselor-facing informational page.
+  It explains system purpose, safety boundaries, browser storage/privacy, theme
+  preference behavior, backend-managed model/service configuration, and
+  counselor review reminders.
+- SettingsPage states that the system is counseling documentation support only,
+  does not provide diagnosis, does not generate formal treatment plans, does not
+  provide medication or dosage advice, is not an emergency service replacement,
+  and leaves the counselor as final reviewer and decision-maker.
+- SettingsPage performs no storage writes, exposes no API keys or `.env` values,
+  includes no provider/model selection controls, and does not add a second theme
+  toggle.
 - ConversationPage supports query-param resume, and query params take precedence
   over stale `sessionStorage` identifiers and do not create a new session.
 - ConversationPage create-case flow calls `createCase`, then
@@ -81,8 +92,10 @@ Current reality:
   note that draft reports are only temporarily shown on the page and must be
   regenerated after leaving or reloading.
 - Deletion, PDF export, session deletion/archive, session title UI, richer
-  session metadata, optional charts/Recharts, Settings backend integration, and
-  MCP integration are not implemented yet.
+  session metadata, optional charts/Recharts, runtime/provider status endpoint
+  if needed, and MCP integration are not implemented yet.
+- Runtime/provider status must not leak secrets if added later. Real provider
+  settings UI remains out of scope unless explicitly designed.
 - Persisted report drafts, persisted exact `crisis_level` for summaries,
   editable report fields, LLM prompt changes, Recharts integration, and final
   report template mirroring have not been implemented.
@@ -128,6 +141,8 @@ Coverage includes:
 - HistoryPage list, empty, error, lazy session expansion, empty durable session
   rendering, and session navigation link behavior.
 - ReportPage back-to-conversation link preservation.
+- SettingsPage rendering, absence of secret/input controls, no API helper calls,
+  no clinical sentinel persistence, and no new storage keys.
 - Browser storage safety regression coverage.
 
 Test boundaries:
@@ -253,14 +268,27 @@ Route: `/settings`
 
 Responsibilities:
 
-- Display non-secret configuration guidance or interface preferences.
+- Display static counselor-facing informational guidance.
+- Explain that the system supports counseling documentation only and is not a
+  diagnosis, formal treatment plan generator, medication/dosage adviser, or
+  emergency service replacement.
+- Remind counselors that they remain the final reviewer and decision-maker.
+- Explain browser storage/privacy behavior: `localStorage` stores only
+  `ai-psych-theme`, and `sessionStorage` stores only active case/session IDs.
+- State that clinical messages, summaries, reports, crisis reasons, case notes,
+  titles, drafts, previews, session metadata, provider keys, and secrets are not
+  stored in browser storage.
+- Explain that model/service/API key configuration is backend environment-managed.
+- Explain theme behavior without adding another theme toggle.
+- Perform no storage writes.
 - Do not expose provider API keys or `.env` values in the browser.
-- Future prompt/knowledge-base management is optional and should be treated as P2
-  unless a task explicitly prioritizes it.
+- Do not expose provider/model selection controls unless a future task explicitly
+  designs a real settings workflow.
 
 Not currently implemented:
 
-- Backend integration.
+- Runtime/provider status endpoint integration.
+- Real provider settings UI.
 
 ## Expected API Calls Per Page
 
@@ -307,7 +335,8 @@ label, and report-status endpoints once implemented.
 
 Expected calls:
 
-- No required Task 09 calls.
+- No Task 09 calls.
+- No API helper calls for the current static informational page.
 - Do not call endpoints that expose secrets.
 
 ## Required State Shapes
@@ -587,6 +616,12 @@ Current implemented state:
 - ReportPage review aids are not objective clinical measurements.
 - HistoryPage lists backend cases and lazily expands cases to show backend
   session metadata.
+- SettingsPage is a static counselor-facing informational page covering system
+  purpose, safety boundaries, storage/privacy behavior, theme preference behavior,
+  backend-managed model/service configuration, and counselor review reminders.
+- SettingsPage performs no storage writes, exposes no provider keys or `.env`
+  values, includes no provider/model selection, and adds no theme toggle beyond
+  the shared header toggle.
 - ConversationPage supports query-param resume, and query params take precedence
   over stale `sessionStorage` identifiers.
 - ReportPage back-to-conversation links preserve case/session IDs.
@@ -605,8 +640,10 @@ Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
 - Add deletion, session deletion/archive, session title UI, labels, report
-  status, richer session metadata, Settings backend integration, and MCP-related
-  UI when prioritized.
+  status, richer session metadata, optional runtime/provider status, and
+  MCP-related UI when prioritized.
+- Keep any future runtime/provider status endpoint secret-safe. Real provider
+  settings UI remains out of scope unless explicitly designed.
 - Add persisted exact `crisis_level` later if exact crisis level should survive
   reload/navigation.
 - Complete future report work after the report template stabilizes: formal Report
