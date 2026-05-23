@@ -19,6 +19,10 @@ Current reality:
   - `/settings` via `SettingsPage`
 - ConversationPage is integrated with the backend API for case setup,
   conversation turns, assistant messages, summaries, and crisis status.
+- `frontend/src/api/client.js` exposes `createSession(caseId, payload = {})`,
+  which calls `POST /api/cases/{case_id}/sessions`.
+- Normal frontend-created sessions omit `session_id` and use the backend returned
+  `session_id`.
 - ReportPage acts as a counselor review workspace integrated with the backend
   API. Report generation remains manual-only.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
@@ -33,7 +37,17 @@ Current reality:
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - ConversationPage supports query-param resume, and query params take precedence
-  over stale `sessionStorage` identifiers.
+  over stale `sessionStorage` identifiers and do not create a new session.
+- ConversationPage create-case flow calls `createCase`, then
+  `createSession(newCase.id)`, and uses the backend returned `session_id`.
+- The new-session action calls `createSession(activeCaseId)` and uses the
+  backend returned `session_id`.
+- Old messages and summaries are cleared only after durable session creation
+  succeeds.
+- Selecting an existing case does not automatically create a session; it clears
+  the active session and waits for the counselor to click the new-session action.
+- Send-turn payload shape is unchanged, and the backend ensures/touches session
+  rows.
 - ConversationPage uses a bounded, scrollable message log. The message area
   should not grow the whole page awkwardly with each turn, and the latest message
   should remain visible above the composer.
@@ -41,17 +55,17 @@ Current reality:
   inserts a newline, IME composing Enter does not submit, the textarea remains
   editable while submitting, the send button is locked while submitting, and
   duplicate submits are guarded.
-- Starting a new session from a resumed session keeps the selected case, creates
-  a new frontend `session_id`, and clears the current message and summary UI.
 - ReportPage back-to-conversation links preserve active case/session IDs.
 - The shared header includes navigation and a theme toggle.
 - Light/dark theme support exists and stores only the theme preference under the
   `ai-psych-theme` localStorage key.
-- The frontend does not store clinical message content, summaries, report text,
-  crisis reasons, or case notes in browser storage.
+- The frontend does not store clinical message content, summaries, session
+  metadata, previews, report text, crisis reasons, case notes, titles, drafts, or
+  other clinical content in browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
-- Session metadata and session preview text are not stored in browser storage.
+- Session metadata, session preview text, titles, drafts, and clinical content
+  are not stored in browser storage.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
 - The default/no-crisis wording is 「未偵測到危機」.
@@ -66,10 +80,9 @@ Current reality:
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
   regenerated after leaving or reloading.
-- Frontend durable session creation/use, deletion, PDF export, session
-  deletion/archive, session titles, richer session metadata, optional
-  charts/Recharts, Settings backend integration, and MCP integration are not
-  implemented yet.
+- Deletion, PDF export, session deletion/archive, session title UI, richer
+  session metadata, optional charts/Recharts, Settings backend integration, and
+  MCP integration are not implemented yet.
 - Persisted report drafts, persisted exact `crisis_level` for summaries,
   editable report fields, LLM prompt changes, Recharts integration, and final
   report template mirroring have not been implemented.
@@ -83,11 +96,10 @@ Current reality:
 
 Remaining future behavior:
 
-- Complete durable session integration, deletion, session deletion/archive,
-  session titles, richer session metadata, persisted exact `crisis_level` if
-  exact crisis level should survive reload/navigation, Settings backend
-  integration, and MCP-related UI only when the corresponding tasks are
-  prioritized.
+- Complete deletion, session deletion/archive, session title UI, richer session
+  metadata, persisted exact `crisis_level` if exact crisis level should survive
+  reload/navigation, Settings backend integration, and MCP-related UI only when
+  the corresponding tasks are prioritized.
 - Complete report workflow future work: formal Report Schema v2 after the
   template stabilizes, persisted report drafts, source/evidence traceability,
   final PDF export, optional Recharts/charts, and editable counselor review
@@ -106,13 +118,15 @@ Coverage includes:
 - Safe theme localStorage usage.
 - ConversationPage input behavior.
 - ConversationPage crisis modal and fallback behavior.
-- ConversationPage query-param resume and new-session behavior.
+- ConversationPage create-case durable session flow, new-session durable flow,
+  createSession failure handling, query-param resume no-create behavior, and
+  storage safety.
 - ReportPage missing `sessionId` handling, manual generation, and disclaimer
   display.
 - ReportPage transient report note.
 - API helper path and payload contract tests.
-- HistoryPage list, empty, error, lazy session expansion, and session navigation
-  link behavior.
+- HistoryPage list, empty, error, lazy session expansion, empty durable session
+  rendering, and session navigation link behavior.
 - ReportPage back-to-conversation link preservation.
 - Browser storage safety regression coverage.
 
@@ -121,10 +135,12 @@ Test boundaries:
 - Tests mock API helpers.
 - Tests do not call the live backend, LLM providers, or network.
 - Storage safety tests confirm clinical message content, summaries, report text,
-  crisis reasons, and case notes are not persisted to browser storage.
+  crisis reasons, case notes, session metadata, previews, titles, drafts, and
+  other clinical content are not persisted to browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
-- Session metadata and preview text are not persisted to browser storage.
+- Session metadata, preview text, titles, drafts, and clinical content are not
+  persisted to browser storage.
 
 Remaining future testing work:
 
@@ -141,13 +157,19 @@ Route: `/`
 Responsibilities:
 
 - Let the counselor select or create a case context.
-- Maintain or create a frontend-generated `session_id`.
+- Maintain an active backend session identifier.
+- Create a durable backend session after creating a case by calling
+  `createSession(newCase.id)` and using the backend returned `session_id`.
+- Create a durable backend session for the selected case when the counselor
+  starts a new session.
 - Resume a session from `caseId` and `sessionId` query parameters.
 - Treat query parameters as higher priority than stale `sessionStorage`
-  identifiers.
-- Starting a new session from a resumed session must keep the selected case,
-  generate a new frontend `session_id`, and clear the visible message and summary
-  state.
+  identifiers, and do not create a new session during query-param resume.
+- Selecting an existing case must clear the active session and wait for the
+  counselor to start a new session.
+- Starting a new session must keep the selected case, use the backend returned
+  `session_id`, and clear the visible message and summary state only after
+  durable session creation succeeds.
 - Let the counselor enter client-provided text.
 - Submit with Enter, insert a newline with Shift+Enter, and ignore Enter while an
   IME composition is active.
@@ -249,6 +271,8 @@ Use the axios client in `frontend/src/api/client.js`.
 Expected calls:
 
 - `POST /api/cases` when creating a new case.
+- `POST /api/cases/{case_id}/sessions` through `createSession(caseId, payload = {})`
+  after creating a new case and when the counselor starts a new session.
 - `GET /api/cases` when selecting existing cases.
 - `POST /api/conversation/turn` for each submitted turn.
 - `GET /api/cases/{case_id}/sessions/{session_id}/messages` when reloading a session.
@@ -276,8 +300,7 @@ Expected calls:
 - `GET /api/cases/{case_id}` to inspect a selected case when the UI needs case
   detail.
 
-Future calls may include `POST /api/cases/{case_id}/sessions` for durable empty
-session creation, plus case deletion, session deletion/archive, session title,
+Future calls may include case deletion, session deletion/archive, session title,
 label, and report-status endpoints once implemented.
 
 ### SettingsPage
@@ -364,8 +387,8 @@ Notes:
 
 - Backend session metadata now includes explicit sessions plus legacy sessions
   derived from persisted messages and summaries.
-- Empty sessions can exist durably through backend session creation, but
-  frontend durable session integration remains future work.
+- Empty sessions can exist durably through backend session creation and can
+  appear in HistoryPage when returned by the backend.
 - UI state must not include DB-internal `round`, raw `summary_json`, raw
   messages, full summaries, `key_statement`, themes, crisis reasons, report
   text, or exact `crisis_level`.
@@ -531,11 +554,13 @@ Inherited constraints:
 - Preserve crisis warning behavior exactly.
 - Do not expose provider secrets or backend environment values.
 - Avoid storing sensitive text in browser logs.
-- Do not store clinical message content, summaries, report text, crisis reasons,
-  or case notes in browser storage.
+- Do not store clinical message content, summaries, session metadata, previews,
+  report text, crisis reasons, case notes, titles, drafts, or other clinical
+  content in browser storage.
 - Browser `localStorage` is used only for the `ai-psych-theme` preference.
 - Browser `sessionStorage` may store only active case/session identifiers.
-- Session metadata and preview text must not be written to browser storage.
+- Session metadata, preview text, titles, drafts, and clinical content must not
+  be written to browser storage.
 - Use API data contracts rather than guessing backend internals.
 - Do not reference DB-internal `round` in UI code.
 
@@ -550,7 +575,10 @@ Current implemented state:
   keeps the textarea editable while submitting, locks the send button while
   submitting, and guards duplicate submits.
 - Starting a new session from a resumed session preserves the selected case,
-  creates a new frontend session ID, and clears message/summary UI.
+  creates a durable backend session, uses the backend returned `session_id`, and
+  clears message/summary UI only after session creation succeeds.
+- Selecting an existing case clears the active session and does not create a
+  session until the counselor starts one.
 - ReportPage is a counselor review workspace wired to backend report generation,
   supports manual-only report generation, displays the backend disclaimer
   prominently, and includes summary-derived review aids.
@@ -566,7 +594,8 @@ Current implemented state:
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
 - Clinical message content, summaries, report text, crisis reasons, and case
   notes are not stored in browser storage.
-- Session metadata and preview text are not stored in browser storage.
+- Session metadata, preview text, titles, drafts, and clinical content are not
+  stored in browser storage.
 - Crisis UI uses backend `crisis_level` only. Summary-only `crisis_flag` fallback
   metadata is counselor-review wording, not a low/high inference.
 - Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
@@ -575,9 +604,9 @@ Current implemented state:
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
-- Add durable session integration, deletion, session deletion/archive, session
-  titles, labels, report status, richer session metadata, Settings backend
-  integration, and MCP-related UI when prioritized.
+- Add deletion, session deletion/archive, session title UI, labels, report
+  status, richer session metadata, Settings backend integration, and MCP-related
+  UI when prioritized.
 - Add persisted exact `crisis_level` later if exact crisis level should survive
   reload/navigation.
 - Complete future report work after the report template stabilizes: formal Report
