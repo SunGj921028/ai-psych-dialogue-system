@@ -144,7 +144,7 @@ Request:
 ```json
 {
   "case_id": "uuid",
-  "session_id": "frontend-generated-uuid",
+  "session_id": "session uuid",
   "turn_number": 1,
   "user_input": "案主本輪內容",
   "conversation_history": [
@@ -165,7 +165,7 @@ Response:
 ```json
 {
   "case_id": "uuid",
-  "session_id": "frontend-generated-uuid",
+  "session_id": "session uuid",
   "turn_number": 1,
   "assistant_response": {
     "content": "assistant reply",
@@ -209,7 +209,9 @@ Implementation notes:
 - Persist summary through `database.db.add_summary()`.
 - Ensure/touch a durable session row for the case/session.
 - `summary.crisis_flag` must use the crisis detector result.
-- The frontend-generated `session_id` should be accepted for conversation turns.
+- The request-provided `session_id` should be accepted for conversation turns;
+  current frontend create-case and new-session flows normally obtain it first
+  from `POST /api/cases/{case_id}/sessions`.
 - Conversation response shape and crisis logic are unchanged.
 - Exact `crisis_level` is not persisted in this milestone.
 
@@ -461,12 +463,18 @@ These are not required for Task 09:
 
 ## Frontend Session Navigation Contract
 
+- The frontend API helper `createSession(caseId, payload = {})` calls
+  `POST /api/cases/{case_id}/sessions`.
+- Normal frontend-created sessions omit `session_id` and use the backend returned
+  `session_id`.
 - Backend report generation receives `session_id` in the
   `POST /api/reports/generate` request body.
 - Frontend resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - Frontend report links use `/report/{caseId}?sessionId={sessionId}`.
 - Conversation query params take precedence over stale `sessionStorage`
-  identifiers.
+  identifiers and do not create a new session.
+- Selecting an existing case clears active session state and waits for the
+  counselor to start a new session.
 - ReportPage back-to-conversation links preserve the active case and session IDs.
 
 ## Expected Backend Data Flow

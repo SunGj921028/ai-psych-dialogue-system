@@ -104,7 +104,20 @@ Current facts:
 - Routes exist for conversation, report, history, and settings.
 - ConversationPage is integrated with the backend conversation API and supports
   query-param resume with `caseId` and `sessionId`; query params take precedence
-  over stale `sessionStorage` identifiers.
+  over stale `sessionStorage` identifiers and do not create a new session.
+- The frontend API layer exposes `createSession(caseId, payload = {})`, which
+  calls `POST /api/cases/{case_id}/sessions`; normal frontend-created sessions
+  omit `session_id` and use the backend returned `session_id`.
+- ConversationPage create-case flow calls `createCase`, then
+  `createSession(newCase.id)`, and uses the backend returned `session_id`.
+- The ConversationPage "new session" action calls `createSession(activeCaseId)`
+  and uses the backend returned `session_id`.
+- Old messages and summaries are cleared only after durable session creation
+  succeeds.
+- Selecting an existing case does not automatically create a session; it clears
+  the active session and waits for the counselor to click the new-session action.
+- Send-turn payload shape is unchanged, and the backend continues to ensure/touch
+  durable session rows.
 - ConversationPage uses a bounded, scrollable message log so conversation turns
   do not awkwardly grow the whole page, and the latest message remains visible
   above the composer.
@@ -112,8 +125,6 @@ Current facts:
   a newline, IME composing Enter does not submit, the textarea remains editable
   while submitting, the send button is locked while submitting, and duplicate
   submits are guarded.
-- Starting a new session from a resumed session keeps the selected case, creates
-  a new frontend `session_id`, and clears the current message and summary UI.
 - ReportPage acts as a counselor review workspace integrated with the backend
   report API. Report generation remains manual-only.
 - Generated reports are currently transient: `POST /api/reports/generate` returns
@@ -128,7 +139,8 @@ Current facts:
 - ReportPage review aids are counselor-facing context only and are not objective
   clinical measurements.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
-  to show backend session metadata, resume links, and report links.
+  to show backend session metadata, including empty durable sessions when the
+  backend returns them, plus resume links and report links.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - ReportPage back-to-conversation links preserve the active case and session IDs.
@@ -139,7 +151,8 @@ Current facts:
   summaries, report text, crisis reasons, and case notes are not persisted to
   browser storage.
 - `sessionStorage` may store only active case/session identifiers.
-- Session metadata and preview text are not persisted to browser storage.
+- Session metadata, preview text, titles, drafts, and clinical content are not
+  persisted to browser storage.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
 - The default/no-crisis wording is 「未偵測到危機」.
@@ -150,10 +163,9 @@ Current facts:
 - The high-risk modal/dialog opens only when a backend response includes
   `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
   metadata, and low/default crisis states do not open the modal.
-- Frontend durable session integration, deletion, PDF export, session
-  deletion/archive, session titles, richer session metadata, optional charting
-  library integration, Settings backend integration, and MCP integration remain
-  future work.
+- PDF export, session deletion/archive, session title UI, richer session
+  metadata, optional charting library integration, Settings backend integration,
+  and MCP integration remain future work.
 - No persisted report drafts, persisted exact `crisis_level` on summaries, editable
   report fields, backend schema changes, LLM prompt changes, Recharts integration,
   or final report template mirroring has been implemented for the report workspace.
@@ -197,12 +209,14 @@ Current facts:
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
-  localStorage usage, ConversationPage input behavior, crisis modal/fallback
-  behavior, query-param resume and new-session behavior, ReportPage missing
-  `sessionId` handling, manual report generation, disclaimer display, transient
-  report note, back-to-conversation link preservation, API helper path/payload
-  contracts, HistoryPage list/empty/error/session-expansion behavior, and browser
-  storage safety regressions.
+  localStorage usage, the `createSession` API helper contract, ConversationPage
+  input behavior, crisis modal/fallback behavior, create-case durable session
+  flow, new-session durable flow, createSession failure handling, query-param
+  resume no-create behavior, ReportPage missing `sessionId` handling, manual
+  report generation, disclaimer display, transient report note,
+  back-to-conversation link preservation, API helper path/payload contracts,
+  HistoryPage list/empty/error/session-expansion behavior, empty durable session
+  rendering, and browser storage safety regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted to browser
   storage.
@@ -227,10 +241,10 @@ Current facts:
 | Task 06 analysis agent | implemented | Computes report metadata in code. |
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing. |
-| Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, new-session reset behavior, and backend-level-only crisis UI behavior. |
+| Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, and backend-level-only crisis UI behavior. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
 | Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
-| Task 14 history page | partial | Lists backend cases and session metadata; durable session creation integration, deletion, archive, titles, labels, and richer session metadata remain future work. |
+| Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; deletion, archive, titles, labels, and richer session metadata remain future work. |
 | Task 15 settings page | placeholder / P2 | Should not manage secrets in frontend. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
 | Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
@@ -266,11 +280,11 @@ Status categories:
 
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
-3. Complete remaining frontend workflows: durable session integration, deletion,
-   session deletion/archive, session titles, persisted report drafts, persisted
-   exact `crisis_level` if exact crisis level should survive reload/navigation,
-   PDF export, optional charts/Recharts, editable report review workflow, report
-   status, and Settings backend integration.
+3. Complete remaining frontend workflows: deletion, session deletion/archive,
+   session title UI, persisted report drafts, persisted exact `crisis_level` if
+   exact crisis level should survive reload/navigation, PDF export, optional
+   charts/Recharts, editable report review workflow, report status, and Settings
+   backend integration.
 4. Fill remaining frontend test gaps: ReportPage error handling.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
    needed.
@@ -311,12 +325,19 @@ Current reality:
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
   and light/dark theme support are implemented.
+- Frontend durable session creation/use is implemented for create-case and
+  new-session flows through `createSession(caseId, payload = {})`, using backend
+  generated `session_id` values for normal frontend-created sessions.
+- Selecting an existing case clears the active session without creating a new
+  session; the counselor starts a durable session explicitly through the
+  new-session action.
 - ConversationPage uses a bounded scrollable message log, keeps the latest
   message visible above the composer, supports Enter/Shift+Enter/IME-safe input
   behavior, keeps the textarea editable while submitting, locks the send button
   while submitting, and guards duplicate submits.
-- Starting a new session from a resumed session preserves the selected case,
-  creates a new frontend session ID, and clears current message and summary UI.
+- Starting a new session preserves the selected case, creates a durable backend
+  session, uses the backend returned `session_id`, and clears current message and
+  summary UI only after creation succeeds.
 - ReportPage generated reports are transient; report text is not persisted by the
   backend or browser storage and must be regenerated after leaving or reloading
   the page.
@@ -331,19 +352,20 @@ Current reality:
 - Frontend deterministic tests are implemented with Vitest, React Testing
   Library, and jsdom, using mocked API helpers and no live backend/provider/network
   calls.
-- Frontend does not persist clinical message content, summaries, report text,
-  crisis reasons, or case notes in browser storage.
+- Frontend does not persist clinical message content, summaries, session
+  metadata, previews, report text, crisis reasons, case notes, titles, drafts, or
+  other clinical content in browser storage.
 - `localStorage` is used only for `ai-psych-theme`; `sessionStorage` may store
   only active case/session identifiers.
-- Session metadata and preview text are not stored in browser storage.
+- Session metadata, preview text, titles, drafts, and clinical content are not
+  stored in browser storage.
 - GitHub Actions CI runs deterministic backend tests plus frontend test/build
   validation without live provider checks.
 - MCP is not implemented.
 
 Future intent:
 
-- Add frontend durable session creation/use, session deletion/archive, and
-  session titles.
+- Add session deletion/archive and session title UI.
 - Report workflow future work remains: Report Schema v2 / formal report schema
   expansion, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
@@ -355,8 +377,8 @@ Future intent:
 - Frontend should add deletion and Settings backend integration.
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
-- Report Schema v2, PDF export, charts/Recharts, and MCP should remain out of
-  scope until core HTTP and frontend workflows are clarified.
+- Report Schema v2, PDF export, charts/Recharts, and MCP remain out of scope for
+  the current durable-session status update.
 
 ## Related Context Documents
 

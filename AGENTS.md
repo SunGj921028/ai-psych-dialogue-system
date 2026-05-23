@@ -77,13 +77,15 @@ mismatches.
   network.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted.
-- ConversationPage supports query-param resume, and ReportPage preserves case and
-  session IDs when linking back to conversation.
-- Session metadata and previews are not stored in browser storage.
-- Frontend durable session integration, deletion, PDF export, session
-  deletion/archive, session titles, richer session metadata, optional
-  charts/Recharts, editable report workflow, Settings backend integration, and
-  MCP integration remain future work.
+- ConversationPage uses backend durable sessions for create-case and new-session
+  flows, while query-param resume takes precedence over stale `sessionStorage`
+  and does not create a new session.
+- ReportPage preserves case and session IDs when linking back to conversation.
+- Session metadata, previews, titles, drafts, and clinical content are not stored
+  in browser storage.
+- PDF export, session deletion/archive, session titles, richer session metadata,
+  optional charts/Recharts, editable report workflow, Settings backend
+  integration, and MCP integration remain future work.
 - Session archive/delete, report status, persisted report drafts, and exact
   persisted `crisis_level` remain future work.
 
@@ -108,15 +110,16 @@ next major product integration blockers.
 
 ## Current Development Priority
 
-Integrate frontend pages with the implemented HTTP API before MCP work, with
-durable backend session creation/use as the next frontend integration slice.
+Integrate remaining frontend workflows with the implemented HTTP API before MCP
+work, now that durable backend session creation/use is implemented for the main
+conversation flows.
 
 Recommended order:
 
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
-3. Complete remaining frontend workflows, including durable session integration,
-   and focused frontend test gaps.
+3. Complete remaining frontend workflows, including session deletion/archive,
+   session titles, report workflow completion, and focused frontend test gaps.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
@@ -230,8 +233,9 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - Shared components live in `frontend/src/components/`.
 - API calls should go through `frontend/src/api/client.js`.
 - Preserve the existing API integration patterns in the implemented frontend pages.
-- Do not store clinical message content, summaries, report text, crisis reasons,
-  or case notes in browser storage.
+- Do not store clinical message content, summaries, session metadata, previews,
+  report text, crisis reasons, case notes, titles, drafts, or other clinical
+  content in browser storage.
 - `localStorage` is used only for the existing `ai-psych-theme` key.
 - `sessionStorage` may store only active case/session identifiers.
 
