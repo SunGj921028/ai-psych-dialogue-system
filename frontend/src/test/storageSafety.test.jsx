@@ -8,6 +8,7 @@ import * as api from '../api/client.js'
 
 vi.mock('../api/client.js', () => ({
   createCase: vi.fn(),
+  createSession: vi.fn(),
   getSessionMessages: vi.fn(),
   getSessionSummaries: vi.fn(),
   listCaseSessions: vi.fn(),

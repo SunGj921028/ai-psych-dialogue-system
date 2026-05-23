@@ -125,6 +125,43 @@ describe('API helper contracts', () => {
     expect(result).toEqual([])
   })
 
+  test('createSession calls POST /api/cases/{caseId}/sessions with an empty payload by default', async () => {
+    fakeApiClient.post.mockResolvedValue({
+      data: { session_id: 'backend-session-1' },
+    })
+    const { createSession } = await importClient()
+
+    const result = await createSession('case-1')
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions',
+      {},
+    )
+    expect(result).toEqual({ session_id: 'backend-session-1' })
+  })
+
+  test('createSession passes optional session payload through unchanged', async () => {
+    const payload = {
+      session_id: 'client-provided-session',
+      title: 'Synthetic title',
+    }
+    fakeApiClient.post.mockResolvedValue({
+      data: { session_id: 'client-provided-session', title: 'Synthetic title' },
+    })
+    const { createSession } = await importClient()
+
+    const result = await createSession('case-1', payload)
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions',
+      payload,
+    )
+    expect(result).toEqual({
+      session_id: 'client-provided-session',
+      title: 'Synthetic title',
+    })
+  })
+
   test('getSessionSummaries calls the expected session summaries path', async () => {
     fakeApiClient.get.mockResolvedValue({ data: [] })
     const { getSessionSummaries } = await importClient()

@@ -7,6 +7,7 @@ import * as api from '../api/client.js'
 
 vi.mock('../api/client.js', () => ({
   createCase: vi.fn(),
+  createSession: vi.fn(),
   getSessionMessages: vi.fn(),
   getSessionSummaries: vi.fn(),
   listCases: vi.fn(),
@@ -27,6 +28,20 @@ function getConversationInput() {
 
 function getSubmitTurnButton() {
   return getConversationInput().closest('form').querySelector('button[type="submit"]')
+}
+
+function getCreateCaseForm() {
+  return document.querySelectorAll('form')[0]
+}
+
+function getNewSessionButton() {
+  return screen
+    .getAllByRole('button')
+    .find((button) => button.getAttribute('type') === 'button')
+}
+
+async function clickNewSessionButton(user) {
+  await user.click(getNewSessionButton())
 }
 
 function getStoredBrowserData() {
@@ -377,13 +392,22 @@ describe('ConversationPage resume query behavior', () => {
         'a[href="/report/query-case?sessionId=query-session"]',
       ),
     ).toBeInTheDocument()
+    expect(api.createSession).not.toHaveBeenCalled()
   })
 
-  test('new session from a resumed query session keeps the case and replaces the session id', async () => {
+  test('new session from a resumed query session creates a durable backend session', async () => {
     const user = userEvent.setup()
     const uuidSpy = vi
       .spyOn(crypto, 'randomUUID')
-      .mockReturnValue('new-session-from-button')
+      .mockReturnValue('unexpected-local-session')
+    api.createSession.mockResolvedValue({
+      session_id: 'backend-new-session-from-button',
+      message_count: 0,
+      summary_count: 0,
+      last_turn_number: null,
+      latest_summary_preview: null,
+      has_crisis: false,
+    })
     api.getSessionMessages.mockImplementation((_caseId, requestedSessionId) => {
       if (requestedSessionId === 'query-session') {
         return Promise.resolve([
@@ -444,7 +468,8 @@ describe('ConversationPage resume query behavior', () => {
 
     await user.click(screen.getByRole('button', { name: /新會談/ }))
 
-    expect(uuidSpy).toHaveBeenCalledTimes(1)
+    expect(api.createSession).toHaveBeenCalledWith('query-case')
+    expect(uuidSpy).not.toHaveBeenCalled()
     expect(screen.queryByText('SYNTHETIC_RESUMED_MESSAGE')).not.toBeInTheDocument()
     expect(screen.queryByText('SYNTHETIC_RESUMED_SUMMARY')).not.toBeInTheDocument()
     expect(screen.queryByText('已從歷史紀錄恢復此會談')).not.toBeInTheDocument()
@@ -452,11 +477,11 @@ describe('ConversationPage resume query behavior', () => {
       'query-case',
     )
     expect(window.sessionStorage.getItem('ai-psych-active-session-id')).toBe(
-      'new-session-from-button',
+      'backend-new-session-from-button',
     )
     expect(
       document.querySelector(
-        'a[href="/report/query-case?sessionId=new-session-from-button"]',
+        'a[href="/report/query-case?sessionId=backend-new-session-from-button"]',
       ),
     ).toBeInTheDocument()
     expect(Object.keys(window.localStorage)).toEqual([])
@@ -495,6 +520,188 @@ describe('ConversationPage resume query behavior', () => {
         turn_number: 4,
       }),
     )
+  })
+})
+
+describe('ConversationPage durable session creation behavior', () => {
+  beforeEach(() => {
+    api.listCases.mockResolvedValue([
+      {
+        id: 'existing-case',
+        code_name: 'EXISTING_CASE',
+        created_at: '2026-05-20T00:00:00Z',
+        note: null,
+      },
+    ])
+    api.getSessionMessages.mockResolvedValue([])
+    api.getSessionSummaries.mockResolvedValue([])
+    api.createSession.mockResolvedValue({
+      session_id: 'backend-created-session',
+      message_count: 0,
+      summary_count: 0,
+      last_turn_number: null,
+      latest_summary_preview: null,
+      has_crisis: false,
+    })
+  })
+
+  test('create-case flow creates a backend durable session and uses the returned session id', async () => {
+    const user = userEvent.setup()
+    const uuidSpy = vi
+      .spyOn(crypto, 'randomUUID')
+      .mockReturnValue('unexpected-local-session')
+    api.createCase.mockResolvedValue({
+      id: 'new-case-id',
+      code_name: 'NEW_CASE',
+      created_at: '2026-05-20T00:00:00Z',
+      note: null,
+    })
+    api.createSession.mockResolvedValue({
+      session_id: 'backend-session-after-case-create',
+      message_count: 0,
+      summary_count: 0,
+      last_turn_number: null,
+      latest_summary_preview: null,
+      has_crisis: false,
+    })
+
+    renderWithRouter(<ConversationPage />)
+
+    await waitFor(() => {
+      expect(api.listCases).toHaveBeenCalledTimes(1)
+    })
+
+    const createCaseForm = getCreateCaseForm()
+    const [codeNameInput] = within(createCaseForm).getAllByRole('textbox')
+    await user.type(codeNameInput, 'NEW_CASE')
+    fireEvent.submit(createCaseForm)
+
+    await waitFor(() => {
+      expect(api.createCase).toHaveBeenCalledWith({
+        code_name: 'NEW_CASE',
+        note: null,
+      })
+      expect(api.createSession).toHaveBeenCalledWith('new-case-id')
+    })
+
+    expect(uuidSpy).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem('ai-psych-active-case-id')).toBe(
+      'new-case-id',
+    )
+    expect(window.sessionStorage.getItem('ai-psych-active-session-id')).toBe(
+      'backend-session-after-case-create',
+    )
+    expect(
+      document.querySelector(
+        'a[href="/report/new-case-id?sessionId=backend-session-after-case-create"]',
+      ),
+    ).toBeInTheDocument()
+  })
+
+  test('create-case partial session failure keeps the new case without a fake local session', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_CREATE_SESSION_STACK_SECRET'
+    const uuidSpy = vi
+      .spyOn(crypto, 'randomUUID')
+      .mockReturnValue('unexpected-local-session')
+    api.createCase.mockResolvedValue({
+      id: 'new-case-without-session',
+      code_name: 'NEW_CASE_WITHOUT_SESSION',
+      created_at: '2026-05-20T00:00:00Z',
+      note: null,
+    })
+    api.createSession.mockRejectedValue(new Error(rawErrorSentinel))
+
+    renderWithRouter(<ConversationPage />)
+
+    await waitFor(() => {
+      expect(api.listCases).toHaveBeenCalledTimes(1)
+    })
+
+    const createCaseForm = getCreateCaseForm()
+    const [codeNameInput] = within(createCaseForm).getAllByRole('textbox')
+    await user.type(codeNameInput, 'NEW_CASE_WITHOUT_SESSION')
+    fireEvent.submit(createCaseForm)
+
+    expect(
+      await screen.findByText('個案已建立，但會談尚未建立，請稍後再試或點選新會談。'),
+    ).toBeInTheDocument()
+    expect(api.createSession).toHaveBeenCalledWith('new-case-without-session')
+    expect(uuidSpy).not.toHaveBeenCalled()
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+    expect(window.sessionStorage.getItem('ai-psych-active-case-id')).toBe(
+      'new-case-without-session',
+    )
+    expect(window.sessionStorage.getItem('ai-psych-active-session-id')).toBeNull()
+    expect(document.querySelector('a[href^="/report/"]')).not.toBeInTheDocument()
+  })
+
+  test('selecting an existing case clears the active session without creating one', async () => {
+    const user = userEvent.setup()
+    window.sessionStorage.setItem('ai-psych-active-case-id', 'stale-case')
+    window.sessionStorage.setItem('ai-psych-active-session-id', 'stale-session')
+
+    renderWithRouter(<ConversationPage />)
+
+    await screen.findByText('EXISTING_CASE')
+
+    await user.selectOptions(screen.getByRole('combobox'), 'existing-case')
+
+    expect(api.createSession).not.toHaveBeenCalled()
+    expect(window.sessionStorage.getItem('ai-psych-active-case-id')).toBe(
+      'existing-case',
+    )
+    expect(window.sessionStorage.getItem('ai-psych-active-session-id')).toBeNull()
+    expect(document.querySelector('a[href^="/report/"]')).not.toBeInTheDocument()
+  })
+
+  test('new-session failure keeps the current session and visible messages', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_NEW_SESSION_FAILURE_SECRET'
+    api.listCases.mockResolvedValue([
+      {
+        id: 'query-case',
+        code_name: 'CASE_QUERY',
+        created_at: '2026-05-20T00:00:00Z',
+        note: null,
+      },
+    ])
+    api.getSessionMessages.mockResolvedValue([
+      {
+        id: 'query-message',
+        case_id: 'query-case',
+        session_id: 'query-session',
+        turn_number: 2,
+        role: 'user',
+        content: 'SYNTHETIC_VISIBLE_MESSAGE_STAYS',
+        created_at: '2026-05-20T00:00:00Z',
+      },
+    ])
+    api.getSessionSummaries.mockResolvedValue([])
+    api.createSession.mockRejectedValue(new Error(rawErrorSentinel))
+
+    renderWithRouter(<ConversationPage />, {
+      initialEntries: ['/?caseId=query-case&sessionId=query-session'],
+    })
+
+    expect(await screen.findByText('SYNTHETIC_VISIBLE_MESSAGE_STAYS')).toBeInTheDocument()
+
+    await clickNewSessionButton(user)
+
+    await waitFor(() => {
+      expect(api.createSession).toHaveBeenCalledWith('query-case')
+    })
+    expect(screen.getByText('SYNTHETIC_VISIBLE_MESSAGE_STAYS')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+    expect(window.sessionStorage.getItem('ai-psych-active-case-id')).toBe(
+      'query-case',
+    )
+    expect(window.sessionStorage.getItem('ai-psych-active-session-id')).toBe(
+      'query-session',
+    )
+    expect(
+      document.querySelector('a[href="/report/query-case?sessionId=query-session"]'),
+    ).toBeInTheDocument()
   })
 })
 
