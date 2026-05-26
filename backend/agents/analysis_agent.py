@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from agents import get_llm_client
 from agents.summary_agent import TurnSummary
+from models.report_schema_v2 import ReportAIGeneratedV2, ReportManualInputV2
 
 logger = logging.getLogger(__name__)
 
@@ -280,6 +281,25 @@ async def generate_report(
             has_crisis=has_crisis,
             peak_turn=peak_turn,
         )
+
+
+async def generate_report_v2_ai_draft(
+    *,
+    case_id: str,
+    session_id: str,
+    summaries: list[dict],
+    manual_input: ReportManualInputV2,
+    knowledge_excerpts: list[str] | None = None,
+) -> ReportAIGeneratedV2:
+    """
+    Report Schema v2 deterministic placeholder.
+
+    This first backend slice defines the safe contract only. It intentionally
+    avoids live provider calls and returns a conservative schema-valid draft
+    whose fields remain missing/pending for counselor review.
+    """
+    _ = (case_id, session_id, summaries, manual_input, knowledge_excerpts)
+    return ReportAIGeneratedV2.model_validate({})
 
 
 class AnalysisAgent:

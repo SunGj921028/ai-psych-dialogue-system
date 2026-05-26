@@ -3,7 +3,11 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from agents.analysis_agent import ConceptualizationReport, generate_report
+from agents.analysis_agent import (
+    ConceptualizationReport,
+    generate_report,
+    generate_report_v2_ai_draft,
+)
 from agents.summary_agent import TurnSummary
 from database.db import (
     create_or_get_report_draft,
@@ -12,9 +16,16 @@ from database.db import (
     get_report_draft,
     get_session,
     get_summaries_by_session,
+    update_report_ai_generated,
     update_report_manual_input,
 )
-from models.report_schema_v2 import ReportDraftV2, ReportManualInputV2
+from models.report_schema_v2 import (
+    ReportAIGeneratedV2,
+    ReportDraftV2,
+    ReportEvidenceRefV2,
+    ReportField,
+    ReportManualInputV2,
+)
 
 
 router = APIRouter()
@@ -27,6 +38,40 @@ class GenerateReportRequest(BaseModel):
 
 class ReportDraftManualInputRequest(BaseModel):
     manual_input: ReportManualInputV2 | None = None
+
+
+def _collect_ai_evidence_refs(
+    ai_generated: ReportAIGeneratedV2,
+    summary_rows: list[dict],
+) -> list[ReportEvidenceRefV2]:
+    refs: list[ReportEvidenceRefV2] = []
+    seen: set[tuple[int | None, str | None, str | None]] = set()
+
+    for value in ai_generated.model_dump().values():
+        if not isinstance(value, dict):
+            continue
+        field = ReportField.model_validate(value)
+        for ref in field.evidence_refs:
+            key = (ref.turn_number, ref.summary_id, ref.note)
+            if key not in seen:
+                refs.append(ref)
+                seen.add(key)
+
+    if refs:
+        return refs
+
+    for row in summary_rows:
+        ref = ReportEvidenceRefV2(
+            turn_number=row.get("turn_number"),
+            summary_id=row.get("id"),
+            note="summary pointer",
+        )
+        key = (ref.turn_number, ref.summary_id, ref.note)
+        if key not in seen:
+            refs.append(ref)
+            seen.add(key)
+
+    return refs
 
 
 async def _ensure_case_and_session(case_id: str, session_id: str) -> None:
@@ -146,6 +191,59 @@ async def update_report_draft_manual_input_route(
         raise HTTPException(
             status_code=500,
             detail="Failed to update report draft",
+        ) from exc
+
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Report draft not found")
+
+    return updated
+
+
+@router.post(
+    "/report-drafts/{draft_id}/generate",
+    response_model=ReportDraftV2,
+)
+async def generate_report_draft_v2_route(draft_id: str) -> ReportDraftV2:
+    try:
+        existing = await get_report_draft(draft_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to get report draft") from exc
+
+    if existing is None:
+        raise HTTPException(status_code=404, detail="Report draft not found")
+
+    try:
+        summary_rows = await get_summaries_by_session(
+            existing.case_id,
+            existing.session_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to generate report draft") from exc
+
+    if len(summary_rows) < 1:
+        raise HTTPException(
+            status_code=422,
+            detail="At least one persisted summary is required",
+        )
+
+    try:
+        raw_ai_generated = await generate_report_v2_ai_draft(
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+            summaries=summary_rows,
+            manual_input=existing.manual_input,
+        )
+        ai_generated = ReportAIGeneratedV2.model_validate(raw_ai_generated)
+        source_refs = _collect_ai_evidence_refs(ai_generated, summary_rows)
+        updated = await update_report_ai_generated(
+            draft_id,
+            ai_generated,
+            source_refs,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to generate report draft",
         ) from exc
 
     if updated is None:

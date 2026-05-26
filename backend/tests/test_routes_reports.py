@@ -4,6 +4,12 @@ import agents.analysis_agent as analysis_agent
 from agents.analysis_agent import DISCLAIMER_TEXT, ConceptualizationReport, EmotionPattern
 from agents.summary_agent import EmotionDetail, EmotionDimensions, TurnSummary
 from database.db import add_message, add_summary, create_session
+from models.report_schema_v2 import (
+    ReportAIGeneratedV2,
+    ReportEvidenceRefV2,
+    ReportField,
+    ReportSourceType,
+)
 
 
 def _create_case(client) -> str:
@@ -267,3 +273,239 @@ def test_report_draft_routes_validate_manual_input_and_missing_resources(client)
     assert missing_session.status_code == 404
     assert invalid_manual_input.status_code == 422
     assert missing_patch.status_code == 404
+
+
+def test_generate_report_v2_draft_persists_mocked_ai_output(client, monkeypatch):
+    case_id = _create_case(client)
+
+    import anyio
+
+    anyio.run(create_session, case_id, "session-v2-generate", None)
+    summary = TurnSummary(
+        turn_number=1,
+        emotion=EmotionDetail(primary="焦慮", intensity=6),
+        emotion_dimensions=EmotionDimensions(anxiety=6),
+        themes=["work stress"],
+        key_statement="synthetic summary only",
+        crisis_flag=False,
+    )
+    summary_row = anyio.run(
+        add_summary,
+        case_id,
+        "session-v2-generate",
+        1,
+        summary.model_dump_json(),
+        False,
+        "none",
+    )
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/session-v2-generate/report-drafts",
+        json={
+            "manual_input": {
+                "basic_info": {
+                    "referral_source": {
+                        "label_zh": "轉介來源",
+                        "value": "school counselor",
+                        "source_type": "manual",
+                        "missing_reason": None,
+                    }
+                }
+            }
+        },
+    ).json()
+    captured = {}
+
+    async def fake_generate_report_v2_ai_draft(
+        *,
+        case_id,
+        session_id,
+        summaries,
+        manual_input,
+        knowledge_excerpts=None,
+    ):
+        captured["case_id"] = case_id
+        captured["session_id"] = session_id
+        captured["summaries"] = summaries
+        captured["manual_input"] = manual_input
+        return ReportAIGeneratedV2(
+            chief_complaint_draft=ReportField(
+                label_zh="主訴摘要",
+                value="可能與工作壓力相關，仍需諮商師確認。",
+                source_type=ReportSourceType.AI,
+                missing_reason=None,
+                needs_review=True,
+                evidence_refs=[
+                    ReportEvidenceRefV2(
+                        turn_number=1,
+                        summary_id=summary_row["id"],
+                        note="summary pointer",
+                    )
+                ],
+            )
+        )
+
+    monkeypatch.setattr(
+        "routers.reports.generate_report_v2_ai_draft",
+        fake_generate_report_v2_ai_draft,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["draft_id"] == created["draft_id"]
+    assert data["status"] == "ai_generated"
+    assert data["generated_at"]
+    assert data["manual_input"]["basic_info"]["referral_source"]["value"] == "school counselor"
+    assert data["final_report"] is None
+    assert data["ai_generated"]["chief_complaint_draft"]["value"] == "可能與工作壓力相關，仍需諮商師確認。"
+    assert data["source_refs"] == [
+        {
+            "turn_number": 1,
+            "summary_id": summary_row["id"],
+            "note": "summary pointer",
+        }
+    ]
+    assert "raw_message_text" not in response.text
+    assert captured["case_id"] == case_id
+    assert captured["session_id"] == "session-v2-generate"
+    assert captured["summaries"][0]["id"] == summary_row["id"]
+    assert captured["summaries"][0]["crisis_level"] == "none"
+
+
+def test_generate_report_v2_draft_missing_draft_returns_404(client):
+    response = client.post("/api/report-drafts/missing-draft/generate")
+
+    assert response.status_code == 404
+
+
+def test_generate_report_v2_draft_without_summaries_returns_422(client, monkeypatch):
+    case_id = _create_case(client)
+
+    import anyio
+
+    anyio.run(create_session, case_id, "session-v2-no-summaries", None)
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/session-v2-no-summaries/report-drafts"
+    ).json()
+    calls = {"agent": 0}
+
+    async def fake_generate_report_v2_ai_draft(**kwargs):
+        calls["agent"] += 1
+        return ReportAIGeneratedV2()
+
+    monkeypatch.setattr(
+        "routers.reports.generate_report_v2_ai_draft",
+        fake_generate_report_v2_ai_draft,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 422
+    assert calls["agent"] == 0
+
+
+def test_generate_report_v2_draft_invalid_agent_output_returns_safe_error(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    sentinel = "RAW_PROVIDER_SENTINEL_DO_NOT_LEAK"
+
+    import anyio
+
+    anyio.run(create_session, case_id, "session-v2-invalid-agent", None)
+    summary = TurnSummary(
+        turn_number=1,
+        emotion=EmotionDetail(primary="焦慮", intensity=6),
+        emotion_dimensions=EmotionDimensions(anxiety=6),
+        themes=[],
+        key_statement="synthetic summary only",
+        crisis_flag=False,
+    )
+    anyio.run(
+        add_summary,
+        case_id,
+        "session-v2-invalid-agent",
+        1,
+        summary.model_dump_json(),
+        False,
+        "none",
+    )
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/session-v2-invalid-agent/report-drafts"
+    ).json()
+
+    async def fake_generate_report_v2_ai_draft(**kwargs):
+        return {
+            "formal_diagnosis_notes": sentinel,
+            "chief_complaint_draft": {
+                "label_zh": "主訴摘要",
+                "value": sentinel,
+                "source_type": "ai",
+            },
+        }
+
+    monkeypatch.setattr(
+        "routers.reports.generate_report_v2_ai_draft",
+        fake_generate_report_v2_ai_draft,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in response.text
+
+
+def test_generate_report_v2_draft_update_failure_returns_safe_error(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_AI_GENERATED_DB_ERROR_DO_NOT_LEAK"
+
+    import anyio
+
+    anyio.run(create_session, case_id, "session-v2-db-failure", None)
+    summary = TurnSummary(
+        turn_number=1,
+        emotion=EmotionDetail(primary="焦慮", intensity=6),
+        emotion_dimensions=EmotionDimensions(anxiety=6),
+        themes=[],
+        key_statement="synthetic summary only",
+        crisis_flag=False,
+    )
+    anyio.run(
+        add_summary,
+        case_id,
+        "session-v2-db-failure",
+        1,
+        summary.model_dump_json(),
+        False,
+        "none",
+    )
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/session-v2-db-failure/report-drafts"
+    ).json()
+
+    async def fake_generate_report_v2_ai_draft(**kwargs):
+        return ReportAIGeneratedV2()
+
+    async def fake_update_report_ai_generated(*args, **kwargs):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr(
+        "routers.reports.generate_report_v2_ai_draft",
+        fake_generate_report_v2_ai_draft,
+    )
+    monkeypatch.setattr(
+        "routers.reports.update_report_ai_generated",
+        fake_update_report_ai_generated,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert exception_text not in response.text
