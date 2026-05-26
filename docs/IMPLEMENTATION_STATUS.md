@@ -559,6 +559,8 @@ Future intent:
 - Report workflow future work remains: Report Schema v2 / formal report schema
   expansion, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
+  A docs-only planning artifact for this work exists at
+  `docs/REPORT_SCHEMA_V2_PLAN.md`; implementation remains future work.
 - Add report status and persisted report drafts when prioritized.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
