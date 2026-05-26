@@ -16,6 +16,9 @@ vi.mock('../api/client.js', () => ({
 
 const activeCaseId = 'case-1'
 const activeSessionId = 'session-1'
+const restoredHighText = '此會談曾有高風險危機偵測結果，請諮商師重新檢視。'
+const restoredLowText = '此會談曾有低度危機註記，請諮商師留意。'
+const legacyFallbackText = '最新摘要有危機註記，請諮商師重新檢視'
 
 function setActiveSession() {
   window.sessionStorage.setItem('ai-psych-active-case-id', activeCaseId)
@@ -96,6 +99,41 @@ function makeCrisisResponse(crisis) {
   }
 }
 
+function makeLoadedSummaryRow({
+  id = 'summary-row',
+  turnNumber = 1,
+  crisisFlag = false,
+  crisisLevel = 'none',
+} = {}) {
+  return {
+    id,
+    case_id: activeCaseId,
+    session_id: activeSessionId,
+    turn_number: turnNumber,
+    summary: {
+      turn_number: turnNumber,
+      emotion: {
+        primary: 'synthetic emotion',
+        intensity: 4,
+      },
+      emotion_dimensions: {
+        anxiety: 2,
+        sadness: 1,
+        anger: 0,
+        hopelessness: 1,
+        confusion: 1,
+        hope: 4,
+      },
+      themes: ['synthetic metadata theme'],
+      key_statement: 'SYNTHETIC_SUMMARY_METADATA',
+      crisis_flag: crisisFlag,
+    },
+    crisis_flag: crisisFlag,
+    crisis_level: crisisLevel,
+    created_at: '2026-05-20T00:00:00Z',
+  }
+}
+
 async function submitSyntheticTurn() {
   const user = userEvent.setup()
   const input = getConversationInput()
@@ -126,6 +164,24 @@ describe('ConversationPage crisis behavior', () => {
     await renderReadyConversationPage()
 
     expect(screen.getByText('未偵測到危機')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
+  })
+
+  test('restored persisted high crisis level shows page metadata without replaying modal', async () => {
+    mockSessionData({
+      summaries: [
+        makeLoadedSummaryRow({
+          id: 'summary-restored-high',
+          crisisFlag: true,
+          crisisLevel: 'high',
+        }),
+      ],
+    })
+
+    await renderReadyConversationPage()
+
+    expect(screen.getByRole('alert')).toHaveTextContent(restoredHighText)
+    expect(screen.getAllByText(restoredHighText).length).toBeGreaterThan(0)
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
 
@@ -189,6 +245,24 @@ describe('ConversationPage crisis behavior', () => {
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
 
+  test('restored persisted low crisis level appears as ordinary metadata', async () => {
+    mockSessionData({
+      summaries: [
+        makeLoadedSummaryRow({
+          id: 'summary-restored-low',
+          crisisFlag: true,
+          crisisLevel: 'low',
+        }),
+      ],
+    })
+
+    await renderReadyConversationPage()
+
+    expect(screen.getByText(restoredLowText)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
+  })
+
   test('none crisis level uses cautious non-crisis wording', async () => {
     api.sendConversationTurn.mockResolvedValue(
       makeCrisisResponse({
@@ -202,6 +276,24 @@ describe('ConversationPage crisis behavior', () => {
     await submitSyntheticTurn()
 
     expect(await screen.findByText('未偵測到危機')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
+  })
+
+  test('restored persisted none crisis level uses no-crisis wording', async () => {
+    mockSessionData({
+      summaries: [
+        makeLoadedSummaryRow({
+          id: 'summary-restored-none',
+          crisisFlag: false,
+          crisisLevel: 'none',
+        }),
+      ],
+    })
+
+    await renderReadyConversationPage()
+
+    expect(screen.getByText('未偵測到危機')).toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
@@ -240,10 +332,60 @@ describe('ConversationPage crisis behavior', () => {
 
     await renderReadyConversationPage()
 
-    expect(
-      screen.getByText('最新摘要有危機註記，請諮商師重新檢視'),
-    ).toBeInTheDocument()
+    expect(screen.getByText(legacyFallbackText)).toBeInTheDocument()
+    expect(screen.queryByText(restoredHighText)).not.toBeInTheDocument()
+    expect(screen.queryByText(restoredLowText)).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  test('restored persisted high crisis level takes precedence over low', async () => {
+    mockSessionData({
+      summaries: [
+        makeLoadedSummaryRow({
+          id: 'summary-restored-low',
+          turnNumber: 1,
+          crisisFlag: true,
+          crisisLevel: 'low',
+        }),
+        makeLoadedSummaryRow({
+          id: 'summary-restored-high',
+          turnNumber: 2,
+          crisisFlag: true,
+          crisisLevel: 'high',
+        }),
+      ],
+    })
+
+    await renderReadyConversationPage()
+
+    expect(screen.getByRole('alert')).toHaveTextContent(restoredHighText)
+    expect(screen.queryByText(restoredLowText)).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
+  })
+
+  test('restored persisted low crisis level takes precedence over none', async () => {
+    mockSessionData({
+      summaries: [
+        makeLoadedSummaryRow({
+          id: 'summary-restored-none',
+          turnNumber: 1,
+          crisisFlag: false,
+          crisisLevel: 'none',
+        }),
+        makeLoadedSummaryRow({
+          id: 'summary-restored-low',
+          turnNumber: 2,
+          crisisFlag: true,
+          crisisLevel: 'low',
+        }),
+      ],
+    })
+
+    await renderReadyConversationPage()
+
+    expect(screen.getByText(restoredLowText)).toBeInTheDocument()
+    expect(screen.queryByText('未偵測到危機')).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 

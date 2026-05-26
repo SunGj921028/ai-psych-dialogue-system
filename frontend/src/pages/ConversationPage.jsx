@@ -109,8 +109,61 @@ function getCrisisLabel(level) {
   return '未偵測到危機'
 }
 
+function isKnownCrisisLevel(level) {
+  return level === 'none' || level === 'low' || level === 'high'
+}
+
 function summaryHasCrisisFlag(summaryRow) {
   return summaryRow?.crisis_flag === true || summaryRow?.summary?.crisis_flag === true
+}
+
+function getRestoredCrisisDisplay(summaries) {
+  const levels = summaries
+    .map((summaryRow) => summaryRow?.crisis_level)
+    .filter(isKnownCrisisLevel)
+
+  if (levels.includes('high')) {
+    return {
+      level: 'high',
+      label: getCrisisLabel('high'),
+      description: '此會談曾有高風險危機偵測結果，請諮商師重新檢視。',
+      alertTitle: '曾有高風險危機偵測結果',
+      alertDescription: '此會談曾有高風險危機偵測結果，請諮商師重新檢視。',
+    }
+  }
+
+  if (levels.includes('low')) {
+    return {
+      level: 'low',
+      label: getCrisisLabel('low'),
+      description: '此會談曾有低度危機註記，請諮商師留意。',
+    }
+  }
+
+  if (levels.includes('none')) {
+    return {
+      level: 'none',
+      label: getCrisisLabel('none'),
+      description: '尚無本頁即時危機等級；已載入摘要未標示危機註記。',
+    }
+  }
+
+  if (
+    summaries.some(summaryHasCrisisFlag) &&
+    summaries.every((summaryRow) => summaryRow?.crisis_level == null)
+  ) {
+    return {
+      level: 'legacy-flag',
+      label: '摘要危機註記',
+      description: '最新摘要有危機註記，請諮商師重新檢視',
+    }
+  }
+
+  return {
+    level: 'none',
+    label: getCrisisLabel('none'),
+    description: '尚無本頁即時危機等級；目前載入摘要未標示危機註記。',
+  }
 }
 
 function SectionShell({ children, className = '' }) {
@@ -222,8 +275,9 @@ export default function ConversationPage() {
 
   const latestSummary = summaries.at(-1) ?? null
   const latestSummaryData = latestSummary?.summary ?? null
-  const latestSummaryHasCrisisFlag = summaryHasCrisisFlag(latestSummary)
-  const hasSummaryCrisisFlag = summaries.some(summaryHasCrisisFlag)
+  const restoredCrisisDisplay = useMemo(() => {
+    return getRestoredCrisisDisplay(summaries)
+  }, [summaries])
   const isResumedFromQuery = Boolean(
     queryCaseId &&
       querySessionId &&
@@ -246,32 +300,43 @@ export default function ConversationPage() {
       ? '可在下方輸入個案提供的第一段文字，送出後會顯示 AI 文件輔助回應與微摘要。'
       : '請先建立新個案，或選擇既有個案後再輸入會談內容。'
   const crisisDisplay = useMemo(() => {
-    if (crisisStatus?.crisis_level) {
+    if (crisisStatus?.crisis_level === 'high') {
       return {
-        label: getCrisisLabel(crisisStatus.crisis_level),
+        level: 'high',
+        label: getCrisisLabel('high'),
         description: crisisStatus.reason || '後端未提供額外說明。',
+        alertTitle: '偵測到高風險語句',
+        alertDescription:
+          '後端回傳 crisis_level 為 high。請諮商師立即審閱本輪內容，並依專業流程處理。',
       }
     }
 
-    if (latestSummaryHasCrisisFlag) {
+    if (restoredCrisisDisplay.level === 'high') {
+      return restoredCrisisDisplay
+    }
+
+    if (crisisStatus?.crisis_level === 'low') {
       return {
-        label: '摘要危機註記',
-        description: '最新摘要有危機註記，請諮商師重新檢視',
+        level: 'low',
+        label: getCrisisLabel('low'),
+        description: crisisStatus.reason || '此會談曾有低度危機註記，請諮商師留意。',
       }
     }
 
-    if (hasSummaryCrisisFlag) {
+    if (restoredCrisisDisplay.level === 'low') {
+      return restoredCrisisDisplay
+    }
+
+    if (crisisStatus?.crisis_level === 'none') {
       return {
-        label: '摘要危機註記',
-        description: '此會談摘要曾有危機註記，請諮商師重新檢視',
+        level: 'none',
+        label: getCrisisLabel('none'),
+        description: crisisStatus.reason || '後端未偵測到危機。',
       }
     }
 
-    return {
-      label: '未偵測到危機',
-      description: '尚無本頁即時危機等級；目前載入摘要未標示危機註記。',
-    }
-  }, [crisisStatus, hasSummaryCrisisFlag, latestSummaryHasCrisisFlag])
+    return restoredCrisisDisplay
+  }, [crisisStatus, restoredCrisisDisplay])
 
   const loadCases = useCallback(async () => {
     setIsLoadingCases(true)
@@ -554,7 +619,7 @@ export default function ConversationPage() {
         </div>
       ) : null}
 
-      {crisisStatus?.crisis_level === 'high' ? (
+      {crisisDisplay.level === 'high' ? (
         <section
           className="rounded-md border border-red-300 bg-red-50/95 p-4 text-red-950 shadow-[0_12px_30px_rgba(185,28,28,0.10)] dark:border-red-500/70 dark:bg-red-950/82 dark:text-red-100 dark:shadow-[0_12px_30px_rgba(127,29,29,0.28)]"
           role="alert"
@@ -562,11 +627,11 @@ export default function ConversationPage() {
           <div className="flex gap-3">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
             <div>
-              <h2 className="font-semibold">偵測到高風險語句</h2>
+              <h2 className="font-semibold">{crisisDisplay.alertTitle}</h2>
               <p className="mt-1 text-sm leading-6">
-                後端回傳 crisis_level 為 high。請諮商師立即審閱本輪內容，並依專業流程處理。
+                {crisisDisplay.alertDescription}
               </p>
-              {crisisStatus.reason ? (
+              {crisisStatus?.crisis_level === 'high' && crisisStatus.reason ? (
                 <p className="mt-2 text-sm">後端說明：{crisisStatus.reason}</p>
               ) : null}
             </div>
@@ -892,7 +957,7 @@ export default function ConversationPage() {
                 {crisisDisplay.description}
               </p>
             </div>
-            {crisisStatus?.crisis_level === 'low' ? (
+            {crisisDisplay.level === 'low' ? (
               <p className="mt-3 text-xs leading-5 text-muted-foreground">
                 low 等級僅作為諮商師審閱 metadata 顯示，不提升為紅色警示。
               </p>
