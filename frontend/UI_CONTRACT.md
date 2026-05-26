@@ -23,6 +23,10 @@ Current reality:
   which calls `POST /api/cases/{case_id}/sessions`.
 - Normal frontend-created sessions omit `session_id` and use the backend returned
   `session_id`.
+- `frontend/src/api/client.js` exposes
+  `updateSessionTitle(caseId, sessionId, payload)`, which calls
+  `PATCH /api/cases/{case_id}/sessions/{session_id}` with
+  `{ title: string | null }`.
 - ReportPage acts as a counselor review workspace integrated with the backend
   API. Report generation remains manual-only.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
@@ -37,6 +41,14 @@ Current reality:
 - HistoryPage displays `session.title` as the primary session label when present.
   Untitled sessions display `未命名會談`, and `session_id` remains visible as
   secondary metadata.
+- HistoryPage supports inline session title editing on one session row at a time.
+  A session row includes an edit control, input, Save, Cancel, and Clear title
+  action while editing.
+- Save sends the trimmed title, Clear title sends `{ title: null }`, Enter saves,
+  and Escape cancels.
+- Session titles are limited to 80 characters. Over-length titles show validation
+  and do not call the API.
+- Failed saves show a friendly generic error and preserve the draft.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - SettingsPage is implemented as a static counselor-facing informational page.
@@ -80,8 +92,8 @@ Current reality:
   generate titles with AI and must not derive titles from raw messages,
   summaries, key statements, themes, crisis reasons, previews, reports, notes,
   or other clinical content.
-- The backend PATCH endpoint for session title rename exists, but no frontend
-  `updateSessionTitle` API helper or rename UI has been implemented yet.
+- Titles and title drafts are counselor-entered operational metadata only and are
+  not stored in `localStorage` or `sessionStorage`.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, session preview text, titles, drafts, and clinical content
@@ -100,15 +112,14 @@ Current reality:
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
   regenerated after leaving or reloading.
-- Deletion, PDF export, session deletion/archive, frontend `updateSessionTitle`
-  helper integration, HistoryPage inline rename UI, title privacy guidance,
-  richer session metadata, optional charts/Recharts, runtime/provider status
-  endpoint if needed, and MCP integration are not implemented yet.
+- Deletion, PDF export, session deletion/archive, title search/filter, richer
+  session metadata, optional charts/Recharts, runtime/provider status endpoint
+  if needed, and MCP integration are not implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
-- Persisted report drafts, persisted exact `crisis_level` for summaries,
-  editable report fields, LLM prompt changes, Recharts integration, and final
-  report template mirroring have not been implemented.
+- Persisted report drafts, persisted exact `crisis_level` for summaries, Report
+  Schema v2, editable report fields, LLM prompt changes, Recharts integration,
+  and final report template mirroring have not been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -119,11 +130,10 @@ Current reality:
 
 Remaining future behavior:
 
-- Complete deletion, session deletion/archive, frontend `updateSessionTitle`
-  helper integration, HistoryPage inline rename UI, title privacy guidance,
-  richer session metadata, persisted exact `crisis_level` if exact crisis level
-  should survive reload/navigation, Settings backend integration, and MCP-related
-  UI only when the corresponding tasks are prioritized.
+- Complete deletion, session deletion/archive, title search/filter, richer
+  session metadata, persisted exact `crisis_level` if exact crisis level should
+  survive reload/navigation, Settings backend integration, and MCP-related UI
+  only when the corresponding tasks are prioritized.
 - Complete report workflow future work: formal Report Schema v2 after the
   template stabilizes, persisted report drafts, source/evidence traceability,
   final PDF export, optional Recharts/charts, and editable counselor review
@@ -148,9 +158,11 @@ Coverage includes:
 - ReportPage missing `sessionId` handling, manual generation, and disclaimer
   display.
 - ReportPage transient report note.
-- API helper path and payload contract tests.
+- API helper path and payload contract tests, including `updateSessionTitle`.
 - HistoryPage list, empty, error, lazy session expansion, empty durable session
-  rendering, title/fallback rendering, and session navigation link behavior.
+  rendering, title/fallback rendering, rename controls, save, clear, cancel,
+  keyboard behavior, validation, error handling, single-row editing, and
+  session navigation link behavior.
 - ReportPage back-to-conversation link preservation.
 - SettingsPage rendering, absence of secret/input controls, no API helper calls,
   no clinical sentinel persistence, and no new storage keys.
@@ -264,6 +276,14 @@ Responsibilities:
 - Display `session.title` as the primary session label when present.
 - Display `未命名會談` for untitled sessions.
 - Keep `session_id` visible as secondary metadata.
+- Support inline manual title editing on one row at a time.
+- Provide an edit control, input, Save, Cancel, and Clear title action for the
+  edited session row.
+- Save trimmed titles through `updateSessionTitle(caseId, sessionId, { title })`.
+- Clear titles through `updateSessionTitle(caseId, sessionId, { title: null })`.
+- Validate the 80-character title limit before calling the API.
+- Save on Enter and cancel on Escape.
+- Show a friendly generic error on failed save while preserving the draft.
 - Let the counselor resume a conversation through
   `/?caseId={caseId}&sessionId={sessionId}`.
 - Let the counselor open a report workspace through
@@ -273,9 +293,7 @@ Not currently implemented:
 
 - Case deletion.
 - Session deletion/archive.
-- Manual rename UI.
-- Frontend `updateSessionTitle` helper integration.
-- Title privacy guidance.
+- Title search/filter.
 - Labels, report status, and richer session metadata.
 
 ### SettingsPage
@@ -343,10 +361,12 @@ Expected calls:
 - `GET /api/cases/{case_id}/sessions` when a case is expanded.
 - `GET /api/cases/{case_id}` to inspect a selected case when the UI needs case
   detail.
+- `PATCH /api/cases/{case_id}/sessions/{session_id}` through
+  `updateSessionTitle(caseId, sessionId, payload)` with
+  `{ title: string | null }` when saving or clearing a session title.
 
-Future calls may include case deletion, session deletion/archive, the implemented
-PATCH session title rename endpoint through a future `updateSessionTitle` helper,
-label, and report-status endpoints once implemented.
+Future calls may include case deletion, session deletion/archive, title
+search/filter, label, and report-status endpoints once implemented.
 
 ### SettingsPage
 
@@ -638,6 +658,10 @@ Current implemented state:
 - HistoryPage displays session titles when present, `未命名會談` for untitled
   sessions, and session IDs as secondary metadata; resume and report links are
   unchanged.
+- HistoryPage supports inline manual title rename/clear with edit controls,
+  trimmed saves, `{ title: null }` clearing, 80-character validation, Enter save,
+  Escape cancel, single-row editing, friendly generic save errors, and draft
+  preservation after failed saves.
 - SettingsPage is a static counselor-facing informational page covering system
   purpose, safety boundaries, storage/privacy behavior, theme preference behavior,
   backend-managed model/service configuration, and counselor review reminders.
@@ -656,7 +680,9 @@ Current implemented state:
 - No title is stored in browser storage, generated by AI, or derived from raw
   messages, summaries, key statements, themes, crisis reasons, previews, or
   reports, notes, or other clinical content.
-- No browser storage behavior for title rename has been added.
+- Title drafts are not stored in browser storage; browser storage behavior
+  remains limited to `ai-psych-theme` in `localStorage` and active case/session
+  identifiers in `sessionStorage`.
 - Crisis UI uses backend `crisis_level` only. Summary-only `crisis_flag` fallback
   metadata is counselor-review wording, not a low/high inference.
 - Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
@@ -665,9 +691,8 @@ Current implemented state:
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
-- Add deletion, session deletion/archive, frontend `updateSessionTitle` helper
-  integration, HistoryPage inline rename UI, title privacy guidance, labels,
-  report status, richer session metadata, optional runtime/provider status, and
+- Add deletion, session deletion/archive, title search/filter, labels, report
+  status, richer session metadata, optional runtime/provider status, and
   MCP-related UI when prioritized.
 - Keep any future runtime/provider status endpoint secret-safe. Real provider
   settings UI remains out of scope unless explicitly designed.

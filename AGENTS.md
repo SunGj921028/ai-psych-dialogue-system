@@ -73,6 +73,9 @@ mismatches.
   to show backend session metadata.
 - HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
   sessions, and keeps `session_id` visible as secondary metadata.
+- HistoryPage supports inline counselor-entered session title rename/clear through
+  the frontend `updateSessionTitle(caseId, sessionId, payload)` helper, which
+  calls `PATCH /api/cases/{case_id}/sessions/{session_id}`.
 - SettingsPage is implemented as a static counselor-facing informational page
   covering system purpose, safety boundaries, storage/privacy behavior, theme
   preference behavior, backend-managed provider/model configuration, and
@@ -89,8 +92,7 @@ mismatches.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, drafts, and clinical content are not stored
   in browser storage.
-- PDF export, session deletion/archive, frontend manual rename UI, frontend
-  `updateSessionTitle` helper integration, title privacy guidance, richer session
+- PDF export, session deletion/archive, title search/filter, richer session
   metadata, optional charts/Recharts, editable report workflow, optional
   secret-safe runtime/provider status, and MCP integration remain future work.
 - Session archive/delete, report status, persisted report drafts, and exact
@@ -127,9 +129,8 @@ Recommended order:
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
 3. Complete remaining frontend workflows, including session deletion/archive,
-   frontend `updateSessionTitle` helper integration, HistoryPage inline rename
-   UI, title privacy guidance, report workflow completion, and focused frontend
-   test gaps.
+   title search/filter, report workflow completion, and focused frontend test
+   gaps.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
