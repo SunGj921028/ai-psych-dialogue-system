@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from agents.conversation_agent import (
     ConversationMessage,
@@ -67,6 +67,7 @@ class SummaryRowResponse(BaseModel):
 
 class SessionMetadataResponse(BaseModel):
     session_id: str
+    title: str | None = None
     message_count: int
     summary_count: int
     last_turn_number: int
@@ -78,6 +79,20 @@ class SessionMetadataResponse(BaseModel):
 class CreateSessionRequest(BaseModel):
     session_id: str | None = None
     title: str | None = None
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if len(normalized) > 80:
+            raise ValueError("title must be 80 characters or fewer")
+
+        return normalized
 
 
 async def _ensure_case_exists(case_id: str) -> None:

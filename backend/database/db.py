@@ -77,6 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_case_updated_at
 # Single source of truth for busy/lock timeout (milliseconds).
 # aiosqlite.connect() receives the equivalent in seconds.
 _BUSY_TIMEOUT_MS: int = 30_000  # 30 s
+_SESSION_TITLE_MAX_LENGTH: int = 80
 
 
 def _database_path() -> str:
@@ -102,6 +103,19 @@ def _message_row_to_dict(row: aiosqlite.Row) -> dict:
     if "round" in d:
         d["turn_number"] = d.pop("round")
     return d
+
+
+def _normalize_session_title(title: str | None) -> str | None:
+    if title is None:
+        return None
+
+    normalized = title.strip()
+    if not normalized:
+        return None
+    if len(normalized) > _SESSION_TITLE_MAX_LENGTH:
+        raise ValueError("session title must be 80 characters or fewer")
+
+    return normalized
 
 
 @asynccontextmanager
@@ -218,6 +232,11 @@ async def _get_session_metadata(
                     WHERE case_id = ? AND session_id = ?
                 ) AS session_last_activity_at,
                 (
+                    SELECT title
+                    FROM sessions
+                    WHERE case_id = ? AND session_id = ?
+                ) AS session_title,
+                (
                     SELECT COUNT(*)
                     FROM messages
                     WHERE case_id = ? AND session_id = ?
@@ -305,6 +324,8 @@ async def _get_session_metadata(
                 session_id,
                 case_id,
                 session_id,
+                case_id,
+                session_id,
             ),
         )
         row = await cur.fetchone()
@@ -338,6 +359,7 @@ def _session_metadata_from_row(row: aiosqlite.Row) -> dict:
 
     return {
         "session_id": row["session_id"],
+        "title": row["session_title"],
         "message_count": int(row["message_count"] or 0),
         "summary_count": int(row["summary_count"] or 0),
         "last_turn_number": max(message_last_turn, summary_last_turn),
@@ -355,6 +377,7 @@ async def create_session(
     title: str | None = None,
 ) -> dict:
     session_id = session_id or str(uuid.uuid4())
+    title = _normalize_session_title(title)
     created_at = _now_iso()
     async with get_db() as db:
         await db.execute(
@@ -597,6 +620,11 @@ async def get_session_metadata_by_case(case_id: str) -> list[dict]:
                     WHERE case_id = ? AND session_id = session_ids.session_id
                 ) AS session_last_activity_at,
                 (
+                    SELECT title
+                    FROM sessions
+                    WHERE case_id = ? AND session_id = session_ids.session_id
+                ) AS session_title,
+                (
                     SELECT COUNT(*)
                     FROM messages
                     WHERE case_id = ? AND session_id = session_ids.session_id
@@ -641,6 +669,7 @@ async def get_session_metadata_by_case(case_id: str) -> list[dict]:
             FROM session_ids
             """,
             (
+                case_id,
                 case_id,
                 case_id,
                 case_id,

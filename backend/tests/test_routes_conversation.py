@@ -194,13 +194,13 @@ def test_create_session_route_creates_empty_durable_session(client):
     assert response.status_code == 200
     data = response.json()
     assert data["session_id"]
+    assert data["title"] is None
     assert data["message_count"] == 0
     assert data["summary_count"] == 0
     assert data["last_turn_number"] == 0
     assert data["last_updated"]
     assert data["has_crisis"] is False
     assert data["latest_summary_preview"] is None
-    assert "title" not in data
     assert "round" not in data
     assert "summary_json" not in data
 
@@ -214,7 +214,7 @@ def test_create_session_route_accepts_optional_session_id_and_is_idempotent(clie
 
     first_response = client.post(
         f"/api/cases/{case_id}/sessions",
-        json={"session_id": "frontend-session", "title": "unused title"},
+        json={"session_id": "frontend-session", "title": "  Intake planning  "},
     )
     second_response = client.post(
         f"/api/cases/{case_id}/sessions",
@@ -225,7 +225,24 @@ def test_create_session_route_accepts_optional_session_id_and_is_idempotent(clie
     assert second_response.status_code == 200
     assert second_response.json() == first_response.json()
     assert second_response.json()["session_id"] == "frontend-session"
-    assert "title" not in second_response.json()
+    assert second_response.json()["title"] == "Intake planning"
+
+
+def test_create_session_route_normalizes_blank_and_rejects_long_title(client):
+    case_id = _create_case(client)
+
+    blank_response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "blank-title-session", "title": "   "},
+    )
+    long_response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "long-title-session", "title": "x" * 81},
+    )
+
+    assert blank_response.status_code == 200
+    assert blank_response.json()["title"] is None
+    assert long_response.status_code == 422
 
 
 def test_create_session_route_missing_case_returns_404(client):
@@ -249,6 +266,21 @@ def test_list_case_sessions_includes_empty_explicit_session(client):
     assert create_response.status_code == 200
     assert response.status_code == 200
     assert response.json() == [create_response.json()]
+
+
+def test_list_case_sessions_includes_nullable_title(client):
+    case_id = _create_case(client)
+
+    create_response = client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "titled-session", "title": "  Review prep  "},
+    )
+    response = client.get(f"/api/cases/{case_id}/sessions")
+
+    assert create_response.status_code == 200
+    assert create_response.json()["title"] == "Review prep"
+    assert response.status_code == 200
+    assert response.json()[0]["title"] == "Review prep"
 
 
 def test_list_case_sessions_missing_case_returns_404(client):

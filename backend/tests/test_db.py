@@ -266,13 +266,13 @@ def test_create_session_creates_empty_durable_session_metadata(initialized_db):
     session = anyio.run(db_layer.create_session, case["id"], None, None)
 
     assert session["session_id"]
+    assert session["title"] is None
     assert session["message_count"] == 0
     assert session["summary_count"] == 0
     assert session["last_turn_number"] == 0
     assert session["last_updated"] == session["created_at"]
     assert session["has_crisis"] is False
     assert session["latest_summary_preview"] is None
-    assert "title" not in session
     assert "round" not in session
     assert "summary_json" not in session
 
@@ -280,15 +280,45 @@ def test_create_session_creates_empty_durable_session_metadata(initialized_db):
     assert fetched == session
 
 
+def test_create_session_normalizes_and_validates_title(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    titled = anyio.run(
+        db_layer.create_session,
+        case["id"],
+        "session-titled",
+        "  Intake planning  ",
+    )
+    whitespace = anyio.run(
+        db_layer.create_session,
+        case["id"],
+        "session-blank-title",
+        "   ",
+    )
+
+    assert titled["title"] == "Intake planning"
+    assert whitespace["title"] is None
+
+    with pytest.raises(ValueError):
+        anyio.run(
+            db_layer.create_session,
+            case["id"],
+            "session-title-too-long",
+            "x" * 81,
+        )
+
+
 def test_create_session_with_existing_id_is_idempotent(initialized_db):
     case = anyio.run(db_layer.create_case, "A001")
 
-    first = anyio.run(db_layer.create_session, case["id"], "session-explicit", None)
+    first = anyio.run(db_layer.create_session, case["id"], "session-explicit", "First")
     second = anyio.run(db_layer.create_session, case["id"], "session-explicit", "unused")
 
     assert second == first
+    assert second["title"] == "First"
     sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
     assert [session["session_id"] for session in sessions] == ["session-explicit"]
+    assert sessions[0]["title"] == "First"
 
 
 def test_get_session_returns_none_for_missing_session(initialized_db):
@@ -328,6 +358,7 @@ def test_session_metadata_includes_explicit_empty_sessions(initialized_db):
     assert sessions == [
         {
             "session_id": "empty-session",
+            "title": None,
             "message_count": 0,
             "summary_count": 0,
             "last_turn_number": 0,
@@ -390,6 +421,7 @@ def test_session_metadata_combines_explicit_empty_and_legacy_derived_sessions(in
         "legacy-derived",
     ]
     assert sessions[0]["message_count"] == 0
+    assert sessions[0]["title"] is None
     assert sessions[0]["summary_count"] == 0
     assert sessions[0]["last_turn_number"] == 0
     assert sessions[0]["last_updated"] == "2026-05-20T00:00:03+00:00"
@@ -397,6 +429,7 @@ def test_session_metadata_combines_explicit_empty_and_legacy_derived_sessions(in
     assert sessions[0]["latest_summary_preview"] is None
 
     assert sessions[1]["message_count"] == 1
+    assert sessions[1]["title"] is None
     assert sessions[1]["summary_count"] == 1
     assert sessions[1]["last_turn_number"] == 5
     assert sessions[1]["last_updated"] == "2026-05-20T00:00:02+00:00"
@@ -646,6 +679,7 @@ def test_session_metadata_is_derived_without_leaking_sensitive_fields(initialize
     ]
 
     newest = sessions[0]
+    assert newest["title"] is None
     assert newest["message_count"] == 1
     assert newest["summary_count"] == 1
     assert newest["last_turn_number"] == 2
@@ -654,6 +688,7 @@ def test_session_metadata_is_derived_without_leaking_sensitive_fields(initialize
     assert newest["latest_summary_preview"] == "第 1 輪 · 主要情緒：低落 · 強度 4/10"
 
     old = sessions[1]
+    assert old["title"] is None
     assert old["message_count"] == 1
     assert old["summary_count"] == 1
     assert old["last_turn_number"] == 3
@@ -661,6 +696,7 @@ def test_session_metadata_is_derived_without_leaking_sensitive_fields(initialize
     assert old["latest_summary_preview"] == "第 3 輪 · 主要情緒：焦慮 · 強度 6/10"
 
     message_only_session = sessions[2]
+    assert message_only_session["title"] is None
     assert message_only_session["message_count"] == 1
     assert message_only_session["summary_count"] == 0
     assert message_only_session["last_turn_number"] == 4

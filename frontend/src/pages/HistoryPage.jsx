@@ -11,6 +11,8 @@ import {
 } from 'lucide-react'
 import { listCaseSessions, listCases } from '../api/client.js'
 
+const UNTITLED_SESSION_LABEL = '未命名會談'
+
 function getFriendlyError(error) {
   if (!error?.response) {
     return '無法連線到後端服務，請確認本機 API 是否已啟動。'
@@ -30,6 +32,10 @@ function formatDate(value) {
   } catch {
     return value
   }
+}
+
+function getSessionDisplayTitle(session) {
+  return session.title?.trim() || UNTITLED_SESSION_LABEL
 }
 
 export default function HistoryPage() {
@@ -224,7 +230,12 @@ export default function HistoryPage() {
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <p className="font-mono text-xs">{session.session_id}</p>
+                                <p className="break-words font-semibold">
+                                  {getSessionDisplayTitle(session)}
+                                </p>
+                                <p className="mt-1 font-mono text-xs text-muted-foreground">
+                                  {session.session_id}
+                                </p>
                                 <p className="mt-1 text-xs text-muted-foreground">
                                   {formatDate(session.last_updated)}
                                 </p>

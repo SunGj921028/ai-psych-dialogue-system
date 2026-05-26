@@ -25,6 +25,7 @@ const clinicalSentinels = [
   'SYNTHETIC_REPORT_TEXT',
   'SYNTHETIC_CRISIS_REASON',
   'SYNTHETIC_CASE_NOTE_SECRET',
+  'SYNTHETIC_SESSION_TITLE_SECRET',
 ]
 
 function storageEntries(storage) {
@@ -99,6 +100,7 @@ describe('browser storage safety', () => {
     api.listCaseSessions.mockResolvedValue([
       {
         session_id: activeSessionId,
+        title: 'SYNTHETIC_SESSION_TITLE_SECRET',
         message_count: 2,
         summary_count: 1,
         last_turn_number: 1,
