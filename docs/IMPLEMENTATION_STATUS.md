@@ -72,6 +72,35 @@ Current facts:
 - Gemini JSON mode via `response_format={"type": "json_object"}` is a known
   compatibility risk.
 
+### Backend Models
+
+Status: partially implemented for future Report Schema v2 work.
+
+Current facts:
+
+- `backend/models/report_schema_v2.py` defines backend Pydantic models for the
+  future Report Schema v2 workflow.
+- Added models include `ReportDraftV2`, `ReportManualInputV2`,
+  `ReportAIGeneratedV2`, `ReportCounselorEditsV2`, `ReportFinalV2`,
+  `ReportField`, `ReportEvidenceRefV2` / `ReportSourceRefV2`, and
+  `ReportSafetyFlagsV2`.
+- Added enums cover draft status, source type, missing reason, and risk level.
+- `schema_version` is fixed to `report_schema_v2`.
+- Status, source type, missing reason, and risk level accept only strict allowed
+  values.
+- Missing data can be represented as null, blank-compatible values, or `待評估`,
+  with structured missing reasons.
+- AI-generated fields do not require manual-only diagnosis, medication, legal,
+  testing, trauma, family-history, or safety-plan content when absent.
+- Evidence references use safe pointers such as `turn_number`, `summary_id`, and
+  `note`; they do not duplicate raw message text.
+- Safety flags default conservatively.
+- These models are not wired into runtime report generation yet. Existing v1
+  `ConceptualizationReport`, `analysis_agent.generate_report()`, and
+  `POST /api/reports/generate` behavior remain unchanged.
+- No DB persistence, API route changes, LLM prompt changes, ReportPage v2 UI, or
+  PDF export have been implemented.
+
 ### Backend Routers
 
 Status: implemented.
@@ -274,9 +303,10 @@ Current facts:
   endpoint if needed, and MCP integration remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
-- No persisted report drafts, Report Schema v2, editable report fields, LLM
-  prompt changes, Recharts integration, or final report template mirroring has
-  been implemented for the report workspace.
+- No persisted report drafts, editable report fields, LLM prompt changes,
+  Recharts integration, ReportPage v2 UI, or final report template mirroring has
+  been implemented for the report workspace. Backend Pydantic models for Report
+  Schema v2 exist, but they are not wired into the current report workflow.
 
 ### Tests
 
@@ -329,6 +359,10 @@ Current facts:
   from a mocked crisis detector, and summary API exposure.
 - Backend tests also confirm crisis reasons and internal fields are not exposed
   through summary metadata.
+- Backend tests cover Report Schema v2 models, including valid minimal drafts,
+  fixed schema version, missing data behavior, enum validation, evidence
+  references, manual-only separation from AI-generated fields, conservative
+  safety-flag defaults, JSON-compatible serialization, and invalid values.
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
@@ -375,7 +409,7 @@ Current facts:
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing and backend-only manual session rename. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, backend-level-only crisis UI behavior, and restored persisted `crisis_level` display from loaded summaries. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
-| Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note. Backend Pydantic models for Report Schema v2 exist, but manual input API, persisted drafts, ReportPage v2 rendering, counselor review/edit workflow, PDF export, and runtime schema integration remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback, keeps session IDs visible as secondary metadata, supports inline manual title rename/clear, and implements archive-only session lifecycle controls. Hard delete, title search/filter, labels, and richer session metadata remain future work. |
 | Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -476,7 +510,8 @@ Current reality:
   from old `crisis_flag` values.
 - `crisis_level` is not injected into `TurnSummary` JSON, and `crisis.reason` is
   not persisted.
-- Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
+- Backend deterministic route, agent, DB, and Report Schema v2 model tests exist
+  under `backend/tests/`.
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
   SettingsPage static informational guidance, and light/dark theme support are
@@ -556,11 +591,12 @@ Future intent:
 - Hard delete remains future work and requires a separate data-retention/privacy
   policy. Bulk archive/delete remains out of scope.
 - Add title search/filter when prioritized.
-- Report workflow future work remains: Report Schema v2 / formal report schema
-  expansion, persisted report drafts, source/evidence traceability, final PDF
-  export, optional Recharts/charts, and editable counselor review workflow.
-  A docs-only planning artifact for this work exists at
-  `docs/REPORT_SCHEMA_V2_PLAN.md`; implementation remains future work.
+- Report Schema v2 backend Pydantic models now exist under
+  `backend/models/report_schema_v2.py`, and a planning artifact exists at
+  `docs/REPORT_SCHEMA_V2_PLAN.md`. Remaining report workflow future work
+  includes manual input API, `report_drafts` persistence, analysis-agent v2
+  mocked integration, ReportPage v2 rendering, counselor review/edit workflow,
+  source/evidence traceability, final PDF export, and optional Recharts/charts.
 - Add report status and persisted report drafts when prioritized.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
@@ -573,9 +609,9 @@ Future intent:
   designed.
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
-- Report Schema v2, PDF export, charts/Recharts, MCP, hard delete,
-  title search/filter, report status/drafts, latest/peak crisis aggregates, and
-  real provider settings UI remain separate future work.
+- Report Schema v2 runtime integration, PDF export, charts/Recharts, MCP, hard
+  delete, title search/filter, report status/drafts, latest/peak crisis
+  aggregates, and real provider settings UI remain separate future work.
 
 ## Related Context Documents
 

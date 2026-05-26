@@ -1,9 +1,10 @@
 # Report Schema v2 Planning Document
 
 This document plans the next-generation report workflow for the counseling
-documentation system. It is a planning artifact only. Report Schema v2,
-manual-input persistence, AI draft generation, counselor review, and PDF export
-are not implemented yet.
+documentation system. It began as a planning artifact. Backend Pydantic models
+for Report Schema v2 now exist under `backend/models/report_schema_v2.py`, but
+manual-input persistence, AI draft generation, counselor review, ReportPage v2,
+API integration, database persistence, and PDF export are not implemented yet.
 
 ## 1. Purpose and Scope
 
@@ -20,6 +21,15 @@ This plan covers:
 
 This plan does not change backend behavior, frontend behavior, prompts,
 database schema, tests, MCP work, or PDF export.
+
+Current implementation status:
+
+- Backend Pydantic models for Report Schema v2 are implemented in
+  `backend/models/report_schema_v2.py`.
+- Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
+  `POST /api/reports/generate` behavior remain unchanged.
+- No database persistence, API route changes, LLM prompt changes, ReportPage v2
+  UI, counselor review workflow, or PDF export have been implemented.
 
 ## 2. Source Materials
 
@@ -56,6 +66,9 @@ Current implementation facts:
 - Current ReportPage is a counselor review workspace with manual-only
   generation.
 - Generated reports are transient and are not persisted.
+- Backend Pydantic models for the future Report Schema v2 workflow now exist in
+  `backend/models/report_schema_v2.py`, but they are not wired into current
+  report generation.
 - PDF export is not implemented.
 - Browser storage must not store report text, report drafts, manual clinical
   input, summaries, crisis levels, crisis reasons, case notes, titles, or other
@@ -438,7 +451,24 @@ and confidentiality principles.
 
 ## 8. Proposed Report Schema v2 Direction
 
-This section describes schema direction only. It is not executable code.
+The backend Pydantic model slice for this direction now exists in
+`backend/models/report_schema_v2.py`. The models are not yet connected to DB
+persistence, API routes, LLM prompts, ReportPage, or PDF export.
+
+Implemented model names:
+
+- `ReportDraftV2`
+- `ReportManualInputV2`
+- `ReportAIGeneratedV2`
+- `ReportCounselorEditsV2`
+- `ReportFinalV2`
+- `ReportField`
+- `ReportEvidenceRefV2` / `ReportSourceRefV2`
+- `ReportSafetyFlagsV2`
+- draft status enum
+- source type enum
+- missing reason enum
+- risk level enum
 
 Recommended top-level shape:
 
@@ -488,6 +518,20 @@ Recommended `source_type` values:
 Recommended `evidence_refs` should prefer references such as summary IDs and
 turn numbers. Duplicating raw messages should be avoided unless separately
 approved.
+
+Implemented validation and safety behavior:
+
+- `schema_version` is fixed to `report_schema_v2`.
+- `status`, `source_type`, `missing_reason`, and `risk_level` accept only strict
+  allowed values.
+- Missing data can be represented as null, blank-compatible values, or `待評估`.
+- Manual-only fields are not required in `ai_generated`.
+- Evidence references use safe pointers such as `turn_number`, `summary_id`, and
+  `note`.
+- Evidence references do not duplicate raw message text.
+- Safety flags default conservatively.
+- Models do not force diagnosis, medication, legal, testing, trauma,
+  family-history, or safety-plan fields when absent.
 
 ## 9. Manual Input Workflow
 
@@ -681,6 +725,20 @@ Backend tests should cover:
 - generic non-leaking errors
 - future PDF export behavior after export is implemented
 
+Current backend model tests cover:
+
+- valid minimal drafts
+- fixed schema version
+- missing data behavior
+- enum validation
+- evidence references
+- manual-only separation from AI-generated fields
+- conservative safety-flag defaults
+- JSON-compatible serialization
+- invalid values
+
+The backend test suite passed after adding the Report Schema v2 models.
+
 Frontend tests should cover:
 
 - manual input form
@@ -696,14 +754,14 @@ All tests should remain deterministic and should not call live LLM providers.
 
 Recommended implementation slices:
 
-1. Docs/schema planning artifact.
-2. Backend Pydantic models for Report Schema v2.
-3. Manual input schema/API.
-4. `report_drafts` persistence.
-5. `analysis_agent` v2 mocked integration.
-6. ReportPage v2 read-only rendering.
-7. Counselor edit/review status flow.
-8. PDF export planning and implementation.
+1. Docs/schema planning artifact. Completed.
+2. Backend Pydantic models for Report Schema v2. Completed.
+3. Manual input schema/API. Future work.
+4. `report_drafts` persistence. Future work.
+5. `analysis_agent` v2 mocked integration. Future work.
+6. ReportPage v2 read-only rendering. Future work.
+7. Counselor edit/review status flow. Future work.
+8. PDF export planning and implementation. Future work.
 
 Each implementation slice should be small, testable, and reviewable. Safety and
 browser-storage regression tests should accompany behavior changes.
@@ -737,4 +795,3 @@ Human decisions needed before coding:
 - Should any diagnosis-related section remain limited to `診斷性思考` only?
 - Should regeneration preserve counselor edits by default?
 - Should report drafts support archive or lock behavior after export?
-
