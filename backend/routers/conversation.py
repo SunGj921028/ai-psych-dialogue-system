@@ -21,7 +21,9 @@ from database.db import (
     get_messages_by_session,
     get_session_metadata_by_case,
     get_summaries_by_session,
+    normalize_session_title,
     touch_session,
+    update_session_title,
 )
 
 
@@ -83,16 +85,16 @@ class CreateSessionRequest(BaseModel):
     @field_validator("title")
     @classmethod
     def normalize_title(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
+        return normalize_session_title(value)
 
-        normalized = value.strip()
-        if not normalized:
-            return None
-        if len(normalized) > 80:
-            raise ValueError("title must be 80 characters or fewer")
 
-        return normalized
+class UpdateSessionTitleRequest(BaseModel):
+    title: str | None
+
+    @field_validator("title")
+    @classmethod
+    def normalize_title(cls, value: str | None) -> str | None:
+        return normalize_session_title(value)
 
 
 async def _ensure_case_exists(case_id: str) -> None:
@@ -134,6 +136,31 @@ async def create_session_route(
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to create session") from exc
+
+
+@router.patch(
+    "/cases/{case_id}/sessions/{session_id}",
+    response_model=SessionMetadataResponse,
+)
+async def update_session_title_route(
+    case_id: str,
+    session_id: str,
+    request: UpdateSessionTitleRequest,
+) -> dict:
+    await _ensure_case_exists(case_id)
+    try:
+        session = await update_session_title(
+            case_id=case_id,
+            session_id=session_id,
+            title=request.title,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to update session") from exc
+
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return session
 
 
 @router.post("/conversation/turn", response_model=ConversationTurnResponse)

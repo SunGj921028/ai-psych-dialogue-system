@@ -105,7 +105,7 @@ def _message_row_to_dict(row: aiosqlite.Row) -> dict:
     return d
 
 
-def _normalize_session_title(title: str | None) -> str | None:
+def normalize_session_title(title: str | None) -> str | None:
     if title is None:
         return None
 
@@ -116,6 +116,9 @@ def _normalize_session_title(title: str | None) -> str | None:
         raise ValueError("session title must be 80 characters or fewer")
 
     return normalized
+
+
+_normalize_session_title = normalize_session_title
 
 
 @asynccontextmanager
@@ -377,7 +380,7 @@ async def create_session(
     title: str | None = None,
 ) -> dict:
     session_id = session_id or str(uuid.uuid4())
-    title = _normalize_session_title(title)
+    title = normalize_session_title(title)
     created_at = _now_iso()
     async with get_db() as db:
         await db.execute(
@@ -395,6 +398,35 @@ async def create_session(
     if session is None:
         raise RuntimeError(f"session 撖怠敺閰Ｗ仃??id={session_id}")
     return session
+
+
+async def update_session_title(
+    case_id: str,
+    session_id: str,
+    title: str | None,
+) -> dict | None:
+    title = normalize_session_title(title)
+    updated_at = _now_iso()
+
+    async with get_db() as db:
+        await _backfill_sessions(db)
+        await db.execute(
+            """
+            UPDATE sessions
+            SET title = ?, updated_at = ?
+            WHERE case_id = ? AND session_id = ?
+            """,
+            (title, updated_at, case_id, session_id),
+        )
+        cur = await db.execute("SELECT changes() AS n")
+        row = await cur.fetchone()
+        changed = int(row["n"]) if row else 0
+        await db.commit()
+
+    if changed == 0:
+        return None
+
+    return await get_session(case_id, session_id)
 
 
 async def get_session(case_id: str, session_id: str) -> dict | None:
