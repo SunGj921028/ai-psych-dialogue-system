@@ -37,6 +37,23 @@ def test_valid_minimal_draft_can_be_created_with_missing_fields():
     assert draft.safety_flags.missing_required_manual_fields is True
 
 
+def test_persisted_draft_can_represent_not_yet_generated_sections_as_null():
+    draft = ReportDraftV2(
+        case_id="case-1",
+        session_id="session-1",
+        disclaimer="fixed disclaimer",
+        ai_generated=None,
+        counselor_edits=None,
+        final_report=None,
+    )
+
+    payload = draft.model_dump(mode="json")
+
+    assert payload["ai_generated"] is None
+    assert payload["counselor_edits"] is None
+    assert payload["final_report"] is None
+
+
 def test_schema_version_is_fixed_and_validated():
     draft = ReportDraftV2(
         case_id="case-1",

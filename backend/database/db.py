@@ -13,6 +13,18 @@ from pathlib import Path
 import aiosqlite
 from dotenv import load_dotenv
 
+from models.report_schema_v2 import (
+    SCHEMA_VERSION_V2,
+    ReportAIGeneratedV2,
+    ReportCounselorEditsV2,
+    ReportDraftStatus,
+    ReportDraftV2,
+    ReportFinalV2,
+    ReportManualInputV2,
+    ReportSafetyFlagsV2,
+    ReportSourceRefV2,
+)
+
 load_dotenv()
 
 SCHEMA = """
@@ -75,6 +87,39 @@ CREATE INDEX IF NOT EXISTS idx_summaries_case_session_crisis_flag
 
 CREATE INDEX IF NOT EXISTS idx_sessions_case_updated_at
     ON sessions (case_id, updated_at);
+
+CREATE TABLE IF NOT EXISTS report_drafts (
+    id TEXT PRIMARY KEY,
+    case_id TEXT NOT NULL,
+    session_id TEXT NOT NULL,
+    schema_version TEXT NOT NULL,
+    status TEXT NOT NULL,
+    manual_input_json TEXT NOT NULL,
+    ai_generated_json TEXT,
+    counselor_edits_json TEXT,
+    final_report_json TEXT,
+    source_summary_ids_json TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    generated_at TEXT,
+    reviewed_at TEXT,
+    exported_at TEXT,
+    CHECK (schema_version = 'report_schema_v2'),
+    CHECK (
+        status IN (
+            'manual_input_started',
+            'ai_generated',
+            'counselor_editing',
+            'reviewed',
+            'exported'
+        )
+    ),
+    UNIQUE (case_id, session_id, schema_version),
+    FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_report_drafts_case_session
+    ON report_drafts (case_id, session_id);
 """
 
 
@@ -83,6 +128,10 @@ CREATE INDEX IF NOT EXISTS idx_sessions_case_updated_at
 _BUSY_TIMEOUT_MS: int = 30_000  # 30 s
 _SESSION_TITLE_MAX_LENGTH: int = 80
 _CRISIS_LEVELS: set[str] = {"none", "low", "high"}
+_REPORT_DRAFT_DISCLAIMER = (
+    "本報告為 AI 草稿，僅供諮商師參考，非診斷文件。\n"
+    "所有判斷與決策須由專業諮商師負責審核。"
+)
 
 
 def _database_path() -> str:
@@ -134,6 +183,67 @@ def normalize_crisis_level(crisis_level: str | None) -> str | None:
         raise ValueError("crisis_level must be one of: none, low, high")
 
     return crisis_level
+
+
+def _validate_report_manual_input(
+    manual_input: ReportManualInputV2 | dict | None,
+) -> ReportManualInputV2:
+    if manual_input is None:
+        return ReportManualInputV2()
+    if isinstance(manual_input, ReportManualInputV2):
+        return manual_input
+    return ReportManualInputV2.model_validate(manual_input)
+
+
+def _model_from_json(model_type, raw_json: str | None):
+    if raw_json is None:
+        return None
+    return model_type.model_validate(json.loads(raw_json))
+
+
+def _source_refs_from_json(raw_json: str | None) -> list[ReportSourceRefV2]:
+    if raw_json is None:
+        return []
+    raw_refs = json.loads(raw_json)
+    if not isinstance(raw_refs, list):
+        raise ValueError("source_summary_ids_json must be a JSON list")
+
+    refs: list[ReportSourceRefV2] = []
+    for raw_ref in raw_refs:
+        if isinstance(raw_ref, str):
+            refs.append(ReportSourceRefV2(summary_id=raw_ref))
+        else:
+            refs.append(ReportSourceRefV2.model_validate(raw_ref))
+    return refs
+
+
+def _report_draft_row_to_model(row: aiosqlite.Row) -> ReportDraftV2:
+    manual_input = _model_from_json(ReportManualInputV2, row["manual_input_json"])
+    if manual_input is None:
+        raise ValueError("report draft manual_input_json is required")
+
+    return ReportDraftV2(
+        draft_id=row["id"],
+        case_id=row["case_id"],
+        session_id=row["session_id"],
+        schema_version=row["schema_version"],
+        status=row["status"],
+        manual_input=manual_input,
+        ai_generated=_model_from_json(ReportAIGeneratedV2, row["ai_generated_json"]),
+        counselor_edits=_model_from_json(
+            ReportCounselorEditsV2,
+            row["counselor_edits_json"],
+        ),
+        final_report=_model_from_json(ReportFinalV2, row["final_report_json"]),
+        source_refs=_source_refs_from_json(row["source_summary_ids_json"]),
+        safety_flags=ReportSafetyFlagsV2(),
+        disclaimer=_REPORT_DRAFT_DISCLAIMER,
+        created_at=row["created_at"],
+        updated_at=row["updated_at"],
+        generated_at=row["generated_at"],
+        reviewed_at=row["reviewed_at"],
+        exported_at=row["exported_at"],
+    )
 
 
 @asynccontextmanager
@@ -419,6 +529,111 @@ async def create_session(
     if session is None:
         raise RuntimeError(f"session 撖怠敺閰Ｗ仃??id={session_id}")
     return session
+
+
+async def get_current_report_draft(
+    case_id: str,
+    session_id: str,
+) -> ReportDraftV2 | None:
+    async with get_db() as db:
+        cur = await db.execute(
+            """
+            SELECT *
+            FROM report_drafts
+            WHERE case_id = ? AND session_id = ? AND schema_version = ?
+            """,
+            (case_id, session_id, SCHEMA_VERSION_V2),
+        )
+        row = await cur.fetchone()
+
+    return _report_draft_row_to_model(row) if row else None
+
+
+async def get_report_draft(draft_id: str) -> ReportDraftV2 | None:
+    async with get_db() as db:
+        cur = await db.execute(
+            "SELECT * FROM report_drafts WHERE id = ?",
+            (draft_id,),
+        )
+        row = await cur.fetchone()
+
+    return _report_draft_row_to_model(row) if row else None
+
+
+async def create_or_get_report_draft(
+    case_id: str,
+    session_id: str,
+    manual_input: ReportManualInputV2 | dict | None = None,
+) -> ReportDraftV2:
+    validated_manual_input = _validate_report_manual_input(manual_input)
+    draft_id = str(uuid.uuid4())
+    created_at = _now_iso()
+
+    async with get_db() as db:
+        await db.execute(
+            """
+            INSERT OR IGNORE INTO report_drafts (
+                id,
+                case_id,
+                session_id,
+                schema_version,
+                status,
+                manual_input_json,
+                ai_generated_json,
+                counselor_edits_json,
+                final_report_json,
+                source_summary_ids_json,
+                created_at,
+                updated_at,
+                generated_at,
+                reviewed_at,
+                exported_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?, NULL, NULL, NULL)
+            """,
+            (
+                draft_id,
+                case_id,
+                session_id,
+                SCHEMA_VERSION_V2,
+                ReportDraftStatus.MANUAL_INPUT_STARTED.value,
+                validated_manual_input.model_dump_json(),
+                created_at,
+                created_at,
+            ),
+        )
+        await db.commit()
+
+    draft = await get_current_report_draft(case_id, session_id)
+    if draft is None:
+        raise RuntimeError("report draft could not be created or loaded")
+    return draft
+
+
+async def update_report_manual_input(
+    draft_id: str,
+    manual_input: ReportManualInputV2 | dict,
+) -> ReportDraftV2 | None:
+    validated_manual_input = _validate_report_manual_input(manual_input)
+    updated_at = _now_iso()
+
+    async with get_db() as db:
+        await db.execute(
+            """
+            UPDATE report_drafts
+            SET manual_input_json = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (validated_manual_input.model_dump_json(), updated_at, draft_id),
+        )
+        cur = await db.execute("SELECT changes() AS n")
+        row = await cur.fetchone()
+        changed = int(row["n"]) if row else 0
+        await db.commit()
+
+    if changed == 0:
+        return None
+    return await get_report_draft(draft_id)
 
 
 async def update_session_title(

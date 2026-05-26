@@ -341,11 +341,11 @@ class ReportDraftV2(BaseModel):
     session_id: str
     status: ReportDraftStatus = ReportDraftStatus.MANUAL_INPUT_STARTED
     manual_input: ReportManualInputV2 = Field(default_factory=ReportManualInputV2)
-    ai_generated: ReportAIGeneratedV2 = Field(default_factory=ReportAIGeneratedV2)
-    counselor_edits: ReportCounselorEditsV2 = Field(
+    ai_generated: ReportAIGeneratedV2 | None = Field(default_factory=ReportAIGeneratedV2)
+    counselor_edits: ReportCounselorEditsV2 | None = Field(
         default_factory=ReportCounselorEditsV2
     )
-    final_report: ReportFinalV2 = Field(default_factory=ReportFinalV2)
+    final_report: ReportFinalV2 | None = Field(default_factory=ReportFinalV2)
     source_refs: list[ReportSourceRefV2] = Field(default_factory=list)
     safety_flags: ReportSafetyFlagsV2 = Field(default_factory=ReportSafetyFlagsV2)
     disclaimer: str
