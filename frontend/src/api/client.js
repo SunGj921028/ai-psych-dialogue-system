@@ -95,4 +95,27 @@ export async function generateReport({ case_id, session_id }) {
   return response.data
 }
 
+export async function getCurrentReportDraft(caseId, sessionId) {
+  const response = await apiClient.get(
+    `/api/cases/${caseId}/sessions/${sessionId}/report-drafts/current`,
+  )
+  return response.data
+}
+
+export async function createReportDraft(caseId, sessionId, payload = {}) {
+  const response = await apiClient.post(
+    `/api/cases/${caseId}/sessions/${sessionId}/report-drafts`,
+    payload,
+  )
+  return response.data
+}
+
+export async function updateReportDraftManualInput(draftId, payload) {
+  const response = await apiClient.patch(
+    `/api/report-drafts/${draftId}/manual-input`,
+    payload,
+  )
+  return response.data
+}
+
 export default apiClient

@@ -8,14 +8,19 @@ import {
   ClipboardList,
   FileText,
   Loader2,
+  PlusCircle,
   RefreshCcw,
+  Save,
   ShieldCheck,
   Tags,
 } from 'lucide-react'
 import {
+  createReportDraft,
   generateReport,
+  getCurrentReportDraft,
   getCase,
   getSessionSummaries,
+  updateReportDraftManualInput,
 } from '../api/client.js'
 
 function getFriendlyError(error, fallback = '操作失敗，請稍後再試。') {
@@ -134,6 +139,129 @@ function formatScore(value) {
   return Number.isInteger(score) ? `${score}` : score.toFixed(1)
 }
 
+const MANUAL_INPUT_FIELDS = [
+  {
+    id: 'session_date',
+    label: '會談日期',
+    path: ['basic_info', 'session_date'],
+    type: 'input',
+  },
+  {
+    id: 'session_count',
+    label: '會談次數',
+    path: ['basic_info', 'session_count'],
+    type: 'input',
+  },
+  {
+    id: 'referral_source',
+    label: '轉介來源',
+    path: ['basic_info', 'referral_source'],
+    type: 'input',
+  },
+  {
+    id: 'age_gender',
+    label: '年齡／性別',
+    path: ['basic_info', 'age_gender'],
+    type: 'input',
+  },
+  {
+    id: 'occupation_school_status',
+    label: '職業／就學狀態',
+    path: ['basic_info', 'occupation_school_status'],
+    type: 'input',
+  },
+  {
+    id: 'marital_family_status',
+    label: '婚姻／家庭狀態',
+    path: ['basic_info', 'marital_family_status'],
+    type: 'input',
+  },
+  {
+    id: 'client_understanding',
+    label: '個案對問題的理解／主訴補充',
+    path: ['problem_onset_course', 'client_understanding'],
+    type: 'textarea',
+  },
+  {
+    id: 'assessment_testing_data',
+    label: '心理測驗／衡鑑資料補充',
+    path: ['assessment_testing_data'],
+    type: 'textarea',
+  },
+  {
+    id: 'overall_risk_notes',
+    label: '正式風險評估備註',
+    path: ['risk_assessment', 'overall_risk_notes'],
+    type: 'textarea',
+  },
+  {
+    id: 'safety_plan',
+    label: '安全計畫',
+    path: ['risk_assessment', 'safety_plan'],
+    type: 'textarea',
+  },
+]
+
+function createEmptyReportField(label) {
+  return {
+    label_zh: label,
+    value: '',
+    source_type: 'manual',
+    missing_reason: 'no_data',
+    needs_review: true,
+    evidence_refs: [],
+  }
+}
+
+function getNestedValue(source, path) {
+  return path.reduce((current, key) => current?.[key], source)
+}
+
+function getManualInputFieldValue(manualInput, fieldConfig) {
+  const field = getNestedValue(manualInput, fieldConfig.path)
+  const value = field?.value
+
+  if (value == null) return ''
+
+  return typeof value === 'string' ? value : String(value)
+}
+
+function setManualInputFieldValue(manualInput, fieldConfig, value) {
+  const nextManualInput = { ...(manualInput ?? {}) }
+  let cursor = nextManualInput
+
+  fieldConfig.path.slice(0, -1).forEach((key) => {
+    cursor[key] = { ...(cursor[key] ?? {}) }
+    cursor = cursor[key]
+  })
+
+  const lastKey = fieldConfig.path[fieldConfig.path.length - 1]
+  const currentField =
+    cursor[lastKey] && typeof cursor[lastKey] === 'object'
+      ? cursor[lastKey]
+      : createEmptyReportField(fieldConfig.label)
+
+  cursor[lastKey] = {
+    ...createEmptyReportField(fieldConfig.label),
+    ...currentField,
+    value,
+  }
+
+  return nextManualInput
+}
+
+function getDraftId(draft) {
+  return draft?.draft_id ?? draft?.id ?? null
+}
+
+function getDraftErrorMessage(error) {
+  if (error?.response?.status === 404) {
+    return 'not_found'
+  }
+
+  return '無法載入 v2 手動資料草稿，請稍後再試。'
+}
+
 function SectionCard({ title, description, children }) {
   return (
     <section className="rounded-md border border-slate-200/80 bg-white/92 p-5 shadow-[0_14px_40px_rgba(15,23,42,0.06)] ring-1 ring-white/60 dark:border-slate-700 dark:bg-card dark:shadow-[0_14px_40px_rgba(0,0,0,0.28)] dark:ring-slate-700/50">
@@ -201,6 +329,140 @@ function ReviewAidCard({ icon: Icon, title, description, children }) {
       </div>
       {children}
     </section>
+  )
+}
+
+function ManualInputControl({ fieldConfig, manualInput, onChange }) {
+  const commonProps = {
+    id: `manual-input-${fieldConfig.id}`,
+    className:
+      'mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-950 shadow-sm outline-none transition focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50 dark:focus:border-indigo-500 dark:focus:ring-indigo-900/40',
+    value: getManualInputFieldValue(manualInput, fieldConfig),
+    onChange: (event) => onChange(fieldConfig, event.target.value),
+  }
+
+  return (
+    <label className="block text-sm font-medium text-slate-900 dark:text-slate-100">
+      <span>{fieldConfig.label}</span>
+      {fieldConfig.type === 'textarea' ? (
+        <textarea {...commonProps} rows={4} />
+      ) : (
+        <input {...commonProps} type="text" />
+      )}
+    </label>
+  )
+}
+
+function ReportDraftManualInputPanel({
+  draft,
+  draftError,
+  draftState,
+  formManualInput,
+  hasUnsavedChanges,
+  isCreatingDraft,
+  isSavingDraft,
+  onCreateDraft,
+  onFieldChange,
+  onSaveDraft,
+  saveStatus,
+}) {
+  const hasDraft = Boolean(getDraftId(draft))
+  const canSave = hasDraft && hasUnsavedChanges && !isSavingDraft
+
+  return (
+    <SectionCard
+      title="Report v2 手動資料"
+      description="未來五段式報告的手動資料準備；此區只保存諮商師手動輸入，不會產生 v2 AI 報告。"
+    >
+      <div className="space-y-4">
+        <div className="rounded-md border border-amber-200 bg-amber-50/80 p-4 text-sm leading-6 text-amber-950 dark:border-amber-500/35 dark:bg-amber-950/45 dark:text-amber-100">
+          <p>此區可能包含臨床敏感內容，請盡量使用去識別化代碼，避免輸入姓名、聯絡方式或不必要的可識別資訊。</p>
+          <p className="mt-1">手動資料會儲存在後端報告草稿中；瀏覽器不會以 localStorage 或 sessionStorage 保存這些內容。</p>
+          <p className="mt-1">缺漏資料可留白或標示「待評估」。AI 不應補造未提供的個案事實。</p>
+          <p className="mt-1">診斷、正式風險評估與安全計畫屬於諮商師專業判斷，系統僅協助整理草稿資料。</p>
+        </div>
+
+        {draftError ? (
+          <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
+            {draftError}
+          </div>
+        ) : null}
+
+        {draftState === 'loading' ? (
+          <p className="text-sm text-muted-foreground">載入 v2 手動資料草稿中...</p>
+        ) : null}
+
+        {draftState === 'missing' ? (
+          <div className="rounded-md border border-dashed border-slate-300 bg-slate-50/80 p-5 text-sm dark:border-slate-700 dark:bg-slate-900/55">
+            <h4 className="font-semibold text-slate-950 dark:text-slate-50">
+              尚未建立 v2 手動資料草稿
+            </h4>
+            <p className="mt-1 leading-6 text-muted-foreground">
+              建立後才能儲存本頁手動資料；目前不會自動建立草稿，也不會觸發 AI 產生。
+            </p>
+            <button
+              className="mt-4 inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
+              disabled={isCreatingDraft}
+              onClick={onCreateDraft}
+              type="button"
+            >
+              {isCreatingDraft ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <PlusCircle className="h-4 w-4" />
+              )}
+              建立 v2 手動資料草稿
+            </button>
+          </div>
+        ) : null}
+
+        {hasDraft ? (
+          <form className="space-y-4" onSubmit={onSaveDraft}>
+            <div className="grid gap-4 md:grid-cols-2">
+              {MANUAL_INPUT_FIELDS.filter((field) => field.type === 'input').map(
+                (fieldConfig) => (
+                  <ManualInputControl
+                    fieldConfig={fieldConfig}
+                    key={fieldConfig.id}
+                    manualInput={formManualInput}
+                    onChange={onFieldChange}
+                  />
+                ),
+              )}
+            </div>
+
+            <div className="grid gap-4">
+              {MANUAL_INPUT_FIELDS.filter((field) => field.type === 'textarea').map(
+                (fieldConfig) => (
+                  <ManualInputControl
+                    fieldConfig={fieldConfig}
+                    key={fieldConfig.id}
+                    manualInput={formManualInput}
+                    onChange={onFieldChange}
+                  />
+                ),
+              )}
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
+                disabled={!canSave}
+                type="submit"
+              >
+                {isSavingDraft ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Save className="h-4 w-4" />
+                )}
+                儲存 v2 手動資料
+              </button>
+              <span className="text-sm text-muted-foreground">{saveStatus}</span>
+            </div>
+          </form>
+        ) : null}
+      </div>
+    </SectionCard>
   )
 }
 
@@ -438,6 +700,14 @@ export default function ReportPage() {
   const [caseInfo, setCaseInfo] = useState(null)
   const [summaries, setSummaries] = useState([])
   const [report, setReport] = useState(null)
+  const [reportDraft, setReportDraft] = useState(null)
+  const [formManualInput, setFormManualInput] = useState({})
+  const [draftState, setDraftState] = useState('idle')
+  const [draftError, setDraftError] = useState('')
+  const [isCreatingDraft, setIsCreatingDraft] = useState(false)
+  const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [saveStatus, setSaveStatus] = useState('已儲存')
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
@@ -452,16 +722,41 @@ export default function ReportPage() {
 
     setIsLoading(true)
     setError('')
+    setDraftError('')
+    setDraftState('loading')
+    setReportDraft(null)
+    setFormManualInput({})
+    setHasUnsavedChanges(false)
+    setSaveStatus('已儲存')
 
     try {
-      const [loadedCase, loadedSummaries] = await Promise.all([
+      const draftResultPromise = getCurrentReportDraft(caseId, sessionId)
+        .then((draft) => ({ draft }))
+        .catch((draftLoadError) => ({ draftLoadError }))
+      const [loadedCase, loadedSummaries, draftResult] = await Promise.all([
         getCase(caseId),
         getSessionSummaries(caseId, sessionId),
+        draftResultPromise,
       ])
       setCaseInfo(loadedCase)
       setSummaries(loadedSummaries)
+
+      if (draftResult.draft) {
+        setReportDraft(draftResult.draft)
+        setFormManualInput(draftResult.draft.manual_input ?? {})
+        setDraftState('ready')
+      } else {
+        const draftMessage = getDraftErrorMessage(draftResult.draftLoadError)
+        if (draftMessage === 'not_found') {
+          setDraftState('missing')
+        } else {
+          setDraftState('error')
+          setDraftError(draftMessage)
+        }
+      }
     } catch (loadError) {
       setError(getFriendlyError(loadError, '無法載入報告所需資料。'))
+      setDraftState('idle')
     } finally {
       setIsLoading(false)
     }
@@ -490,6 +785,59 @@ export default function ReportPage() {
       setError(getFriendlyError(generateError, '無法產生報告草稿，請稍後再試。'))
     } finally {
       setIsGenerating(false)
+    }
+  }
+
+  async function handleCreateDraft() {
+    if (!caseId || !sessionId) return
+
+    setIsCreatingDraft(true)
+    setDraftError('')
+
+    try {
+      const createdDraft = await createReportDraft(caseId, sessionId, {})
+      setReportDraft(createdDraft)
+      setFormManualInput(createdDraft.manual_input ?? {})
+      setDraftState('ready')
+      setHasUnsavedChanges(false)
+      setSaveStatus('已儲存')
+    } catch {
+      setDraftError('無法建立 v2 手動資料草稿，請稍後再試。')
+    } finally {
+      setIsCreatingDraft(false)
+    }
+  }
+
+  function handleManualInputFieldChange(fieldConfig, value) {
+    setFormManualInput((currentManualInput) =>
+      setManualInputFieldValue(currentManualInput, fieldConfig, value),
+    )
+    setHasUnsavedChanges(true)
+    setSaveStatus('未儲存變更')
+  }
+
+  async function handleSaveDraft(event) {
+    event.preventDefault()
+
+    const draftId = getDraftId(reportDraft)
+    if (!draftId) return
+
+    setIsSavingDraft(true)
+    setSaveStatus('儲存中')
+    setDraftError('')
+
+    try {
+      const updatedDraft = await updateReportDraftManualInput(draftId, {
+        manual_input: formManualInput,
+      })
+      setReportDraft(updatedDraft)
+      setFormManualInput(updatedDraft.manual_input ?? formManualInput)
+      setHasUnsavedChanges(false)
+      setSaveStatus('已儲存')
+    } catch {
+      setSaveStatus('儲存失敗，請稍後再試')
+    } finally {
+      setIsSavingDraft(false)
     }
   }
 
@@ -562,11 +910,11 @@ export default function ReportPage() {
               ) : (
                 <RefreshCcw className="h-4 w-4" />
               )}
-              {report ? '重新產生草稿' : '產生報告草稿'}
+              {report ? '重新產生 v1 AI 草稿' : '產生 v1 AI 草稿'}
             </button>
           </div>
           <p className="max-w-sm text-xs leading-5 text-muted-foreground">
-            目前草稿報告僅在本頁暫時顯示，離開或重新整理後需重新產生。
+            v1 AI 草稿僅在本頁暫時顯示，離開或重新整理後需重新產生。
           </p>
         </div>
       </section>
@@ -576,6 +924,20 @@ export default function ReportPage() {
           {error}
         </div>
       ) : null}
+
+      <ReportDraftManualInputPanel
+        draft={reportDraft}
+        draftError={draftError}
+        draftState={draftState}
+        formManualInput={formManualInput}
+        hasUnsavedChanges={hasUnsavedChanges}
+        isCreatingDraft={isCreatingDraft}
+        isSavingDraft={isSavingDraft}
+        onCreateDraft={handleCreateDraft}
+        onFieldChange={handleManualInputFieldChange}
+        onSaveDraft={handleSaveDraft}
+        saveStatus={saveStatus}
+      />
 
       <section className="grid gap-3 md:grid-cols-4">
         <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-4 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
@@ -647,8 +1009,8 @@ export default function ReportPage() {
         <section className="space-y-4">
           {!report ? (
             <SectionCard
-              title="尚未產生報告草稿"
-              description="報告不會自動產生。請由諮商師確認摘要脈絡後，手動產生草稿。"
+              title="目前 v1 AI 草稿產生"
+              description="v1 草稿不會自動產生，也不會讀寫 v2 手動資料草稿。請由諮商師確認摘要脈絡後手動觸發。"
             >
               <button
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
@@ -661,7 +1023,7 @@ export default function ReportPage() {
                 ) : (
                   <FileText className="h-4 w-4" />
                 )}
-                {isGenerating ? '產生中' : '產生報告草稿'}
+                {isGenerating ? '產生中' : '開始產生 v1 AI 草稿'}
               </button>
             </SectionCard>
           ) : (
@@ -679,7 +1041,7 @@ export default function ReportPage() {
               </section>
 
               <SectionCard
-                title="AI 草稿報告"
+                title="目前 v1 AI 草稿內容"
                 description={`產生時間：${formatDate(report.generated_at)}。以下內容需由諮商師審閱後才可使用，不作診斷文件。`}
               >
                 <div className="grid gap-3">
