@@ -22,6 +22,7 @@ function makeCase(overrides = {}) {
 function makeSession(overrides = {}) {
   return {
     session_id: 'session-alpha-id',
+    title: null,
     message_count: 2,
     summary_count: 1,
     last_turn_number: 3,
@@ -145,6 +146,68 @@ describe('HistoryPage behavior', () => {
       'href',
       '/report/case-alpha-id?sessionId=session-alpha-id',
     )
+  })
+
+  test('renders provided session title as the primary session label', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        title: 'SYNTHETIC_SESSION_TITLE_VISIBLE',
+      }),
+    ])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    expect(await screen.findByText('SYNTHETIC_SESSION_TITLE_VISIBLE')).toBeInTheDocument()
+    expect(screen.getByText('session-alpha-id')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /resume conversation/i }),
+    ).toHaveAttribute(
+      'href',
+      '/?caseId=case-alpha-id&sessionId=session-alpha-id',
+    )
+    expect(screen.getByRole('link', { name: /open report/i })).toHaveAttribute(
+      'href',
+      '/report/case-alpha-id?sessionId=session-alpha-id',
+    )
+  })
+
+  test('renders fallback label for null or blank session titles without edit controls', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        session_id: 'session-null-title',
+        title: null,
+      }),
+      makeSession({
+        session_id: 'session-blank-title',
+        title: '   ',
+      }),
+    ])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    expect(await screen.findByText('session-null-title')).toBeInTheDocument()
+    expect(screen.getByText('session-blank-title')).toBeInTheDocument()
+    expect(screen.getAllByText('未命名會談')).toHaveLength(2)
+    expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /rename|edit title/i })).not.toBeInTheDocument()
   })
 
   test('renders backend-provided empty durable sessions without preview or crisis chip', async () => {
