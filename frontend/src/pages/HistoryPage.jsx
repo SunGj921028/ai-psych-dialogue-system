@@ -7,11 +7,20 @@ import {
   Clock,
   FileText,
   FolderOpen,
+  Pencil,
   Plus,
 } from 'lucide-react'
-import { listCaseSessions, listCases } from '../api/client.js'
+import {
+  listCaseSessions,
+  listCases,
+  updateSessionTitle,
+} from '../api/client.js'
 
 const UNTITLED_SESSION_LABEL = '未命名會談'
+const MAX_SESSION_TITLE_LENGTH = 80
+const TITLE_PRIVACY_HELPER = '請避免輸入可識別個資或敏感臨床內容'
+const TITLE_LENGTH_ERROR = '標題最多 80 個字'
+const TITLE_SAVE_ERROR = '無法更新會談標題，請稍後再試。'
 
 function getFriendlyError(error) {
   if (!error?.response) {
@@ -38,12 +47,25 @@ function getSessionDisplayTitle(session) {
   return session.title?.trim() || UNTITLED_SESSION_LABEL
 }
 
+function getNormalizedTitle(title) {
+  return title?.trim() || ''
+}
+
+function getEditKey(caseId, sessionId) {
+  return `${caseId}::${sessionId}`
+}
+
 export default function HistoryPage() {
   const [cases, setCases] = useState([])
   const [expandedCaseIds, setExpandedCaseIds] = useState(() => new Set())
   const [sessionsByCaseId, setSessionsByCaseId] = useState({})
   const [loadingSessionsByCaseId, setLoadingSessionsByCaseId] = useState({})
   const [sessionErrorsByCaseId, setSessionErrorsByCaseId] = useState({})
+  const [editingSessionKey, setEditingSessionKey] = useState('')
+  const [titleDraft, setTitleDraft] = useState('')
+  const [titleValidationError, setTitleValidationError] = useState('')
+  const [titleSaveError, setTitleSaveError] = useState('')
+  const [savingSessionKey, setSavingSessionKey] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -105,6 +127,96 @@ export default function HistoryPage() {
         ...current,
         [caseItem.id]: false,
       }))
+    }
+  }
+
+  function handleStartEdit(caseItem, session) {
+    setEditingSessionKey(getEditKey(caseItem.id, session.session_id))
+    setTitleDraft(getNormalizedTitle(session.title))
+    setTitleValidationError('')
+    setTitleSaveError('')
+  }
+
+  function handleCancelEdit() {
+    setEditingSessionKey('')
+    setTitleDraft('')
+    setTitleValidationError('')
+    setTitleSaveError('')
+  }
+
+  function replaceSession(caseId, updatedSession) {
+    setSessionsByCaseId((current) => ({
+      ...current,
+      [caseId]: (current[caseId] ?? []).map((session) =>
+        session.session_id === updatedSession.session_id
+          ? { ...session, ...updatedSession }
+          : session,
+      ),
+    }))
+  }
+
+  async function handleSaveTitle(caseItem, session) {
+    if (titleDraft.length > MAX_SESSION_TITLE_LENGTH) {
+      setTitleValidationError(TITLE_LENGTH_ERROR)
+      return
+    }
+
+    const trimmedTitle = titleDraft.trim()
+    if (!trimmedTitle || trimmedTitle === getNormalizedTitle(session.title)) {
+      return
+    }
+
+    const editKey = getEditKey(caseItem.id, session.session_id)
+    setSavingSessionKey(editKey)
+    setTitleValidationError('')
+    setTitleSaveError('')
+
+    try {
+      const updatedSession = await updateSessionTitle(
+        caseItem.id,
+        session.session_id,
+        { title: trimmedTitle },
+      )
+      replaceSession(caseItem.id, updatedSession)
+      handleCancelEdit()
+    } catch {
+      setTitleSaveError(TITLE_SAVE_ERROR)
+    } finally {
+      setSavingSessionKey('')
+    }
+  }
+
+  async function handleClearTitle(caseItem, session) {
+    const editKey = getEditKey(caseItem.id, session.session_id)
+    setSavingSessionKey(editKey)
+    setTitleValidationError('')
+    setTitleSaveError('')
+
+    try {
+      const updatedSession = await updateSessionTitle(
+        caseItem.id,
+        session.session_id,
+        { title: null },
+      )
+      replaceSession(caseItem.id, updatedSession)
+      handleCancelEdit()
+    } catch {
+      setTitleSaveError(TITLE_SAVE_ERROR)
+    } finally {
+      setSavingSessionKey('')
+    }
+  }
+
+  function handleTitleKeyDown(event, caseItem, session) {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      handleCancelEdit()
+      return
+    }
+
+    if (event.key === 'Enter') {
+      event.preventDefault()
+      handleSaveTitle(caseItem, session)
     }
   }
 
@@ -230,9 +342,120 @@ export default function HistoryPage() {
                           >
                             <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
-                                <p className="break-words font-semibold">
-                                  {getSessionDisplayTitle(session)}
-                                </p>
+                                {editingSessionKey ===
+                                getEditKey(caseItem.id, session.session_id) ? (
+                                  <div className="flex max-w-xl flex-col gap-2">
+                                    <label
+                                      className="text-xs font-medium text-muted-foreground"
+                                      htmlFor={`session-title-${caseItem.id}-${session.session_id}`}
+                                    >
+                                      Session title
+                                    </label>
+                                    <input
+                                      aria-describedby={`session-title-help-${caseItem.id}-${session.session_id}`}
+                                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20"
+                                      id={`session-title-${caseItem.id}-${session.session_id}`}
+                                      maxLength={MAX_SESSION_TITLE_LENGTH}
+                                      onChange={(event) => {
+                                        setTitleDraft(event.target.value)
+                                        setTitleValidationError('')
+                                        setTitleSaveError('')
+                                      }}
+                                      onKeyDown={(event) =>
+                                        handleTitleKeyDown(
+                                          event,
+                                          caseItem,
+                                          session,
+                                        )
+                                      }
+                                      type="text"
+                                      value={titleDraft}
+                                    />
+                                    <p
+                                      className="text-xs text-muted-foreground"
+                                      id={`session-title-help-${caseItem.id}-${session.session_id}`}
+                                    >
+                                      {TITLE_PRIVACY_HELPER}
+                                    </p>
+                                    {titleValidationError ? (
+                                      <p className="text-xs text-destructive">
+                                        {titleValidationError}
+                                      </p>
+                                    ) : null}
+                                    {titleSaveError ? (
+                                      <p className="text-xs text-destructive">
+                                        {titleSaveError}
+                                      </p>
+                                    ) : null}
+                                    <div className="flex flex-wrap gap-2">
+                                      <button
+                                        className="inline-flex items-center justify-center rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-55 dark:hover:bg-indigo-600"
+                                        disabled={
+                                          savingSessionKey ===
+                                            getEditKey(
+                                              caseItem.id,
+                                              session.session_id,
+                                            ) ||
+                                          !titleDraft.trim() ||
+                                          titleDraft.trim() ===
+                                            getNormalizedTitle(session.title)
+                                        }
+                                        onClick={() =>
+                                          handleSaveTitle(caseItem, session)
+                                        }
+                                        type="button"
+                                      >
+                                        Save
+                                      </button>
+                                      <button
+                                        className="inline-flex items-center justify-center rounded-md border bg-white px-3 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                                        disabled={
+                                          savingSessionKey ===
+                                          getEditKey(
+                                            caseItem.id,
+                                            session.session_id,
+                                          )
+                                        }
+                                        onClick={handleCancelEdit}
+                                        type="button"
+                                      >
+                                        Cancel
+                                      </button>
+                                      <button
+                                        className="inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                                        disabled={
+                                          savingSessionKey ===
+                                          getEditKey(
+                                            caseItem.id,
+                                            session.session_id,
+                                          )
+                                        }
+                                        onClick={() =>
+                                          handleClearTitle(caseItem, session)
+                                        }
+                                        type="button"
+                                      >
+                                        Clear title
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="flex items-start gap-2">
+                                    <p className="break-words font-semibold">
+                                      {getSessionDisplayTitle(session)}
+                                    </p>
+                                    <button
+                                      aria-label={`Edit title for ${session.session_id}`}
+                                      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-white text-muted-foreground transition hover:bg-slate-100 hover:text-foreground dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                                      onClick={() =>
+                                        handleStartEdit(caseItem, session)
+                                      }
+                                      type="button"
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </button>
+                                  </div>
+                                )}
                                 <p className="mt-1 font-mono text-xs text-muted-foreground">
                                   {session.session_id}
                                 </p>

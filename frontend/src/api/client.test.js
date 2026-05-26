@@ -4,6 +4,7 @@ const { axiosCreate, fakeApiClient } = vi.hoisted(() => {
   const fakeApiClient = {
     delete: vi.fn(),
     get: vi.fn(),
+    patch: vi.fn(),
     post: vi.fn(),
   }
 
@@ -29,6 +30,7 @@ describe('API helper contracts', () => {
     axiosCreate.mockClear()
     fakeApiClient.delete.mockReset()
     fakeApiClient.get.mockReset()
+    fakeApiClient.patch.mockReset()
     fakeApiClient.post.mockReset()
   })
 
@@ -160,6 +162,38 @@ describe('API helper contracts', () => {
       session_id: 'client-provided-session',
       title: 'Synthetic title',
     })
+  })
+
+  test('updateSessionTitle calls PATCH /api/cases/{caseId}/sessions/{sessionId} with title payload', async () => {
+    const payload = { title: 'New title' }
+    fakeApiClient.patch.mockResolvedValue({
+      data: { session_id: 'session-1', title: 'New title' },
+    })
+    const { updateSessionTitle } = await importClient()
+
+    const result = await updateSessionTitle('case-1', 'session-1', payload)
+
+    expect(fakeApiClient.patch).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1',
+      payload,
+    )
+    expect(result).toEqual({ session_id: 'session-1', title: 'New title' })
+  })
+
+  test('updateSessionTitle passes null title payload through unchanged', async () => {
+    const payload = { title: null }
+    fakeApiClient.patch.mockResolvedValue({
+      data: { session_id: 'session-1', title: null },
+    })
+    const { updateSessionTitle } = await importClient()
+
+    const result = await updateSessionTitle('case-1', 'session-1', payload)
+
+    expect(fakeApiClient.patch).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1',
+      payload,
+    )
+    expect(result).toEqual({ session_id: 'session-1', title: null })
   })
 
   test('getSessionSummaries calls the expected session summaries path', async () => {

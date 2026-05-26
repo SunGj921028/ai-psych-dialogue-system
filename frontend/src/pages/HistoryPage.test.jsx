@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 import HistoryPage from './HistoryPage.jsx'
 import { renderWithRouter } from '../test/renderWithRouter.jsx'
@@ -7,6 +8,7 @@ import * as api from '../api/client.js'
 vi.mock('../api/client.js', () => ({
   listCaseSessions: vi.fn(),
   listCases: vi.fn(),
+  updateSessionTitle: vi.fn(),
 }))
 
 function makeCase(overrides = {}) {
@@ -37,6 +39,7 @@ describe('HistoryPage behavior', () => {
   beforeEach(() => {
     api.listCases.mockResolvedValue([])
     api.listCaseSessions.mockResolvedValue([])
+    api.updateSessionTitle.mockReset()
   })
 
   test('calls listCases on mount', async () => {
@@ -180,7 +183,7 @@ describe('HistoryPage behavior', () => {
     )
   })
 
-  test('renders fallback label for null or blank session titles without edit controls', async () => {
+  test('renders fallback label for null or blank session titles with edit controls', async () => {
     api.listCases.mockResolvedValue([makeCase()])
     api.listCaseSessions.mockResolvedValue([
       makeSession({
@@ -207,7 +210,348 @@ describe('HistoryPage behavior', () => {
     expect(screen.getByText('session-blank-title')).toBeInTheDocument()
     expect(screen.getAllByText('未命名會談')).toHaveLength(2)
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /rename|edit title/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: /edit title/i })).toHaveLength(2)
+  })
+
+  test('clicking edit shows inline rename controls and privacy helper text', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        title: 'Existing session title',
+      }),
+    ])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionTitle = await screen.findByText('Existing session title')
+    const sessionRow = sessionTitle.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+
+    expect(within(sessionRow).getByRole('textbox', { name: /session title/i })).toHaveValue(
+      'Existing session title',
+    )
+    expect(within(sessionRow).getByRole('button', { name: /^save$/i })).toBeDisabled()
+    expect(within(sessionRow).getByRole('button', { name: /^cancel$/i })).toBeInTheDocument()
+    expect(within(sessionRow).getByRole('button', { name: /clear title/i })).toBeInTheDocument()
+    expect(
+      within(sessionRow).getByText('請避免輸入可識別個資或敏感臨床內容'),
+    ).toBeInTheDocument()
+  })
+
+  test('saving a trimmed title updates the displayed label and keeps navigation links unchanged', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([makeSession()])
+    api.updateSessionTitle.mockResolvedValue(
+      makeSession({
+        title: 'Renamed session',
+      }),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+
+    const input = within(sessionRow).getByRole('textbox', { name: /session title/i })
+    await user.clear(input)
+    await user.type(input, '  Renamed session  ')
+    await user.click(within(sessionRow).getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(api.updateSessionTitle).toHaveBeenCalledWith(
+        'case-alpha-id',
+        'session-alpha-id',
+        { title: 'Renamed session' },
+      )
+    })
+
+    expect(await screen.findByText('Renamed session')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /resume conversation/i }),
+    ).toHaveAttribute(
+      'href',
+      '/?caseId=case-alpha-id&sessionId=session-alpha-id',
+    )
+    expect(screen.getByRole('link', { name: /open report/i })).toHaveAttribute(
+      'href',
+      '/report/case-alpha-id?sessionId=session-alpha-id',
+    )
+  })
+
+  test('clear title saves null and restores the fallback label', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        title: 'Existing session title',
+      }),
+    ])
+    api.updateSessionTitle.mockResolvedValue(
+      makeSession({
+        title: null,
+      }),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionTitle = await screen.findByText('Existing session title')
+    const sessionRow = sessionTitle.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /clear title/i }))
+
+    await waitFor(() => {
+      expect(api.updateSessionTitle).toHaveBeenCalledWith(
+        'case-alpha-id',
+        'session-alpha-id',
+        { title: null },
+      )
+    })
+
+    expect(await screen.findByText('未命名會談')).toBeInTheDocument()
+  })
+
+  test('Escape, Cancel, and Enter keyboard behavior match rename expectations', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        title: 'Original title',
+      }),
+    ])
+    api.updateSessionTitle.mockResolvedValue(
+      makeSession({
+        title: 'Keyboard title',
+      }),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionTitle = await screen.findByText('Original title')
+    const sessionRow = sessionTitle.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    await user.clear(within(sessionRow).getByRole('textbox', { name: /session title/i }))
+    await user.type(
+      within(sessionRow).getByRole('textbox', { name: /session title/i }),
+      'Draft canceled with escape',
+    )
+    fireEvent.keyDown(within(sessionRow).getByRole('textbox', { name: /session title/i }), {
+      key: 'Escape',
+    })
+
+    expect(api.updateSessionTitle).not.toHaveBeenCalled()
+    expect(screen.getByText('Original title')).toBeInTheDocument()
+
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    await user.clear(within(sessionRow).getByRole('textbox', { name: /session title/i }))
+    await user.type(
+      within(sessionRow).getByRole('textbox', { name: /session title/i }),
+      'Draft canceled by button',
+    )
+    await user.click(within(sessionRow).getByRole('button', { name: /^cancel$/i }))
+
+    expect(api.updateSessionTitle).not.toHaveBeenCalled()
+    expect(screen.getByText('Original title')).toBeInTheDocument()
+
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    await user.clear(within(sessionRow).getByRole('textbox', { name: /session title/i }))
+    await user.type(
+      within(sessionRow).getByRole('textbox', { name: /session title/i }),
+      'Keyboard title',
+    )
+    fireEvent.keyDown(within(sessionRow).getByRole('textbox', { name: /session title/i }), {
+      key: 'Enter',
+    })
+
+    await waitFor(() => {
+      expect(api.updateSessionTitle).toHaveBeenCalledWith(
+        'case-alpha-id',
+        'session-alpha-id',
+        { title: 'Keyboard title' },
+      )
+    })
+    expect(await screen.findByText('Keyboard title')).toBeInTheDocument()
+  })
+
+  test('over-length title shows validation and does not call the API', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([makeSession()])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    fireEvent.change(within(sessionRow).getByRole('textbox', { name: /session title/i }), {
+      target: { value: 'A'.repeat(81) },
+    })
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /^save$/i }))
+
+    expect(screen.getByText('標題最多 80 個字')).toBeInTheDocument()
+    expect(api.updateSessionTitle).not.toHaveBeenCalled()
+  })
+
+  test('save failure shows friendly error, hides raw text, and preserves draft', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([makeSession()])
+    api.updateSessionTitle.mockRejectedValue(
+      new Error('INTERNAL_RENAME_FAILURE_SECRET'),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    const input = within(sessionRow).getByRole('textbox', { name: /session title/i })
+    await user.clear(input)
+    await user.type(input, 'Draft survives failed save')
+    await user.click(within(sessionRow).getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(api.updateSessionTitle).toHaveBeenCalledTimes(1)
+    })
+
+    expect(document.body.textContent).not.toContain('INTERNAL_RENAME_FAILURE_SECRET')
+    expect(within(sessionRow).getByText('無法更新會談標題，請稍後再試。')).toBeInTheDocument()
+    expect(within(sessionRow).getByRole('textbox', { name: /session title/i })).toHaveValue(
+      'Draft survives failed save',
+    )
+  })
+
+  test('starting edit on another session closes the previous editor without saving', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        session_id: 'session-alpha-id',
+        title: 'First title',
+      }),
+      makeSession({
+        session_id: 'session-beta-id',
+        title: 'Second title',
+      }),
+    ])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const firstRow = (await screen.findByText('First title')).closest('section')
+    const secondRow = screen.getByText('Second title').closest('section')
+
+    fireEvent.click(within(firstRow).getByRole('button', { name: /edit title/i }))
+    await user.clear(within(firstRow).getByRole('textbox', { name: /session title/i }))
+    await user.type(
+      within(firstRow).getByRole('textbox', { name: /session title/i }),
+      'Unsaved first draft',
+    )
+    fireEvent.click(within(secondRow).getByRole('button', { name: /edit title/i }))
+
+    expect(api.updateSessionTitle).not.toHaveBeenCalled()
+    expect(within(firstRow).queryByRole('textbox')).not.toBeInTheDocument()
+    expect(within(secondRow).getByRole('textbox', { name: /session title/i })).toHaveValue(
+      'Second title',
+    )
+  })
+
+  test('rename interaction does not write title drafts to browser storage', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        title: 'Existing session title',
+      }),
+    ])
+    api.updateSessionTitle.mockResolvedValue(
+      makeSession({
+        title: 'SYNTHETIC_RENAME_TITLE_SENTINEL',
+      }),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionTitle = await screen.findByText('Existing session title')
+    const sessionRow = sessionTitle.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+    const input = within(sessionRow).getByRole('textbox', { name: /session title/i })
+    await user.clear(input)
+    await user.type(input, 'SYNTHETIC_RENAME_DRAFT_SENTINEL')
+    await user.click(within(sessionRow).getByRole('button', { name: /^save$/i }))
+
+    await screen.findByText('SYNTHETIC_RENAME_TITLE_SENTINEL')
+
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
+    expect(JSON.stringify(Object.entries(window.localStorage))).not.toContain(
+      'SYNTHETIC_RENAME_DRAFT_SENTINEL',
+    )
+    expect(JSON.stringify(Object.entries(window.sessionStorage))).not.toContain(
+      'SYNTHETIC_RENAME_TITLE_SENTINEL',
+    )
   })
 
   test('renders backend-provided empty durable sessions without preview or crisis chip', async () => {
