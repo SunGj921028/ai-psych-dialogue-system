@@ -89,10 +89,10 @@ mismatches.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, drafts, and clinical content are not stored
   in browser storage.
-- PDF export, session deletion/archive, manual rename UI, PATCH title endpoint,
-  title privacy guidance, richer session metadata, optional charts/Recharts,
-  editable report workflow, optional secret-safe runtime/provider status, and
-  MCP integration remain future work.
+- PDF export, session deletion/archive, frontend manual rename UI, frontend
+  `updateSessionTitle` helper integration, title privacy guidance, richer session
+  metadata, optional charts/Recharts, editable report workflow, optional
+  secret-safe runtime/provider status, and MCP integration remain future work.
 - Session archive/delete, report status, persisted report drafts, and exact
   persisted `crisis_level` remain future work.
 
@@ -106,6 +106,7 @@ The current active HTTP API includes:
 - `GET /api/cases/{case_id}`
 - `DELETE /api/cases/{case_id}`
 - `POST /api/cases/{case_id}/sessions`
+- `PATCH /api/cases/{case_id}/sessions/{session_id}`
 - `POST /api/conversation/turn`
 - `GET /api/cases/{case_id}/sessions`
 - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
@@ -126,8 +127,9 @@ Recommended order:
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
 3. Complete remaining frontend workflows, including session deletion/archive,
-   manual rename UI/PATCH title endpoint, title privacy guidance, report workflow
-   completion, and focused frontend test gaps.
+   frontend `updateSessionTitle` helper integration, HistoryPage inline rename
+   UI, title privacy guidance, report workflow completion, and focused frontend
+   test gaps.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
@@ -176,7 +178,12 @@ These are current code facts and should not be contradicted in new work:
   case delete.
 - Session titles are nullable operational metadata only. They are not
   AI-generated and must not be derived from raw messages, summaries, key
-  statements, themes, crisis reasons, previews, or report text.
+  statements, themes, crisis reasons, previews, reports, notes, or other
+  clinical content.
+- `PATCH /api/cases/{case_id}/sessions/{session_id}` supports backend-only
+  manual title rename with shared normalization, nullable title clearing,
+  `updated_at` changes, no `last_activity_at` changes, legacy/backfilled session
+  support, and safe metadata responses.
 - `GET /api/cases/{case_id}/sessions` includes explicit sessions plus legacy
   message/summary-derived sessions and remains backward-compatible.
 - `POST /api/conversation/turn` ensures/touches a session row without changing
