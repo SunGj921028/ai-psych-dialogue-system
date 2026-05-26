@@ -180,7 +180,7 @@ describe('ConversationPage crisis behavior', () => {
 
     await renderReadyConversationPage()
 
-    expect(screen.getByRole('alert')).toHaveTextContent(restoredHighText)
+    expect(await screen.findByRole('alert')).toHaveTextContent(restoredHighText)
     expect(screen.getAllByText(restoredHighText).length).toBeGreaterThan(0)
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
@@ -359,7 +359,7 @@ describe('ConversationPage crisis behavior', () => {
 
     await renderReadyConversationPage()
 
-    expect(screen.getByRole('alert')).toHaveTextContent(restoredHighText)
+    expect(await screen.findByRole('alert')).toHaveTextContent(restoredHighText)
     expect(screen.queryByText(restoredLowText)).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
