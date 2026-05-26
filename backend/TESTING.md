@@ -27,13 +27,13 @@ Current deterministic tests live under `backend/tests/`:
 |---|---|---|
 | `backend/tests/conftest.py` | pytest fixtures | Uses a temporary SQLite database through `DATABASE_PATH`. |
 | `backend/tests/helpers.py` | test helpers | Provides fake OpenAI-compatible LLM response objects for agent tests. |
-| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, session title normalization/exposure/update behavior, legacy derived compatibility with null titles, legacy/backfilled session rename, sorting, no-leak metadata, limits, timestamps, and cascade behavior. |
+| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, persisted summary `crisis_level` schema/migration/allowed-value behavior, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, session title normalization/exposure/update behavior, legacy derived compatibility with null titles, legacy/backfilled session rename, sorting, no-leak metadata, limits, timestamps, and cascade behavior. |
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
 | `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, and fallback. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
-| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and session-listing metadata behavior. |
+| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update helper failures. |
 | `backend/tests/test_routes_reports.py` | automated route tests | Covers report route summary conversion and insufficient-data behavior. |
 
@@ -102,6 +102,12 @@ Guidance:
 - Do not use or mutate a developer's real `cases.db`.
 - Assert public return dictionaries expose `turn_number`, not `round`.
 - Assert summary helpers return parsed `summary` dictionaries, not raw `summary_json`.
+- Assert summary helpers expose top-level nullable `crisis_level` metadata with
+  allowed values `none`, `low`, `high`, or null.
+- Assert legacy rows keep `crisis_level: null` and old `crisis_flag` values are
+  not backfilled into exact levels.
+- Assert invalid persisted crisis levels are rejected and that `crisis_level` is
+  not injected into the parsed `summary` payload.
 - Preserve WAL behavior unless a task explicitly asks for a journal-mode migration.
 - Cover durable session metadata helpers, including sessions table creation,
   idempotent backfill from legacy messages/summaries, create/get/ensure/touch
@@ -152,8 +158,11 @@ Task 09 route tests verify:
   - calls conversation and crisis logic.
   - persists user and assistant messages.
   - persists summary.
+  - persists exact backend `crisis.crisis_level` into summary metadata.
   - returns `turn_number`, assistant response, crisis result, and summary.
 - Summary/message retrieval routes do not expose DB-internal `round`.
+- Summary retrieval routes expose top-level nullable `crisis_level` while keeping
+  crisis reasons and internal fields out of summary metadata.
 - Session listing routes return explicit session metadata plus legacy
   message/summary-derived sessions, return 404 for missing cases, return `[]`
   for existing cases without sessions, and return generic non-leaking 500

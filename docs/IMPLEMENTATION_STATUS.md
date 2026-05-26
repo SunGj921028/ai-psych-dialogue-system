@@ -19,6 +19,12 @@ Current facts:
 - Public-facing code should expose `turn_number`.
 - Summary query helpers return parsed summary dictionaries in `summary`, not raw
   `summary_json`.
+- `summaries.crisis_level` exists as nullable per-summary metadata. Allowed
+  values are `none`, `low`, `high`, or null.
+- Legacy summary rows keep `crisis_level: null`; old `crisis_flag` values are
+  not backfilled into `none`, `low`, or `high`.
+- `crisis_level` is stored beside the `TurnSummary` JSON, not injected into the
+  `TurnSummary` payload itself, and `crisis.reason` is not persisted.
 - A dedicated `sessions` table exists for safe operational metadata only:
   `case_id`, `session_id`, `created_at`, `updated_at`, `last_activity_at`, and
   nullable `title`.
@@ -40,7 +46,7 @@ Current facts:
 - Empty sessions can now exist durably through backend session creation.
 - Session metadata must not store or expose raw messages, summaries,
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
-  DB-internal `round`, or exact `crisis_level`.
+  DB-internal `round`, or latest/peak `crisis_level` aggregates.
 
 ### Backend Agents
 
@@ -104,10 +110,19 @@ Current facts:
 - Existing cases with no explicit or derived sessions still return `[]`.
 - `POST /api/conversation/turn` ensures/touches a session row while preserving
   the existing conversation response shape and crisis logic.
+- `POST /api/conversation/turn` persists the exact backend
+  `crisis.crisis_level` value into the summary row.
+- `GET /api/cases/{case_id}/sessions/{session_id}/summaries` exposes top-level
+  nullable `crisis_level` on each returned summary row.
+- `summaries.crisis_level` accepts only `none`, `low`, `high`, or null. Legacy
+  rows remain null and are not inferred from old `crisis_flag` values.
 - Session metadata responses expose only metadata fields and do not expose raw
   messages, summaries, raw `summary_json`, summary `key_statement`, themes,
-  crisis reasons, report text, DB-internal `round`, or exact `crisis_level`.
-- Exact `crisis_level` is not persisted in this milestone.
+  crisis reasons, report text, DB-internal `round`, or latest/peak
+  `crisis_level` aggregates.
+- `GET /api/cases/{case_id}/sessions` response shape is unchanged; no latest or
+  peak `crisis_level` session aggregate was added.
+- Report generation behavior is unchanged.
 
 ### MCP Server
 
@@ -198,8 +213,8 @@ Current facts:
 - Light/dark theme support exists and uses only the `ai-psych-theme`
   localStorage key.
 - Browser storage safety behavior is implemented: clinical message content,
-  summaries, report text, crisis reasons, and case notes are not persisted to
-  browser storage.
+  summaries, report text, crisis levels, crisis reasons, and case notes are not
+  persisted to browser storage.
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content are not
   persisted to browser storage.
@@ -218,13 +233,17 @@ Current facts:
 - The high-risk modal/dialog opens only when a backend response includes
   `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
   metadata, and low/default crisis states do not open the modal.
+- Frontend restored persisted `crisis_level` display integration from loaded
+  summary rows has not been implemented yet. When it is added, high-risk
+  restored UI must use only backend/persisted `crisis_level === "high"`, not
+  inferred values.
 - PDF export, session deletion/archive, title search/filter, richer session
   metadata, optional charting library integration, runtime/provider status
   endpoint if needed, and MCP integration remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
-- No persisted report drafts, persisted exact `crisis_level` on summaries, Report
-  Schema v2, editable report fields, backend schema changes, LLM prompt changes,
+- No persisted report drafts, frontend restored persisted `crisis_level`
+  display, Report Schema v2, editable report fields, LLM prompt changes,
   Recharts integration, or final report template mirroring has been implemented
   for the report workspace.
 
@@ -271,6 +290,11 @@ Current facts:
 - Backend route tests cover POST session creation, idempotency, missing case, GET
   inclusion, conversation ensure/touch behavior, and generic non-leaking
   failures.
+- Backend tests cover persisted summary `crisis_level` schema creation, legacy
+  migration, allowed values, null old rows, invalid level rejection, persistence
+  from a mocked crisis detector, and summary API exposure.
+- Backend tests also confirm crisis reasons and internal fields are not exposed
+  through summary metadata.
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
@@ -288,8 +312,8 @@ Current facts:
   from SettingsPage, no clinical sentinel persistence, no new storage keys, and
   browser storage safety regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
-  report text, crisis reasons, and case notes are not persisted to browser
-  storage.
+  report text, crisis levels, crisis reasons, and case notes are not persisted
+  to browser storage.
 - Frontend storage expectations are explicit: `localStorage` is used only for
   `ai-psych-theme`, and `sessionStorage` may store only active case/session
   identifiers.
@@ -351,8 +375,8 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: deletion, session deletion/archive,
-   title search/filter, persisted report drafts, persisted exact `crisis_level`
-   if exact crisis level should survive reload/navigation, PDF export, optional
+   title search/filter, persisted report drafts, restored persisted
+   `crisis_level` display from summary rows, PDF export, optional
    charts/Recharts, editable report review workflow, report status, and optional
    runtime/provider status if needed without leaking secrets.
 4. Fill remaining frontend test gaps: ReportPage error handling.
@@ -399,7 +423,14 @@ Current reality:
   preserving backward-compatible empty-list behavior for existing cases with no
   sessions.
 - Conversation turn persistence now ensures/touches session metadata without
-  changing the conversation response shape or crisis logic.
+  changing the conversation response shape or crisis logic, and persists the
+  exact backend `crisis.crisis_level` into each summary row as nullable
+  metadata.
+- Summary rows expose top-level nullable `crisis_level`; allowed values are
+  `none`, `low`, `high`, or null. Legacy rows remain null and are not backfilled
+  from old `crisis_flag` values.
+- `crisis_level` is not injected into `TurnSummary` JSON, and `crisis.reason` is
+  not persisted.
 - Backend deterministic route, agent, and DB tests exist under `backend/tests/`.
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
@@ -432,10 +463,11 @@ Current reality:
 - ReportPage generated reports are transient; report text is not persisted by the
   backend or browser storage and must be regenerated after leaving or reloading
   the page.
-- Crisis UI uses the backend crisis level only. Loaded summaries that only expose
+- Crisis UI uses backend crisis level only. Loaded summaries that only expose
   `crisis_flag` produce safe counselor-review metadata instead of inferred
   low/high risk; high-risk modal behavior is limited to backend responses with
-  `crisis.crisis_level === "high"`.
+  `crisis.crisis_level === "high"`. Restored display of persisted summary
+  `crisis_level` has not been implemented yet.
 - ReportPage displays the backend disclaimer prominently and includes
   summary-derived review aids for intensity trend, emotion dimensions, theme
   frequency, micro-summary timeline, and crisis occurrence. These aids are not
@@ -449,8 +481,8 @@ Current reality:
   Library, and jsdom, using mocked API helpers and no live backend/provider/network
   calls.
 - Frontend does not persist clinical message content, summaries, session
-  metadata, previews, report text, crisis reasons, case notes, titles, drafts, or
-  other clinical content in browser storage.
+  metadata, previews, report text, crisis levels, crisis reasons, case notes,
+  titles, drafts, or other clinical content in browser storage.
 - Titles are nullable operational metadata only. The system does not create
   AI-generated titles and must not derive titles from messages, summaries, key
   statements, themes, crisis reasons, previews, reports, notes, or other
@@ -472,9 +504,11 @@ Future intent:
   expansion, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
 - Add report status and persisted report drafts when prioritized.
-- Persist exact `crisis_level` with summaries later if exact crisis level should
-  survive reload/navigation; until then, do not infer low/high from summary-level
-  `crisis_flag`.
+- Frontend restored persisted `crisis_level` display integration remains future
+  work. Do not infer low/high from summary-level `crisis_flag`.
+- Optional latest/peak session `crisis_level` aggregate remains future work.
+- High-risk modal replay policy for restored data remains future work; current
+  recommendation is no modal replay on restored data.
 - Smarter scroll behavior can be considered later as optional UX refinement.
 - Frontend should add deletion, session archive/delete, title search/filter, and
   any richer session metadata workflows when prioritized.
@@ -484,8 +518,8 @@ Future intent:
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
 - Report Schema v2, PDF export, charts/Recharts, MCP, session archive/delete,
-  title search/filter, report status/drafts, exact persisted `crisis_level`, and
-  real provider settings UI remain separate future work.
+  title search/filter, report status/drafts, and real provider settings UI
+  remain separate future work.
 
 ## Related Context Documents
 
