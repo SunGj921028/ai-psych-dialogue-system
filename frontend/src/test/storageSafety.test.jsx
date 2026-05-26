@@ -24,6 +24,7 @@ const clinicalSentinels = [
   'SYNTHETIC_PRIVATE_MESSAGE',
   'SYNTHETIC_SUMMARY_SECRET',
   'SYNTHETIC_REPORT_TEXT',
+  'crisis_level',
   'SYNTHETIC_CRISIS_REASON',
   'SYNTHETIC_CASE_NOTE_SECRET',
   'SYNTHETIC_SESSION_TITLE_SECRET',
@@ -69,6 +70,7 @@ function makeSummaryRow() {
       crisis_flag: true,
     },
     crisis_flag: true,
+    crisis_level: 'high',
     created_at: '2026-05-20T00:00:00Z',
   }
 }
