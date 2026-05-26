@@ -20,8 +20,10 @@ source code remains the implementation truth.
 | DELETE | `/api/cases/{case_id}` | implemented | Deletes one case; DB cascades related rows. |
 | POST | `/api/cases/{case_id}/sessions` | implemented | Creates or returns durable safe session metadata. |
 | PATCH | `/api/cases/{case_id}/sessions/{session_id}` | implemented | Updates nullable counselor-entered session title metadata. |
+| POST | `/api/cases/{case_id}/sessions/{session_id}/archive` | implemented | Archives a session by setting nullable safe metadata. |
+| POST | `/api/cases/{case_id}/sessions/{session_id}/unarchive` | implemented | Unarchives a session by clearing nullable safe metadata. |
 | POST | `/api/conversation/turn` | implemented | Runs conversation/crisis agents, persists messages and summary. |
-| GET | `/api/cases/{case_id}/sessions` | implemented | Returns explicit session metadata plus legacy derived sessions for a case. |
+| GET | `/api/cases/{case_id}/sessions` | implemented | Returns active explicit session metadata plus active legacy derived sessions for a case. Supports `include_archived=true`. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/messages` | implemented | Returns messages with `turn_number`. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/summaries` | implemented | Returns parsed summary data. |
 | POST | `/api/reports/generate` | implemented | Generates a `ConceptualizationReport` for a case/session. |
@@ -242,6 +244,7 @@ Response:
 {
   "session_id": "session uuid",
   "title": "optional counselor-facing title",
+  "archived_at": null,
   "created_at": "ISO-8601 UTC",
   "updated_at": "ISO-8601 UTC",
   "last_activity_at": "ISO-8601 UTC",
@@ -279,6 +282,8 @@ Status: implemented
 
 `GET /api/cases/{case_id}/sessions`
 
+`GET /api/cases/{case_id}/sessions?include_archived=true`
+
 Response:
 
 ```json
@@ -286,6 +291,7 @@ Response:
   {
     "session_id": "session uuid",
     "title": "optional counselor-facing title",
+    "archived_at": null,
     "created_at": "ISO-8601 UTC",
     "updated_at": "ISO-8601 UTC",
     "last_activity_at": "ISO-8601 UTC",
@@ -304,6 +310,8 @@ Response fields:
 - `session_id`: backend-generated or frontend-provided session identifier.
 - `title`: nullable counselor-facing title stored as safe operational metadata.
   Legacy/backfilled sessions return null.
+- `archived_at`: nullable safe operational timestamp. `null` means active;
+  non-null means archived.
 - `created_at`, `updated_at`, `last_activity_at`: safe operational timestamps
   from the durable session row when available.
 - `message_count`: number of persisted messages in the session.
@@ -318,13 +326,18 @@ Implementation notes:
 
 - Use `database.db.get_session_metadata_by_case()`.
 - A dedicated `sessions` table exists for safe operational metadata only:
-  `case_id`, `session_id`, `created_at`, `updated_at`, `last_activity_at`, and
-  nullable `title`.
+  `case_id`, `session_id`, `created_at`, `updated_at`, `last_activity_at`,
+  nullable `title`, and nullable `archived_at`.
+- New and legacy databases support `archived_at` through idempotent
+  schema/migration behavior.
 - Session rows are linked to cases and cascade when a case is deleted.
 - Existing message/summary-derived sessions are backfilled idempotently.
 - Legacy/backfilled sessions return `title: null`.
 - Session listing remains backward-compatible and includes explicit sessions plus
   legacy sessions derived from existing messages and summaries.
+- By default, session listing excludes archived sessions.
+- When `include_archived=true`, session listing returns active plus archived
+  sessions.
 - Return 404 if the case does not exist.
 - Return `[]` for an existing case with no explicit or derived sessions.
 - On helper failures, return 500 with a generic non-leaking message.
@@ -360,6 +373,7 @@ Response:
 {
   "session_id": "session uuid",
   "title": "trimmed counselor-facing title or null",
+  "archived_at": null,
   "created_at": "ISO-8601 UTC",
   "updated_at": "ISO-8601 UTC",
   "last_activity_at": "ISO-8601 UTC",
@@ -393,6 +407,82 @@ Implementation notes:
 - Session titles remain counselor-entered operational metadata only. They must
   not be AI-generated or derived from raw messages, summaries, key statements,
   themes, crisis reasons, previews, reports, notes, or other clinical content.
+
+#### Archive Case Session
+
+Status: implemented
+
+`POST /api/cases/{case_id}/sessions/{session_id}/archive`
+
+Response:
+
+```json
+{
+  "session_id": "session uuid",
+  "title": "optional counselor-facing title or null",
+  "archived_at": "ISO-8601 UTC",
+  "created_at": "ISO-8601 UTC",
+  "updated_at": "ISO-8601 UTC",
+  "last_activity_at": "ISO-8601 UTC",
+  "message_count": 2,
+  "summary_count": 1,
+  "last_turn_number": 1,
+  "last_updated": "ISO-8601 UTC",
+  "has_crisis": false,
+  "latest_summary_preview": "metadata-only summary preview"
+}
+```
+
+Implementation notes:
+
+- Archive sets nullable `sessions.archived_at`.
+- Archive updates `sessions.updated_at`.
+- Archive does not update `sessions.last_activity_at`.
+- Messages and summaries are preserved.
+- Return 404 if the case does not exist.
+- Return 404 if the session does not exist.
+- Return 500 with a generic non-leaking message on helper/DB failures.
+- The response shape matches the safe session metadata response and includes
+  nullable `archived_at`.
+- No hard delete endpoint exists.
+
+#### Unarchive Case Session
+
+Status: implemented
+
+`POST /api/cases/{case_id}/sessions/{session_id}/unarchive`
+
+Response:
+
+```json
+{
+  "session_id": "session uuid",
+  "title": "optional counselor-facing title or null",
+  "archived_at": null,
+  "created_at": "ISO-8601 UTC",
+  "updated_at": "ISO-8601 UTC",
+  "last_activity_at": "ISO-8601 UTC",
+  "message_count": 2,
+  "summary_count": 1,
+  "last_turn_number": 1,
+  "last_updated": "ISO-8601 UTC",
+  "has_crisis": false,
+  "latest_summary_preview": "metadata-only summary preview"
+}
+```
+
+Implementation notes:
+
+- Unarchive clears nullable `sessions.archived_at`.
+- Unarchive updates `sessions.updated_at`.
+- Unarchive does not update `sessions.last_activity_at`.
+- Messages and summaries are preserved.
+- Return 404 if the case does not exist.
+- Return 404 if the session does not exist.
+- Return 500 with a generic non-leaking message on helper/DB failures.
+- The response shape matches the safe session metadata response and includes
+  nullable `archived_at`.
+- No hard delete endpoint exists.
 
 ### Session Messages
 
@@ -532,6 +622,8 @@ These are not required for Task 09 or remain frontend integration work:
 
 - Latest summaries endpoint for dashboards.
 - PDF export endpoint.
+- Session hard-delete endpoint, if a future data-retention/privacy policy
+  explicitly defines it.
 - Prompt/settings management endpoints.
 - MCP-related HTTP bridge endpoints.
 
@@ -542,6 +634,9 @@ These are not required for Task 09 or remain frontend integration work:
 - The frontend API helper `updateSessionTitle(caseId, sessionId, payload)` calls
   `PATCH /api/cases/{case_id}/sessions/{session_id}` with
   `{ title: string | null }`.
+- Frontend archive/unarchive helpers call
+  `POST /api/cases/{case_id}/sessions/{session_id}/archive` and
+  `POST /api/cases/{case_id}/sessions/{session_id}/unarchive`.
 - Normal frontend-created sessions omit `session_id` and use the backend returned
   `session_id`.
 - Backend report generation receives `session_id` in the
@@ -593,6 +688,27 @@ These are not required for Task 09 or remain frontend integration work:
    `sessions.last_activity_at`.
 6. Return the safe session metadata response shape, including nullable `title`.
 
+### Session Archive Flow
+
+1. Validate request and confirm `case_id` exists.
+2. Confirm the session exists, including legacy message/summary-derived sessions
+   that can be backfilled into a durable session row before update.
+3. Set `sessions.archived_at` and update `sessions.updated_at`.
+4. Do not update `sessions.last_activity_at`.
+5. Preserve all messages and summaries.
+6. Return the safe session metadata response shape, including nullable
+   `archived_at`.
+
+### Session Unarchive Flow
+
+1. Validate request and confirm `case_id` exists.
+2. Confirm the session exists.
+3. Clear `sessions.archived_at` and update `sessions.updated_at`.
+4. Do not update `sessions.last_activity_at`.
+5. Preserve all messages and summaries.
+6. Return the safe session metadata response shape, including nullable
+   `archived_at`.
+
 ### Report Generation Flow
 
 1. Validate request and confirm `case_id` exists.
@@ -606,8 +722,10 @@ These are not required for Task 09 or remain frontend integration work:
 1. Validate request and confirm `case_id` exists.
 2. Load explicit session metadata and legacy metadata derived from persisted
    messages and summaries.
-3. Return one safe metadata object per explicit or derived session.
-4. Return `[]` when the case exists but has no explicit or derived sessions.
+3. Exclude archived sessions by default; include active plus archived sessions
+   when `include_archived=true`.
+4. Return one safe metadata object per explicit or derived session.
+5. Return `[]` when the case exists but has no explicit or derived sessions.
 
 ## DB / API Mapping Rules
 
@@ -624,8 +742,10 @@ These are not required for Task 09 or remain frontend integration work:
 - Do not inject `crisis_level` into `TurnSummary` JSON.
 - Do not persist `crisis.reason`.
 - The `sessions` table stores safe operational metadata only: `case_id`,
-  `session_id`, `created_at`, `updated_at`, `last_activity_at`, and nullable
-  `title`.
+  `session_id`, `created_at`, `updated_at`, `last_activity_at`, nullable
+  `title`, and nullable `archived_at`.
+- `sessions.archived_at` is nullable safe operational metadata supported by
+  idempotent schema/migration behavior for new and legacy databases.
 - Titles are nullable operational metadata only. They are counselor-provided on
   session creation when present, never AI-generated, and must not be derived from
   raw messages, summaries, key statements, themes, crisis reasons, previews, or
@@ -635,11 +755,18 @@ These are not required for Task 09 or remain frontend integration work:
 - `update_session_title(case_id, session_id, title)` updates nullable session
   title metadata with the shared normalization rules, updates `sessions.updated_at`,
   and does not update `sessions.last_activity_at`.
+- Archive/unarchive update `sessions.updated_at` and do not update
+  `sessions.last_activity_at`.
+- Archive sets `sessions.archived_at`; unarchive clears it.
+- Archive/unarchive preserve messages and summaries.
 - Session metadata responses must not expose raw messages, summaries, raw
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
   DB-internal `round`, or latest/peak `crisis_level` aggregates.
 - `GET /api/cases/{case_id}/sessions` response shape is unchanged and does not
   include latest or peak `crisis_level`.
+- `GET /api/cases/{case_id}/sessions` excludes archived sessions by default.
+- `GET /api/cases/{case_id}/sessions?include_archived=true` returns active plus
+  archived sessions.
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries` exposes top-level
   nullable `crisis_level`.
 - Report generation behavior is unchanged.
@@ -647,17 +774,20 @@ These are not required for Task 09 or remain frontend integration work:
 ## Error Handling Expectations
 
 - Missing case: return 404.
-- Missing session for title rename: return 404.
+- Missing session for title rename/archive/unarchive: return 404.
 - Session creation for an existing same-case/session pair is idempotent and
   returns existing metadata without overwriting title.
 - Over-length session title: reject with a validation error.
 - PATCH session title requires a `title` field; invalid request shape returns 422.
 - PATCH session title normalizes null or whitespace-only title to null and trims
   valid title strings.
+- Archive/unarchive preserve messages and summaries, update `updated_at`, do not
+  update `last_activity_at`, and return safe session metadata.
 - Session listing for an existing case with no explicit or derived sessions:
   return `[]`.
-- Session creation/listing/title-update helper failure: return 500 with a generic
-  message that does not leak clinical content or implementation details.
+- Session creation/listing/title-update/archive/unarchive helper failure: return
+  500 with a generic message that does not leak clinical content or
+  implementation details.
 - Missing session data for report generation: return a valid insufficient-data report
   if the analysis agent supports that path, or return 404 only if the case/session is
   clearly invalid. Prefer preserving existing `analysis_agent.generate_report()` behavior.
