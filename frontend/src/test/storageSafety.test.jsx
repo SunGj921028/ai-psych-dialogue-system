@@ -14,6 +14,7 @@ vi.mock('../api/client.js', () => ({
   listCaseSessions: vi.fn(),
   listCases: vi.fn(),
   sendConversationTurn: vi.fn(),
+  updateSessionTitle: vi.fn(),
 }))
 
 const activeCaseId = 'case-storage-safe'

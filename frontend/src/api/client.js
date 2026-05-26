@@ -57,6 +57,14 @@ export async function createSession(caseId, payload = {}) {
   return response.data
 }
 
+export async function updateSessionTitle(caseId, sessionId, payload) {
+  const response = await apiClient.patch(
+    `/api/cases/${caseId}/sessions/${sessionId}`,
+    payload,
+  )
+  return response.data
+}
+
 export async function getSessionSummaries(caseId, sessionId) {
   const response = await apiClient.get(
     `/api/cases/${caseId}/sessions/${sessionId}/summaries`,
