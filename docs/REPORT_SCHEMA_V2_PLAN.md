@@ -4,10 +4,9 @@ This document plans the next-generation report workflow for the counseling
 documentation system. It began as a planning artifact. Backend Pydantic models
 for Report Schema v2 now exist under `backend/models/report_schema_v2.py`.
 Backend-side `report_drafts` persistence and manual input API endpoints also
-exist. The first frontend ReportPage v2 manual input slice and frontend draft
-API helpers also exist. AI draft generation, counselor review/final report
-workflow, read-only v2 template rendering, and PDF export are not implemented
-yet.
+exist. The first frontend ReportPage v2 manual input slice, frontend draft API
+helpers, and read-only five-section preview also exist. AI draft generation,
+counselor review/final report workflow, and PDF export are not implemented yet.
 
 ## 1. Purpose and Scope
 
@@ -34,11 +33,13 @@ Current implementation status:
 - Frontend API helpers for loading, creating, and updating Report Schema v2
   manual input drafts are implemented.
 - ReportPage includes a v2 manual input panel for the first manual-input slice.
+- `frontend/src/components/ReportV2Preview.jsx` renders a read-only v2
+  five-section template preview from loaded `draft.manual_input`. It does not
+  call APIs, does not call `generateReport`, and does not generate content.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
 - No LLM prompt changes, AI v2 generation, counselor review workflow,
-  final-report workflow, read-only v2 template rendering, or PDF export have
-  been implemented.
+  final-report workflow, or PDF export have been implemented.
 
 ## 2. Source Materials
 
@@ -474,10 +475,10 @@ and confidentiality principles.
 
 The backend Pydantic model slice for this direction now exists in
 `backend/models/report_schema_v2.py`. The models are connected to backend-side
-manual input draft persistence, API responses, and the first frontend ReportPage
-v2 manual input slice. They are not yet connected to LLM prompts, AI v2 report
-generation, counselor review/final report workflow, read-only v2 template
-rendering, or PDF export.
+manual input draft persistence, API responses, the first frontend ReportPage v2
+manual input slice, and a read-only frontend template preview. They are not yet
+connected to LLM prompts, AI v2 report generation, counselor review/final
+report workflow, or PDF export.
 
 Implemented model names:
 
@@ -795,28 +796,44 @@ Future endpoint behavior should include:
 
 ## 13. Frontend ReportPage v2 Roadmap
 
-ReportPage v2 has added the first manual-input slice:
+ReportPage v2 has added the first manual-input and read-only preview slices:
 
 - manual input form/panel
 - current draft load
 - missing-draft Create Draft state
 - explicit Create Draft flow
 - manual input PATCH save flow
+- `ReportV2Preview` component at `frontend/src/components/ReportV2Preview.jsx`
+- read-only five-section preview from loaded `draft.manual_input`
+- missing-draft preview prerequisite state: `需先建立 v2 草稿後才可預覽`
+- template sections: `一、基本資料與主訴`, `二、現況評估與觀察`, `三、心理評估`,
+  `四、理論取向與個案概念化`, and `五、風險評估`
+- manual field mapping into the template, including session date/count,
+  referral source, age/gender, occupation/school status, marital/family status,
+  client understanding, assessment/testing data, overall risk notes, and safety
+  plan
+- missing manual fields displayed as `待評估`
+- future AI/counselor-owned fields displayed as
+  `此欄位待未來 AI 草稿或諮商師補充`
+- missing risk fields never displayed as `無風險`
 - v1/v2 visual and behavioral separation
+
+The preview is client-side rendering from already loaded draft state. It does
+not call APIs, does not call `generateReport`, does not call `analysis_agent`,
+and does not generate or infer report content.
 
 Still future:
 
 - generate and regenerate draft button
-- template-aligned draft rendering
-- missing data indicators
+- AI-generated field population
 - source/evidence display
 - counselor edit and review controls
 - reviewed/export-ready status display
 - PDF export button disabled until reviewed
 
-ReportPage v2 must not store report drafts, report text, manual input, source
-snippets, summaries, crisis levels, crisis reasons, case notes, or clinical
-content in browser storage.
+ReportPage v2 must not store report drafts, report preview text, report text,
+manual input, source snippets, summaries, crisis levels, crisis reasons, case
+notes, or clinical content in browser storage.
 
 Regeneration should clearly communicate what will be replaced and what will be
 preserved. A safe default is to preserve manual input and counselor edits unless
@@ -906,10 +923,12 @@ Frontend tests should cover:
 - no browser storage of report text or drafts
 - PDF disabled until reviewed
 
-Current frontend tests cover the implemented first slice: API helper contracts,
+Current frontend tests cover the implemented first slices: API helper contracts,
 current draft load, missing-draft create state, Create Draft flow,
-editing/saving manual input, save success/error behavior, v1/v2 separation,
-missing session behavior, and storage safety.
+editing/saving manual input, save success/error behavior, read-only preview
+prerequisite state, five-section headings, manual field mapping, missing-data
+placeholders, future placeholder wording, risk missing behavior, save-to-preview
+updates, v1/v2 separation, missing session behavior, and storage safety.
 
 All tests should remain deterministic and should not call live LLM providers.
 
@@ -922,10 +941,12 @@ Recommended implementation slices:
 3. Backend `report_drafts` persistence and manual input API. Completed.
 4. Frontend ReportPage v2 manual input form and frontend API helpers. Completed
    for the first manual-input slice.
-5. `analysis_agent` v2 mocked integration. Future work.
-6. ReportPage v2 read-only rendering. Future work.
-7. Counselor edit/review status flow. Future work.
-8. PDF export planning and implementation. Future work.
+5. ReportPage v2 read-only rendering. Completed for the first manual-input
+   preview slice.
+6. `analysis_agent` v2 mocked integration. Future work.
+7. v2 AI-generated field population. Future work.
+8. Counselor edit/review status flow. Future work.
+9. PDF export planning and implementation. Future work.
 
 Each implementation slice should be small, testable, and reviewable. Safety and
 browser-storage regression tests should accompany behavior changes.
