@@ -9,8 +9,14 @@ import uuid
 
 import anyio
 import pytest
+from pydantic import ValidationError
 
 import backend.database.db as db_layer
+from models.report_schema_v2 import (
+    ReportDraftStatus,
+    ReportManualInputV2,
+    ReportSourceType,
+)
 
 
 def _cleanup_db_files(db_path: Path) -> None:
@@ -246,7 +252,10 @@ async def _table_names() -> set[str]:
         cursor = await conn.execute(
             """
             SELECT name FROM sqlite_master
-            WHERE type = 'table' AND name IN ('cases', 'messages', 'summaries', 'sessions')
+            WHERE type = 'table'
+              AND name IN (
+                  'cases', 'messages', 'summaries', 'sessions', 'report_drafts'
+              )
             """
         )
         rows = await cursor.fetchall()
@@ -315,6 +324,16 @@ async def _raw_session_row(case_id: str, session_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+async def _raw_report_draft_row(draft_id: str) -> dict | None:
+    async with db_layer.get_db() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM report_drafts WHERE id = ?",
+            (draft_id,),
+        )
+        row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
 async def _set_session_timestamps(
     case_id: str,
     session_id: str,
@@ -336,10 +355,193 @@ async def _set_session_timestamps(
 
 def test_init_db_creates_required_tables_and_preserves_wal(initialized_db):
     assert initialized_db.exists()
-    assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
+    assert anyio.run(_table_names) == {
+        "cases",
+        "messages",
+        "summaries",
+        "sessions",
+        "report_drafts",
+    }
     assert "crisis_level" in anyio.run(_table_columns, "summaries")
     assert "archived_at" in anyio.run(_table_columns, "sessions")
+    assert {
+        "id",
+        "case_id",
+        "session_id",
+        "schema_version",
+        "status",
+        "manual_input_json",
+        "ai_generated_json",
+        "counselor_edits_json",
+        "final_report_json",
+        "source_summary_ids_json",
+        "created_at",
+        "updated_at",
+        "generated_at",
+        "reviewed_at",
+        "exported_at",
+    }.issubset(anyio.run(_table_columns, "report_drafts"))
     assert anyio.run(_journal_mode) == "wal"
+
+
+def test_create_or_get_report_draft_creates_default_v2_draft(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-report-v2", None)
+
+    draft = anyio.run(
+        db_layer.create_or_get_report_draft,
+        case["id"],
+        "session-report-v2",
+    )
+    raw = anyio.run(_raw_report_draft_row, draft.draft_id)
+
+    assert uuid.UUID(draft.draft_id)
+    assert draft.case_id == case["id"]
+    assert draft.session_id == "session-report-v2"
+    assert draft.schema_version == "report_schema_v2"
+    assert draft.status == ReportDraftStatus.MANUAL_INPUT_STARTED
+    assert isinstance(draft.manual_input, ReportManualInputV2)
+    assert draft.ai_generated is None
+    assert draft.final_report is None
+    assert draft.created_at
+    assert draft.updated_at
+    assert raw["schema_version"] == "report_schema_v2"
+    assert raw["status"] == "manual_input_started"
+    assert raw["ai_generated_json"] is None
+    assert raw["final_report_json"] is None
+
+
+def test_create_or_get_report_draft_returns_existing_current_draft(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-report-v2", None)
+
+    first = anyio.run(
+        db_layer.create_or_get_report_draft,
+        case["id"],
+        "session-report-v2",
+    )
+    second = anyio.run(
+        db_layer.create_or_get_report_draft,
+        case["id"],
+        "session-report-v2",
+    )
+
+    assert second.draft_id == first.draft_id
+    assert second.created_at == first.created_at
+
+
+def test_report_draft_manual_input_accepts_partial_data_and_is_validated(
+    initialized_db,
+):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-report-v2", None)
+
+    draft = anyio.run(
+        db_layer.create_or_get_report_draft,
+        case["id"],
+        "session-report-v2",
+        {
+            "basic_info": {
+                "referral_source": {
+                    "label_zh": "轉介來源",
+                    "value": "school counselor",
+                    "source_type": "manual",
+                    "missing_reason": None,
+                }
+            }
+        },
+    )
+
+    assert draft.manual_input.basic_info.referral_source.value == "school counselor"
+    assert draft.manual_input.basic_info.referral_source.source_type == (
+        ReportSourceType.MANUAL
+    )
+
+    with pytest.raises(ValidationError):
+        anyio.run(
+            db_layer.create_or_get_report_draft,
+            case["id"],
+            "different-session",
+            {"basic_info": {"referral_source": {"source_type": "provider"}}},
+        )
+
+
+def test_update_report_manual_input_updates_timestamp_without_changing_generated_fields(
+    initialized_db,
+):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-report-v2", None)
+    draft = anyio.run(
+        db_layer.create_or_get_report_draft,
+        case["id"],
+        "session-report-v2",
+    )
+    raw_before = anyio.run(_raw_report_draft_row, draft.draft_id)
+
+    updated = anyio.run(
+        db_layer.update_report_manual_input,
+        draft.draft_id,
+        {
+            "risk_assessment": {
+                "overall_risk_level": "pending_assessment",
+                "overall_risk_notes": {
+                    "label_zh": "整體風險備註",
+                    "value": "待評估",
+                    "source_type": "manual",
+                },
+            }
+        },
+    )
+    raw_after = anyio.run(_raw_report_draft_row, draft.draft_id)
+
+    assert updated.draft_id == draft.draft_id
+    assert updated.manual_input.risk_assessment.overall_risk_notes.value == "待評估"
+    assert updated.updated_at != raw_before["updated_at"]
+    assert raw_after["ai_generated_json"] is None
+    assert raw_after["final_report_json"] is None
+
+
+def test_report_draft_helpers_return_none_for_missing_rows(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-report-v2", None)
+
+    assert (
+        anyio.run(
+            db_layer.get_current_report_draft,
+            case["id"],
+            "session-report-v2",
+        )
+        is None
+    )
+    assert anyio.run(db_layer.get_report_draft, "missing-draft") is None
+    assert (
+        anyio.run(
+            db_layer.update_report_manual_input,
+            "missing-draft",
+            ReportManualInputV2(),
+        )
+        is None
+    )
+
+
+def test_archived_session_can_create_and_update_report_draft(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "archived-report-session", None)
+    anyio.run(db_layer.archive_session, case["id"], "archived-report-session")
+
+    draft = anyio.run(
+        db_layer.create_or_get_report_draft,
+        case["id"],
+        "archived-report-session",
+    )
+    updated = anyio.run(
+        db_layer.update_report_manual_input,
+        draft.draft_id,
+        {"basic_info": {"session_count": {"label_zh": "會談次數", "value": 1}}},
+    )
+
+    assert draft.session_id == "archived-report-session"
+    assert updated.manual_input.basic_info.session_count.value == 1
 
 
 def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path, monkeypatch):
@@ -351,7 +553,13 @@ def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path
     anyio.run(db_layer.init_db)
     anyio.run(db_layer.init_db)
 
-    assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
+    assert anyio.run(_table_names) == {
+        "cases",
+        "messages",
+        "summaries",
+        "sessions",
+        "report_drafts",
+    }
     assert "crisis_level" in anyio.run(_table_columns, "summaries")
     assert anyio.run(_raw_session_count, case_id) == 1
 

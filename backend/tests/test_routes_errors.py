@@ -410,6 +410,47 @@ def test_report_summary_helper_failure_returns_generic_non_leaking_500(
     _assert_response_does_not_leak(response, exception_text)
 
 
+def test_report_draft_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_REPORT_DRAFT_DB_ERROR_DO_NOT_LEAK"
+    manual_input_secret = "MANUAL_INPUT_SECRET_DO_NOT_LEAK"
+
+    import anyio
+    from database.db import create_session
+
+    anyio.run(create_session, case_id, "session-draft-failure", None)
+
+    async def fake_create_or_get_report_draft(case_id, session_id, manual_input=None):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr(
+        "routers.reports.create_or_get_report_draft",
+        fake_create_or_get_report_draft,
+    )
+
+    response = client.post(
+        f"/api/cases/{case_id}/sessions/session-draft-failure/report-drafts",
+        json={
+            "manual_input": {
+                "basic_info": {
+                    "referral_source": {
+                        "label_zh": "轉介來源",
+                        "value": manual_input_secret,
+                        "source_type": "manual",
+                    }
+                }
+            }
+        },
+    )
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to create report draft"}
+    _assert_response_does_not_leak(response, exception_text, manual_input_secret)
+
+
 def test_report_malformed_summary_row_returns_generic_non_leaking_500(
     client,
     monkeypatch,
