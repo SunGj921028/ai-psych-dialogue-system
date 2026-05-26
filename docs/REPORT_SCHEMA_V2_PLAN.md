@@ -4,8 +4,10 @@ This document plans the next-generation report workflow for the counseling
 documentation system. It began as a planning artifact. Backend Pydantic models
 for Report Schema v2 now exist under `backend/models/report_schema_v2.py`.
 Backend-side `report_drafts` persistence and manual input API endpoints also
-exist. AI draft generation, counselor review, ReportPage v2 UI, frontend API
-integration, and PDF export are not implemented yet.
+exist. The first frontend ReportPage v2 manual input slice and frontend draft
+API helpers also exist. AI draft generation, counselor review/final report
+workflow, read-only v2 template rendering, and PDF export are not implemented
+yet.
 
 ## 1. Purpose and Scope
 
@@ -29,10 +31,14 @@ Current implementation status:
   `backend/models/report_schema_v2.py`.
 - Backend-side `report_drafts` persistence and manual input API endpoints are
   implemented.
+- Frontend API helpers for loading, creating, and updating Report Schema v2
+  manual input drafts are implemented.
+- ReportPage includes a v2 manual input panel for the first manual-input slice.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
-- No LLM prompt changes, AI v2 generation, ReportPage v2 UI, counselor review
-  workflow, final-report workflow, or PDF export have been implemented.
+- No LLM prompt changes, AI v2 generation, counselor review workflow,
+  final-report workflow, read-only v2 template rendering, or PDF export have
+  been implemented.
 
 ## 2. Source Materials
 
@@ -74,6 +80,16 @@ Current implementation facts:
 - Backend `report_drafts` persistence and manual input API endpoints now exist.
   They persist counselor manual input only; they do not generate AI v2 report
   content.
+- ReportPage now includes a v2 manual input panel above the existing v1
+  transient report generation section. The panel is for future five-section
+  report manual data preparation.
+- The v2 panel loads the current report draft when it exists. If no draft exists,
+  it shows `尚未建立 v2 手動資料草稿` and requires explicit Create Draft.
+- Drafts are not auto-created on page load. Manual input is saved only through
+  backend `PATCH`.
+- v1 report generation remains visually separate and behaviorally unchanged.
+  v2 save does not call `generateReport`, and the v1 generate button still only
+  calls existing v1 `generateReport`.
 - PDF export is not implemented.
 - Browser storage must not store report text, report drafts, manual clinical
   input, summaries, crisis levels, crisis reasons, case notes, titles, or other
@@ -458,9 +474,10 @@ and confidentiality principles.
 
 The backend Pydantic model slice for this direction now exists in
 `backend/models/report_schema_v2.py`. The models are connected to backend-side
-manual input draft persistence and API responses. They are not yet connected to
-LLM prompts, AI v2 report generation, ReportPage, counselor review/final report
-workflow, or PDF export.
+manual input draft persistence, API responses, and the first frontend ReportPage
+v2 manual input slice. They are not yet connected to LLM prompts, AI v2 report
+generation, counselor review/final report workflow, read-only v2 template
+rendering, or PDF export.
 
 Implemented model names:
 
@@ -545,16 +562,53 @@ Implemented validation and safety behavior:
 
 ## 9. Manual Input Workflow
 
-ReportPage v2 should become an intake and review workspace.
+ReportPage v2 is beginning as an intake and review workspace.
 
 Recommended flow:
 
 1. Counselor opens the report workspace for a case/session.
-2. Counselor enters or updates manual input.
-3. Counselor explicitly saves manual input to the backend.
-4. Counselor manually generates the AI draft.
-5. Counselor reviews, edits, and marks the draft reviewed.
-6. PDF export becomes available only after review.
+2. Counselor explicitly creates a v2 draft when none exists.
+3. Counselor enters or updates manual input.
+4. Counselor explicitly saves manual input to the backend.
+5. Counselor manually generates the AI draft after future v2 generation exists.
+6. Counselor reviews, edits, and marks the draft reviewed after future workflow
+   slices exist.
+7. PDF export becomes available only after future reviewed-draft support exists.
+
+Implemented first-slice behavior:
+
+- The v2 panel is shown above the existing v1 transient report generation
+  section.
+- The v2 panel loads the current report draft when one exists.
+- When no draft exists, the panel shows `尚未建立 v2 手動資料草稿`.
+- Drafts are created only through an explicit Create Draft action.
+- Drafts are not auto-created on page load.
+- Manual input is saved only through backend `PATCH`.
+- v2 save does not call `generateReport`.
+- The v1 generate button still only calls existing v1 `generateReport`.
+
+Implemented optional manual fields in the first frontend slice:
+
+- 會談日期
+- 會談次數
+- 轉介來源
+- 年齡／性別
+- 職業／就學狀態
+- 婚姻／家庭狀態
+- 個案對問題的理解／主訴補充
+- 心理測驗／衡鑑資料補充
+- 正式風險評估備註
+- 安全計畫
+
+Future intended flow:
+
+1. Counselor opens the report workspace for a case/session.
+2. Counselor creates or loads a draft.
+3. Counselor enters or updates manual input.
+4. Counselor explicitly saves manual input to the backend.
+5. Counselor manually generates the AI draft.
+6. Counselor reviews, edits, and marks the draft reviewed.
+7. PDF export becomes available only after review.
 
 Manual input should be persisted backend-side, not browser-side.
 
@@ -579,6 +633,11 @@ Optional manual fields:
 Privacy guidance:
 
 - Do not store manual clinical input in browser storage.
+- Manual input may contain clinical content and is saved backend-side only.
+- Do not store report drafts, report text, summaries, crisis reasons, case
+  notes, or other clinical content in `localStorage` or `sessionStorage`.
+- Browser storage policy remains unchanged: `localStorage` stores only the
+  theme preference, and `sessionStorage` stores only active case/session IDs.
 - Do not derive manual fields from session titles or metadata previews.
 - Do not auto-fill sensitive fields unless explicitly provided by backend data or
   manual input.
@@ -630,6 +689,15 @@ Implemented DB helpers:
 - `get_current_report_draft(case_id, session_id)`
 - `get_report_draft(draft_id)`
 - `update_report_manual_input(draft_id, manual_input)`
+
+Implemented frontend API helpers:
+
+- `getCurrentReportDraft(caseId, sessionId)`
+- `createReportDraft(caseId, sessionId, payload = {})`
+- `updateReportDraftManualInput(draftId, payload)`
+
+These helpers call the backend Report v2 draft endpoints and are used by
+ReportPage's manual input panel.
 
 Data that should not be stored:
 
@@ -727,9 +795,17 @@ Future endpoint behavior should include:
 
 ## 13. Frontend ReportPage v2 Roadmap
 
-ReportPage v2 should add:
+ReportPage v2 has added the first manual-input slice:
 
-- manual input form
+- manual input form/panel
+- current draft load
+- missing-draft Create Draft state
+- explicit Create Draft flow
+- manual input PATCH save flow
+- v1/v2 visual and behavioral separation
+
+Still future:
+
 - generate and regenerate draft button
 - template-aligned draft rendering
 - missing data indicators
@@ -739,8 +815,8 @@ ReportPage v2 should add:
 - PDF export button disabled until reviewed
 
 ReportPage v2 must not store report drafts, report text, manual input, source
-snippets, summaries, crisis levels, crisis reasons, or clinical notes in browser
-storage.
+snippets, summaries, crisis levels, crisis reasons, case notes, or clinical
+content in browser storage.
 
 Regeneration should clearly communicate what will be replaced and what will be
 preserved. A safe default is to preserve manual input and counselor edits unless
@@ -814,12 +890,26 @@ Current backend draft persistence and route tests cover:
 
 Frontend tests should cover:
 
-- manual input form
+- API helper contracts for current draft load, draft creation, and manual input
+  update
+- current draft load
+- missing-draft create state
+- Create Draft flow
+- manual input form editing and saving
+- save success/error behavior
+- v1/v2 separation
+- missing session behavior
+- storage safety
 - generation workflow
 - missing data display
 - review/edit workflow
 - no browser storage of report text or drafts
 - PDF disabled until reviewed
+
+Current frontend tests cover the implemented first slice: API helper contracts,
+current draft load, missing-draft create state, Create Draft flow,
+editing/saving manual input, save success/error behavior, v1/v2 separation,
+missing session behavior, and storage safety.
 
 All tests should remain deterministic and should not call live LLM providers.
 
@@ -830,8 +920,8 @@ Recommended implementation slices:
 1. Docs/schema planning artifact. Completed.
 2. Backend Pydantic models for Report Schema v2. Completed.
 3. Backend `report_drafts` persistence and manual input API. Completed.
-4. Frontend ReportPage v2 manual input form and frontend API helpers. Future
-   work.
+4. Frontend ReportPage v2 manual input form and frontend API helpers. Completed
+   for the first manual-input slice.
 5. `analysis_agent` v2 mocked integration. Future work.
 6. ReportPage v2 read-only rendering. Future work.
 7. Counselor edit/review status flow. Future work.

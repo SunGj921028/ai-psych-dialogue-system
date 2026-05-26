@@ -69,6 +69,11 @@ mismatches.
 - ReportPage is integrated with backend manual report generation and now acts as
   a counselor review workspace with a prominent backend disclaimer and
   summary-derived review aids.
+- ReportPage also includes a visually separate Report Schema v2 manual input
+  panel above the existing v1 transient report generation section. The v2 panel
+  loads existing drafts, requires explicit Create Draft when none exists, does
+  not auto-create drafts on page load, and saves manual input only through the
+  backend Report v2 draft PATCH endpoint.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
 - HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
@@ -99,14 +104,15 @@ mismatches.
 - Live high-risk turn responses open the high-risk modal, but restored persisted
   high-risk state does not replay the modal.
 - ReportPage preserves case and session IDs when linking back to conversation.
-- Session metadata, previews, titles, drafts, and clinical content are not stored
-  in browser storage.
-- PDF export, hard delete/session data-retention workflow, title search/filter, richer session
-  metadata, optional charts/Recharts, editable report workflow, optional
-  secret-safe runtime/provider status, and MCP integration remain future work.
+- Session metadata, previews, titles, report drafts, manual input, and clinical
+  content are not stored in browser storage.
+- Report Schema v2 AI generation, `analysis_agent` v2 integration, read-only v2
+  template rendering, counselor final report workflow, PDF export, hard
+  delete/session data-retention workflow, title search/filter, richer session
+  metadata, optional charts/Recharts, optional secret-safe runtime/provider
+  status, and MCP integration remain future work.
 - Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired, report
-  status, persisted report drafts, and optional latest/peak session crisis
-  aggregates remain future work.
+  status, and optional latest/peak session crisis aggregates remain future work.
 
 ### Active API Reality
 
@@ -127,6 +133,9 @@ The current active HTTP API includes:
 - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
 - `POST /api/reports/generate`
+- `GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`
+- `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`
+- `PATCH /api/report-drafts/{draft_id}/manual-input`
 
 Remaining frontend workflow completion and focused frontend test gaps are now the
 next major product integration blockers.
@@ -274,8 +283,8 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - API calls should go through `frontend/src/api/client.js`.
 - Preserve the existing API integration patterns in the implemented frontend pages.
 - Do not store clinical message content, summaries, session metadata, previews,
-  report text, crisis levels, crisis reasons, case notes, titles, drafts, or
-  other clinical content in browser storage.
+  report text, report drafts, manual input, crisis levels, crisis reasons, case
+  notes, titles, drafts, or other clinical content in browser storage.
 - `localStorage` is used only for the existing `ai-psych-theme` key.
 - `sessionStorage` may store only active case/session identifiers.
 

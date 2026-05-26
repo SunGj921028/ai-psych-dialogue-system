@@ -732,6 +732,13 @@ These are not required for Task 09 or remain frontend integration work:
   `session_id`.
 - Backend report generation receives `session_id` in the
   `POST /api/reports/generate` request body.
+- Frontend Report v2 draft helpers call the implemented draft endpoints:
+  `getCurrentReportDraft(caseId, sessionId)` calls
+  `GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`,
+  `createReportDraft(caseId, sessionId, payload = {})` calls
+  `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`, and
+  `updateReportDraftManualInput(draftId, payload)` calls
+  `PATCH /api/report-drafts/{draft_id}/manual-input`.
 - Frontend resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - Frontend report links use `/report/{caseId}?sessionId={sessionId}`.
 - Conversation query params take precedence over stale `sessionStorage`
