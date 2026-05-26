@@ -22,6 +22,10 @@ Current facts:
 - A dedicated `sessions` table exists for safe operational metadata only:
   `case_id`, `session_id`, `created_at`, `updated_at`, `last_activity_at`, and
   nullable `title`.
+- Session titles are nullable counselor-provided operational metadata. The
+  backend does not generate titles with AI and must not derive titles from raw
+  messages, summaries, key statements, themes, crisis reasons, previews, or
+  report text.
 - Session rows are linked to cases and cascade when a case is deleted.
 - Existing message/summary-derived sessions are backfilled idempotently.
 - Empty sessions can now exist durably through backend session creation.
@@ -73,9 +77,13 @@ Current facts:
   backend may generate `session_id` when omitted, duplicate same-case/session
   creation is idempotent, missing cases return 404, and helper failures return
   generic non-leaking 500 responses.
+- `POST /api/cases/{case_id}/sessions` accepts optional `title`. Omitted or
+  whitespace-only titles are normalized to null, valid titles are trimmed,
+  over-length titles are rejected, and duplicate same-case/session creation
+  returns the existing metadata without overwriting an existing title.
 - `GET /api/cases/{case_id}/sessions` remains backward-compatible and includes
   explicit sessions plus legacy sessions derived from existing messages and
-  summaries.
+  summaries. Legacy/backfilled sessions return `title: null`.
 - Existing cases with no explicit or derived sessions still return `[]`.
 - `POST /api/conversation/turn` ensures/touches a session row while preserving
   the existing conversation response shape and crisis logic.
@@ -141,6 +149,9 @@ Current facts:
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata, including empty durable sessions when the
   backend returns them, plus resume links and report links.
+- HistoryPage displays `session.title` as the primary session label when present.
+  Untitled sessions display the fallback `未命名會談`, while `session_id` remains
+  visible as secondary metadata.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - SettingsPage is implemented as a static counselor-facing informational page.
@@ -163,6 +174,9 @@ Current facts:
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content are not
   persisted to browser storage.
+- No title is stored in browser storage, no AI-generated titles exist, and the
+  frontend does not derive titles from raw messages, summaries, key statements,
+  themes, crisis reasons, previews, or report text.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
 - The default/no-crisis wording is 「未偵測到危機」.
@@ -173,9 +187,10 @@ Current facts:
 - The high-risk modal/dialog opens only when a backend response includes
   `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
   metadata, and low/default crisis states do not open the modal.
-- PDF export, session deletion/archive, session title UI, richer session
-  metadata, optional charting library integration, runtime/provider status
-  endpoint if needed, and MCP integration remain future work.
+- PDF export, session deletion/archive, manual rename UI, a PATCH title endpoint,
+  title privacy guidance, richer session metadata, optional charting library
+  integration, runtime/provider status endpoint if needed, and MCP integration
+  remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
 - No persisted report drafts, persisted exact `crisis_level` on summaries, editable
@@ -212,6 +227,9 @@ Current facts:
 - Backend DB and route tests cover session metadata, missing-case 404,
   existing-case empty-list behavior, and generic non-leaking session-listing
   failure handling.
+- Backend tests cover session title normalization, response exposure,
+  duplicate/idempotent behavior that does not overwrite existing titles, and
+  legacy/backfilled session `title: null` behavior.
 - Backend DB tests cover sessions table creation, idempotent backfill,
   create/get/ensure/touch helpers, explicit empty sessions, legacy derived
   compatibility, sorting, no-leak metadata, and cascade behavior.
@@ -228,9 +246,10 @@ Current facts:
   report generation, disclaimer display, transient report note,
   back-to-conversation link preservation, API helper path/payload contracts,
   HistoryPage list/empty/error/session-expansion behavior, empty durable session
-  rendering, SettingsPage rendering, absence of secret/input controls, no API
-  helper calls from SettingsPage, no clinical sentinel persistence, no new
-  storage keys, and browser storage safety regressions.
+  rendering, HistoryPage title/fallback rendering, SettingsPage rendering,
+  absence of secret/input controls, no API helper calls from SettingsPage, no
+  clinical sentinel persistence, no new storage keys, and browser storage safety
+  regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
   report text, crisis reasons, and case notes are not persisted to browser
   storage.
@@ -258,7 +277,7 @@ Current facts:
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, and backend-level-only crisis UI behavior. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
 | Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
-| Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; deletion, archive, titles, labels, and richer session metadata remain future work. |
+| Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback and keeps session IDs visible as secondary metadata. Deletion, archive, manual rename UI, labels, and richer session metadata remain future work. |
 | Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
 | Frontend deterministic testing foundation | implemented | Vitest, React Testing Library, and jsdom tests cover core UI/API/storage contracts without live backend/provider/network calls. |
@@ -295,10 +314,11 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: deletion, session deletion/archive,
-   session title UI, persisted report drafts, persisted exact `crisis_level` if
-   exact crisis level should survive reload/navigation, PDF export, optional
-   charts/Recharts, editable report review workflow, report status, and optional
-   runtime/provider status if needed without leaking secrets.
+   manual rename UI and PATCH title endpoint, title privacy guidance, persisted
+   report drafts, persisted exact `crisis_level` if exact crisis level should
+   survive reload/navigation, PDF export, optional charts/Recharts, editable
+   report review workflow, report status, and optional runtime/provider status
+   if needed without leaking secrets.
 4. Fill remaining frontend test gaps: ReportPage error handling.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
    needed.
@@ -330,6 +350,10 @@ Current reality:
 - A dedicated backend sessions table exists for safe operational metadata,
   supports durable empty sessions, backfills legacy message/summary-derived
   sessions idempotently, and cascades on case deletion.
+- Session metadata responses include nullable `title`; title input on session
+  creation is normalized by the backend, duplicate session creation is
+  idempotent without title overwrite, and legacy/backfilled sessions return
+  `title: null`.
 - Session listing includes explicit sessions plus legacy derived sessions while
   preserving backward-compatible empty-list behavior for existing cases with no
   sessions.
@@ -340,6 +364,9 @@ Current reality:
   workspace, history case/session listing, query-param resume, app navigation,
   SettingsPage static informational guidance, and light/dark theme support are
   implemented.
+- HistoryPage uses a returned session title as the primary session label when
+  present, shows `未命名會談` for untitled sessions, keeps `session_id` visible as
+  secondary metadata, and leaves resume/report links unchanged.
 - Frontend durable session creation/use is implemented for create-case and
   new-session flows through `createSession(caseId, payload = {})`, using backend
   generated `session_id` values for normal frontend-created sessions.
@@ -375,6 +402,9 @@ Current reality:
 - Frontend does not persist clinical message content, summaries, session
   metadata, previews, report text, crisis reasons, case notes, titles, drafts, or
   other clinical content in browser storage.
+- Titles are nullable operational metadata only. The system does not create
+  AI-generated titles and must not derive titles from messages, summaries, key
+  statements, themes, crisis reasons, previews, or report text.
 - `localStorage` is used only for `ai-psych-theme`; `sessionStorage` may store
   only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content are not
@@ -385,7 +415,8 @@ Current reality:
 
 Future intent:
 
-- Add session deletion/archive and session title UI.
+- Add session deletion/archive, manual rename UI, a PATCH title endpoint, and
+  title privacy guidance.
 - Report workflow future work remains: Report Schema v2 / formal report schema
   expansion, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
@@ -394,9 +425,11 @@ Future intent:
   survive reload/navigation; until then, do not infer low/high from summary-level
   `crisis_flag`.
 - Smarter scroll behavior can be considered later as optional UX refinement.
-- Frontend should add deletion. Runtime/provider status may be added later if
-  needed, but must not expose secrets; real provider settings UI remains out of
-  scope unless explicitly designed.
+- Frontend should add deletion, session archive/delete, manual rename UI, PATCH
+  title support, and title privacy guidance when prioritized.
+  Runtime/provider status may be added later if needed, but must not expose
+  secrets; real provider settings UI remains out of scope unless explicitly
+  designed.
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
 - Report Schema v2, PDF export, charts/Recharts, MCP, and real provider settings

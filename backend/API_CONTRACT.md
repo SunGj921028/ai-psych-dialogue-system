@@ -254,14 +254,19 @@ Implementation notes:
 
 - Use the sessions helper in `database.db` to create or return metadata.
 - The backend may generate `session_id` when omitted.
+- The optional `title` is nullable safe operational metadata. Omitted or
+  whitespace-only titles are normalized to null, valid titles are trimmed, and
+  over-length titles are rejected by request validation.
 - Duplicate same-case/session creation is idempotent and returns existing
-  metadata.
+  metadata without overwriting an existing title.
 - Return 404 if the case does not exist.
 - Return 500 with a generic non-leaking message on helper failures.
 - The response shape matches the current session metadata response.
 - Session metadata is safe operational metadata only. It must not store or expose
   raw messages, summaries, raw `summary_json`, summary `key_statement`, themes,
   crisis reasons, report text, DB-internal `round`, or exact `crisis_level`.
+- Titles must not be AI-generated or derived from raw messages, summaries, key
+  statements, themes, crisis reasons, previews, or report text.
 
 #### List Case Sessions
 
@@ -293,6 +298,7 @@ Response fields:
 
 - `session_id`: backend-generated or frontend-provided session identifier.
 - `title`: nullable counselor-facing title stored as safe operational metadata.
+  Legacy/backfilled sessions return null.
 - `created_at`, `updated_at`, `last_activity_at`: safe operational timestamps
   from the durable session row when available.
 - `message_count`: number of persisted messages in the session.
@@ -311,6 +317,7 @@ Implementation notes:
   nullable `title`.
 - Session rows are linked to cases and cascade when a case is deleted.
 - Existing message/summary-derived sessions are backfilled idempotently.
+- Legacy/backfilled sessions return `title: null`.
 - Session listing remains backward-compatible and includes explicit sessions plus
   legacy sessions derived from existing messages and summaries.
 - Return 404 if the case does not exist.
@@ -457,6 +464,7 @@ Implementation notes:
 These are not required for Task 09:
 
 - Latest summaries endpoint for dashboards.
+- PATCH session title endpoint for manual rename UI.
 - PDF export endpoint.
 - Prompt/settings management endpoints.
 - MCP-related HTTP bridge endpoints.
@@ -495,10 +503,13 @@ These are not required for Task 09:
 
 1. Validate request and confirm `case_id` exists.
 2. Accept optional `session_id` and `title`.
-3. Generate a `session_id` when omitted.
-4. Create a durable session row or return the existing same-case/session row
-   idempotently.
-5. Return the current session metadata response shape.
+3. Normalize omitted or whitespace-only `title` to null, trim valid titles, and
+   reject over-length titles.
+4. Generate a `session_id` when omitted.
+5. Create a durable session row or return the existing same-case/session row
+   idempotently without overwriting an existing title.
+6. Return the current session metadata response shape, including nullable
+   `title`.
 
 ### Report Generation Flow
 
@@ -527,6 +538,10 @@ These are not required for Task 09:
 - The `sessions` table stores safe operational metadata only: `case_id`,
   `session_id`, `created_at`, `updated_at`, `last_activity_at`, and nullable
   `title`.
+- Titles are nullable operational metadata only. They are counselor-provided on
+  session creation when present, never AI-generated, and must not be derived from
+  raw messages, summaries, key statements, themes, crisis reasons, previews, or
+  report text.
 - Session rows are linked to cases and cascade on case delete.
 - Existing message/summary-derived sessions are backfilled idempotently.
 - Session metadata responses must not expose raw messages, summaries, raw
@@ -538,7 +553,8 @@ These are not required for Task 09:
 
 - Missing case: return 404.
 - Session creation for an existing same-case/session pair is idempotent and
-  returns existing metadata.
+  returns existing metadata without overwriting title.
+- Over-length session title: reject with a validation error.
 - Session listing for an existing case with no explicit or derived sessions:
   return `[]`.
 - Session creation/listing helper failure: return 500 with a generic message that

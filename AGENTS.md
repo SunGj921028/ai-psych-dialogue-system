@@ -71,6 +71,8 @@ mismatches.
   summary-derived review aids.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
+- HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
+  sessions, and keeps `session_id` visible as secondary metadata.
 - SettingsPage is implemented as a static counselor-facing informational page
   covering system purpose, safety boundaries, storage/privacy behavior, theme
   preference behavior, backend-managed provider/model configuration, and
@@ -87,9 +89,10 @@ mismatches.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, drafts, and clinical content are not stored
   in browser storage.
-- PDF export, session deletion/archive, session titles, richer session metadata,
-  optional charts/Recharts, editable report workflow, optional secret-safe
-  runtime/provider status, and MCP integration remain future work.
+- PDF export, session deletion/archive, manual rename UI, PATCH title endpoint,
+  title privacy guidance, richer session metadata, optional charts/Recharts,
+  editable report workflow, optional secret-safe runtime/provider status, and
+  MCP integration remain future work.
 - Session archive/delete, report status, persisted report drafts, and exact
   persisted `crisis_level` remain future work.
 
@@ -123,7 +126,8 @@ Recommended order:
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
 3. Complete remaining frontend workflows, including session deletion/archive,
-   session titles, report workflow completion, and focused frontend test gaps.
+   manual rename UI/PATCH title endpoint, title privacy guidance, report workflow
+   completion, and focused frontend test gaps.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
@@ -170,6 +174,9 @@ These are current code facts and should not be contradicted in new work:
 - A dedicated `sessions` table stores only `case_id`, `session_id`, `created_at`,
   `updated_at`, `last_activity_at`, and nullable `title`; session rows cascade on
   case delete.
+- Session titles are nullable operational metadata only. They are not
+  AI-generated and must not be derived from raw messages, summaries, key
+  statements, themes, crisis reasons, previews, or report text.
 - `GET /api/cases/{case_id}/sessions` includes explicit sessions plus legacy
   message/summary-derived sessions and remains backward-compatible.
 - `POST /api/conversation/turn` ensures/touches a session row without changing

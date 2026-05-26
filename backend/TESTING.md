@@ -27,13 +27,13 @@ Current deterministic tests live under `backend/tests/`:
 |---|---|---|
 | `backend/tests/conftest.py` | pytest fixtures | Uses a temporary SQLite database through `DATABASE_PATH`. |
 | `backend/tests/helpers.py` | test helpers | Provides fake OpenAI-compatible LLM response objects for agent tests. |
-| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, legacy derived compatibility, sorting, no-leak metadata, limits, and cascade behavior. |
+| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, session title normalization/exposure, legacy derived compatibility with null titles, sorting, no-leak metadata, limits, and cascade behavior. |
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
 | `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, and fallback. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
-| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, missing-case behavior, and session-listing metadata behavior. |
+| `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, missing-case behavior, legacy null titles, and session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing helper failures. |
 | `backend/tests/test_routes_reports.py` | automated route tests | Covers report route summary conversion and insufficient-data behavior. |
 
@@ -161,6 +161,10 @@ Task 09 route tests verify:
 - POST session creation covers backend-generated or provided `session_id`,
   optional title, idempotent duplicate same-case/session creation, missing-case
   404 behavior, and generic non-leaking helper failures.
+- Session title coverage includes omitted and whitespace-only title normalization
+  to null, valid title trimming, response exposure, over-length rejection,
+  duplicate/idempotent behavior that does not overwrite existing title, and
+  legacy/backfilled session `title: null` behavior.
 - Conversation route tests verify that conversation turns ensure/touch the
   durable session row without changing the conversation response shape or crisis
   logic.
