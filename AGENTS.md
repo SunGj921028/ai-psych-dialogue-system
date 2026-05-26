@@ -89,15 +89,21 @@ mismatches.
 - ConversationPage uses backend durable sessions for create-case and new-session
   flows, while query-param resume takes precedence over stale `sessionStorage`
   and does not create a new session.
+- ConversationPage restores persisted high, low, and none crisis display from
+  loaded summary rows' top-level nullable `crisis_level`, with precedence
+  `high > low > none`; legacy `crisis_flag` without persisted `crisis_level`
+  remains safe fallback metadata and is not reinterpreted as low/high.
+- Live high-risk turn responses open the high-risk modal, but restored persisted
+  high-risk state does not replay the modal.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, drafts, and clinical content are not stored
   in browser storage.
 - PDF export, session deletion/archive, title search/filter, richer session
   metadata, optional charts/Recharts, editable report workflow, optional
   secret-safe runtime/provider status, and MCP integration remain future work.
-- Session archive/delete, report status, persisted report drafts, frontend
-  restored persisted `crisis_level` display, and optional latest/peak session
-  crisis aggregates remain future work.
+- Session archive/delete, HistoryPage crisis-level display if desired, report
+  status, persisted report drafts, and optional latest/peak session crisis
+  aggregates remain future work.
 
 ### Active API Reality
 

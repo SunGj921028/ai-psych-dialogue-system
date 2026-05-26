@@ -100,18 +100,22 @@ Current reality:
   are not stored in browser storage.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
+- ConversationPage reads top-level nullable `crisis_level` from loaded session
+  summary rows to restore persisted crisis display.
+- Restored persisted `high` restores high-risk page metadata/banner, restored
+  persisted `low` restores ordinary low-risk metadata, restored persisted
+  `none` restores the default no-crisis wording, and precedence is
+  `high > low > none`.
 - The default/no-crisis wording is 「未偵測到危機」.
-- Loaded summaries may now include top-level nullable `crisis_level`, but
-  restored persisted `crisis_level` display integration has not been implemented
-  yet. Loaded summaries that contain `crisis_flag` but no persisted
-  `crisis_level` show safe counselor-review metadata such as
+- Loaded summaries that contain `crisis_flag` but no persisted `crisis_level`
+  show safe counselor-review metadata such as
   「最新摘要有危機註記，請諮商師重新檢視」.
 - The frontend must not infer low/high crisis level from `summary.crisis_flag`.
 - The high-risk modal/dialog appears only when a backend response has
   `crisis.crisis_level === 'high'`; dismissing the modal does not remove
   high-risk page metadata, and low/default crisis states do not open the modal.
-- Current recommendation for restored data is no high-risk modal replay; any
-  replay policy remains future work.
+- Restored persisted high-risk state from loaded summaries does not auto-open or
+  replay the high-risk modal.
 - Generated reports are currently transient. `POST /api/reports/generate`
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
@@ -121,9 +125,9 @@ Current reality:
   if needed, and MCP integration are not implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
-- Persisted report drafts, frontend restored persisted `crisis_level` display,
-  Report Schema v2, editable report fields, LLM prompt changes, Recharts
-  integration, and final report template mirroring have not been implemented.
+- Persisted report drafts, Report Schema v2, editable report fields, LLM prompt
+  changes, Recharts integration, and final report template mirroring have not
+  been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -135,10 +139,9 @@ Current reality:
 Remaining future behavior:
 
 - Complete deletion, session deletion/archive, title search/filter, richer
-  session metadata, restored persisted `crisis_level` display from loaded
-  summaries, optional latest/peak session crisis aggregate display, Settings
-  backend integration, and MCP-related UI only when the corresponding tasks are
-  prioritized.
+  session metadata, optional latest/peak session crisis aggregate display,
+  optional HistoryPage crisis-level display, Settings backend integration, and
+  MCP-related UI only when the corresponding tasks are prioritized.
 - Complete report workflow future work: formal Report Schema v2 after the
   template stabilizes, persisted report drafts, source/evidence traceability,
   final PDF export, optional Recharts/charts, and editable counselor review
@@ -157,6 +160,9 @@ Coverage includes:
 - Safe theme localStorage usage.
 - ConversationPage input behavior.
 - ConversationPage crisis modal and fallback behavior.
+- ConversationPage restored persisted crisis display for high, low, none, legacy
+  fallback, high-over-low, and low-over-none precedence.
+- ConversationPage live high-risk modal behavior.
 - ConversationPage create-case durable session flow, new-session durable flow,
   createSession failure handling, query-param resume no-create behavior, and
   storage safety.
@@ -492,12 +498,16 @@ Notes:
 - The frontend should not reinterpret or recalculate crisis level.
 - Loaded summary rows may include top-level nullable `crisis_level`; the
   frontend must not infer `low` or `high` from `summary.crisis_flag`.
+- ConversationPage restores persisted crisis display from loaded session summary
+  rows by reading top-level nullable `crisis_level`.
+- Restored persisted `high` restores high-risk page metadata/banner, restored
+  persisted `low` restores ordinary low-risk metadata, restored persisted
+  `none` restores default no-crisis wording, and precedence is
+  `high > low > none`.
 - If loaded summaries contain `crisis_flag` but no persisted `crisis_level`, show
   safe metadata such as 「最新摘要有危機註記，請諮商師重新檢視」.
-- Restored persisted `crisis_level` display integration remains future work.
-- High-risk restored UI should use only backend/persisted
-  `crisis_level === 'high'`; current recommendation is no modal replay on
-  restored data.
+- Restored persisted high-risk state from loaded summaries does not auto-open or
+  replay the high-risk modal.
 
 ### Report Data
 
@@ -536,6 +546,8 @@ Rules:
 - Use 「未偵測到危機」 for the default/no-crisis state.
 - Open the high-risk modal/dialog only when a backend response has
   `crisis.crisis_level === 'high'`.
+- Restored persisted high-risk state from loaded summaries must not auto-open or
+  replay the high-risk modal/dialog.
 - Dismissing the high-risk modal/dialog must not remove high-risk page metadata.
 - Low/default crisis states must not open the modal/dialog.
 - Keep banner language counselor-facing and review-oriented.
@@ -699,9 +711,12 @@ Current implemented state:
 - Title drafts are not stored in browser storage; browser storage behavior
   remains limited to `ai-psych-theme` in `localStorage` and active case/session
   identifiers in `sessionStorage`.
-- Crisis UI uses backend `crisis_level` only. Summary-only `crisis_flag` fallback
-  metadata is counselor-review wording, not a low/high inference. Restored
-  persisted `crisis_level` display has not been implemented yet.
+- Crisis UI uses backend `crisis_level` only. ConversationPage restores
+  persisted high, low, and none states from loaded summary rows' top-level
+  nullable `crisis_level`, using precedence `high > low > none`. Summary-only
+  `crisis_flag` fallback metadata is counselor-review wording, not a low/high
+  inference, and restored persisted high-risk state does not auto-open or replay
+  the high-risk modal.
 - Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
   using mocked API helpers and no live backend/provider/network calls.
 
@@ -713,11 +728,8 @@ Future behavior:
   MCP-related UI when prioritized.
 - Keep any future runtime/provider status endpoint secret-safe. Real provider
   settings UI remains out of scope unless explicitly designed.
-- Add frontend restored persisted `crisis_level` display later; use only
-  backend/persisted `crisis_level === 'high'` for high-risk restored UI.
 - Optional latest/peak session crisis aggregate display remains future work.
-- High-risk modal replay policy for restored data remains future work; current
-  recommendation is no modal replay on restored data.
+- HistoryPage crisis-level display remains future work, if desired.
 - Complete future report work after the report template stabilizes: formal Report
   Schema v2, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.

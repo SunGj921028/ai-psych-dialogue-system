@@ -225,6 +225,11 @@ Current facts:
   in `localStorage` or `sessionStorage`.
 - Crisis UI uses backend `crisis_level` only; the red banner is shown only for
   `crisis_level == "high"`.
+- ConversationPage restores persisted crisis display from loaded session summary
+  rows by reading each row's top-level nullable `crisis_level`.
+- Restored persisted `high` sets high-risk page metadata/banner, restored
+  persisted `low` sets ordinary low-risk metadata, restored persisted `none`
+  sets the default no-crisis wording, and precedence is `high > low > none`.
 - The default/no-crisis wording is 「未偵測到危機」.
 - If loaded summaries contain `crisis_flag` but no persisted `crisis_level`, the
   frontend shows safe counselor-review metadata such as
@@ -233,19 +238,16 @@ Current facts:
 - The high-risk modal/dialog opens only when a backend response includes
   `crisis.crisis_level === "high"`; dismissing it does not remove high-risk page
   metadata, and low/default crisis states do not open the modal.
-- Frontend restored persisted `crisis_level` display integration from loaded
-  summary rows has not been implemented yet. When it is added, high-risk
-  restored UI must use only backend/persisted `crisis_level === "high"`, not
-  inferred values.
+- Restored persisted high-risk state from loaded summaries does not auto-open or
+  replay the high-risk modal.
 - PDF export, session deletion/archive, title search/filter, richer session
   metadata, optional charting library integration, runtime/provider status
   endpoint if needed, and MCP integration remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
-- No persisted report drafts, frontend restored persisted `crisis_level`
-  display, Report Schema v2, editable report fields, LLM prompt changes,
-  Recharts integration, or final report template mirroring has been implemented
-  for the report workspace.
+- No persisted report drafts, Report Schema v2, editable report fields, LLM
+  prompt changes, Recharts integration, or final report template mirroring has
+  been implemented for the report workspace.
 
 ### Tests
 
@@ -301,8 +303,10 @@ Current facts:
   localStorage usage, the `createSession` API helper contract, ConversationPage
   input behavior, crisis modal/fallback behavior, create-case durable session
   flow, new-session durable flow, createSession failure handling, query-param
-  resume no-create behavior, ReportPage missing `sessionId` handling, manual
-  report generation, disclaimer display, transient report note,
+  resume no-create behavior, restored persisted crisis display for high, low,
+  none, legacy fallback, high-over-low, and low-over-none precedence, live high
+  modal behavior, ReportPage missing `sessionId` handling, manual report
+  generation, disclaimer display, transient report note,
   back-to-conversation link preservation, API helper path/payload contracts
   including `updateSessionTitle`, HistoryPage list/empty/error/session-expansion
   behavior, empty durable session rendering, HistoryPage title/fallback
@@ -335,7 +339,7 @@ Current facts:
 | Task 06 analysis agent | implemented | Computes report metadata in code. |
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing and backend-only manual session rename. |
-| Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, and backend-level-only crisis UI behavior. |
+| Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, backend-level-only crisis UI behavior, and restored persisted `crisis_level` display from loaded summaries. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
 | Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note; persisted drafts, PDF export, editable fields, final template mirroring, and formal schema expansion remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback, keeps session IDs visible as secondary metadata, and supports inline manual title rename/clear. Deletion, archive, title search/filter, labels, and richer session metadata remain future work. |
@@ -375,10 +379,10 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: deletion, session deletion/archive,
-   title search/filter, persisted report drafts, restored persisted
-   `crisis_level` display from summary rows, PDF export, optional
-   charts/Recharts, editable report review workflow, report status, and optional
-   runtime/provider status if needed without leaking secrets.
+   title search/filter, persisted report drafts, PDF export, optional
+   charts/Recharts, editable report review workflow, report status, optional
+   HistoryPage crisis-level display, and optional runtime/provider status if
+   needed without leaking secrets.
 4. Fill remaining frontend test gaps: ReportPage error handling.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
    needed.
@@ -463,11 +467,14 @@ Current reality:
 - ReportPage generated reports are transient; report text is not persisted by the
   backend or browser storage and must be regenerated after leaving or reloading
   the page.
-- Crisis UI uses backend crisis level only. Loaded summaries that only expose
-  `crisis_flag` produce safe counselor-review metadata instead of inferred
-  low/high risk; high-risk modal behavior is limited to backend responses with
-  `crisis.crisis_level === "high"`. Restored display of persisted summary
-  `crisis_level` has not been implemented yet.
+- Crisis UI uses backend crisis level only. ConversationPage restores persisted
+  high, low, and none states from loaded summary rows' top-level nullable
+  `crisis_level`, using precedence `high > low > none`. Loaded summaries that
+  only expose `crisis_flag` produce safe counselor-review metadata instead of
+  inferred low/high risk. High-risk modal behavior is limited to live backend
+  responses with `crisis.crisis_level === "high"`; restored persisted high-risk
+  state does not auto-open or replay the modal, and dismissing the live modal
+  does not remove page metadata.
 - ReportPage displays the backend disclaimer prominently and includes
   summary-derived review aids for intensity trend, emotion dimensions, theme
   frequency, micro-summary timeline, and crisis occurrence. These aids are not
@@ -504,11 +511,8 @@ Future intent:
   expansion, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
 - Add report status and persisted report drafts when prioritized.
-- Frontend restored persisted `crisis_level` display integration remains future
-  work. Do not infer low/high from summary-level `crisis_flag`.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
-- High-risk modal replay policy for restored data remains future work; current
-  recommendation is no modal replay on restored data.
+- HistoryPage crisis-level display remains future work, if desired.
 - Smarter scroll behavior can be considered later as optional UX refinement.
 - Frontend should add deletion, session archive/delete, title search/filter, and
   any richer session metadata workflows when prioritized.
