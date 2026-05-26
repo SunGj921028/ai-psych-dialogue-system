@@ -42,6 +42,9 @@ CREATE TABLE IF NOT EXISTS summaries (
     round INTEGER NOT NULL,
     summary_json TEXT NOT NULL,
     crisis_flag INTEGER NOT NULL DEFAULT 0,
+    crisis_level TEXT CHECK (
+        crisis_level IN ('none', 'low', 'high') OR crisis_level IS NULL
+    ),
     created_at TEXT NOT NULL,
     FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
 );
@@ -78,6 +81,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_case_updated_at
 # aiosqlite.connect() receives the equivalent in seconds.
 _BUSY_TIMEOUT_MS: int = 30_000  # 30 s
 _SESSION_TITLE_MAX_LENGTH: int = 80
+_CRISIS_LEVELS: set[str] = {"none", "low", "high"}
 
 
 def _database_path() -> str:
@@ -121,6 +125,16 @@ def normalize_session_title(title: str | None) -> str | None:
 _normalize_session_title = normalize_session_title
 
 
+def normalize_crisis_level(crisis_level: str | None) -> str | None:
+    if crisis_level is None:
+        return None
+
+    if crisis_level not in _CRISIS_LEVELS:
+        raise ValueError("crisis_level must be one of: none, low, high")
+
+    return crisis_level
+
+
 @asynccontextmanager
 async def get_db() -> AsyncIterator[aiosqlite.Connection]:
     """非同步 context manager：``async with get_db() as db:`` 取得連線並於結束時關閉。"""
@@ -137,8 +151,26 @@ async def init_db() -> None:
     async with get_db() as db:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.executescript(SCHEMA)
+        await _migrate_summaries_crisis_level(db)
         await _backfill_sessions(db)
         await db.commit()
+
+
+async def _migrate_summaries_crisis_level(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(summaries)")
+    rows = await cursor.fetchall()
+    column_names = {row["name"] for row in rows}
+    if "crisis_level" in column_names:
+        return
+
+    await db.execute(
+        """
+        ALTER TABLE summaries
+        ADD COLUMN crisis_level TEXT CHECK (
+            crisis_level IN ('none', 'low', 'high') OR crisis_level IS NULL
+        )
+        """
+    )
 
 
 async def _backfill_sessions(db: aiosqlite.Connection) -> None:
@@ -537,12 +569,14 @@ async def add_summary(
     turn_number: int,
     summary_json: str,
     crisis_flag: bool,
+    crisis_level: str | None = None,
 ) -> dict:
     try:
         parsed_summary = json.loads(summary_json)
     except json.JSONDecodeError as exc:
         raise ValueError("summary_json 必須是合法的 JSON 字串") from exc
 
+    crisis_level = normalize_crisis_level(crisis_level)
     summary_id = str(uuid.uuid4())
     created_at = _now_iso()
     flag = 1 if crisis_flag else 0
@@ -550,9 +584,10 @@ async def add_summary(
         await db.execute(
             """
             INSERT INTO summaries (
-                id, case_id, session_id, round, summary_json, crisis_flag, created_at
+                id, case_id, session_id, round, summary_json, crisis_flag,
+                crisis_level, created_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 summary_id,
@@ -561,6 +596,7 @@ async def add_summary(
                 turn_number,
                 summary_json,
                 flag,
+                crisis_level,
                 created_at,
             ),
         )
@@ -572,6 +608,7 @@ async def add_summary(
         "turn_number": turn_number,
         "summary": parsed_summary,
         "crisis_flag": bool(crisis_flag),
+        "crisis_level": crisis_level,
         "created_at": created_at,
     }
 
@@ -582,6 +619,8 @@ def _parse_summary_row(row: aiosqlite.Row) -> dict:
     d["summary"] = parsed
     if "crisis_flag" in d:
         d["crisis_flag"] = bool(d["crisis_flag"])
+    if "crisis_level" not in d:
+        d["crisis_level"] = None
     if "round" in d:
         d["turn_number"] = d.pop("round")
     return d

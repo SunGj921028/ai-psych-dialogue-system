@@ -64,6 +64,7 @@ class SummaryRowResponse(BaseModel):
     turn_number: int
     summary: TurnSummary
     crisis_flag: bool
+    crisis_level: str | None = None
     created_at: str
 
 
@@ -218,6 +219,7 @@ async def conversation_turn_route(request: ConversationTurnRequest) -> Conversat
             turn_number=request.turn_number,
             summary_json=summary.model_dump_json(),
             crisis_flag=crisis.crisis_flag,
+            crisis_level=crisis.crisis_level,
         )
         await touch_session(request.case_id, request.session_id)
     except Exception as exc:

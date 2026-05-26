@@ -87,6 +87,7 @@ def test_conversation_turn_persists_messages_and_summary(client, monkeypatch):
     assert len(summaries) == 1
     assert summaries[0]["turn_number"] == 1
     assert summaries[0]["crisis_flag"] is True
+    assert summaries[0]["crisis_level"] == "high"
     assert summaries[0]["summary"]["crisis_flag"] is True
     assert "summary_json" not in summaries[0]
     assert "round" not in summaries[0]
@@ -97,6 +98,67 @@ def test_conversation_turn_persists_messages_and_summary(client, monkeypatch):
     assert session["summary_count"] == 1
     assert session["last_turn_number"] == 1
     assert session["last_updated"]
+
+
+def test_conversation_turn_persists_exact_crisis_levels(client, monkeypatch):
+    case_id = _create_case(client)
+
+    async def fake_generate_response(user_input, conversation_history):
+        return ConversationResponse(
+            content="SYNTHETIC_ASSISTANT_REPLY",
+            is_safe=True,
+            warning=None,
+        )
+
+    async def fake_detect_crisis(user_input):
+        level = user_input.removeprefix("LEVEL_").lower()
+        return CrisisDetectionResult(
+            crisis_flag=level != "none",
+            crisis_level=level,
+            reason=f"SYNTHETIC_{level.upper()}_REASON_SHOULD_NOT_LEAK",
+        )
+
+    async def fake_generate_summary(turn_number, user_input, assistant_response, crisis_flag):
+        return TurnSummary(
+            turn_number=turn_number,
+            emotion=EmotionDetail(primary="synthetic emotion", intensity=turn_number),
+            emotion_dimensions=EmotionDimensions(anxiety=turn_number),
+            themes=["SYNTHETIC_THEME_SHOULD_NOT_LEAK"],
+            key_statement="SYNTHETIC_KEY_STATEMENT_SHOULD_NOT_LEAK",
+            crisis_flag=crisis_flag,
+        )
+
+    monkeypatch.setattr("routers.conversation.generate_response", fake_generate_response)
+    monkeypatch.setattr("routers.conversation.detect_crisis", fake_detect_crisis)
+    monkeypatch.setattr("routers.conversation.generate_summary", fake_generate_summary)
+
+    for turn_number, level in enumerate(["none", "low", "high"], start=1):
+        session_id = f"session-{level}"
+        turn_response = client.post(
+            "/api/conversation/turn",
+            json={
+                "case_id": case_id,
+                "session_id": session_id,
+                "turn_number": turn_number,
+                "user_input": f"LEVEL_{level.upper()}",
+                "conversation_history": [],
+            },
+        )
+        summaries_response = client.get(
+            f"/api/cases/{case_id}/sessions/{session_id}/summaries"
+        )
+
+        assert turn_response.status_code == 200
+        assert turn_response.json()["crisis"]["crisis_level"] == level
+        assert summaries_response.status_code == 200
+        summaries = summaries_response.json()
+        assert summaries[0]["crisis_level"] == level
+        assert summaries[0]["crisis_flag"] is (level != "none")
+        assert "summary_json" not in summaries[0]
+        assert "round" not in summaries[0]
+        assert f"SYNTHETIC_{level.upper()}_REASON_SHOULD_NOT_LEAK" not in (
+            summaries_response.text
+        )
 
 
 def test_conversation_turn_missing_case_returns_404(client):
