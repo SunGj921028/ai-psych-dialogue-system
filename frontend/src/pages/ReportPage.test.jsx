@@ -34,6 +34,10 @@ function getStoredBrowserData() {
   ].join('\n')
 }
 
+function getSectionByHeading(name) {
+  return screen.getByRole('heading', { name }).closest('section')
+}
+
 function makeSummaryRow(overrides = {}) {
   const turnNumber = overrides.turn_number ?? 1
 
@@ -100,33 +104,57 @@ function makeReportField(value, overrides = {}) {
 function makeManualInput(overrides = {}) {
   return {
     basic_info: {
-      session_date: makeReportField(overrides.sessionDate ?? '2026-05-21'),
-      session_count: makeReportField(overrides.sessionCount ?? '2'),
+      session_date: makeReportField(
+        Object.hasOwn(overrides, 'sessionDate') ? overrides.sessionDate : '2026-05-21',
+      ),
+      session_count: makeReportField(
+        Object.hasOwn(overrides, 'sessionCount') ? overrides.sessionCount : '2',
+      ),
       referral_source: makeReportField(
-        overrides.referralSource ?? 'SYNTHETIC_REFERRAL_SOURCE',
+        Object.hasOwn(overrides, 'referralSource')
+          ? overrides.referralSource
+          : 'SYNTHETIC_REFERRAL_SOURCE',
         { missing_reason: 'no_data' },
       ),
-      age_gender: makeReportField(overrides.ageGender ?? 'SYNTHETIC_AGE_GENDER'),
+      age_gender: makeReportField(
+        Object.hasOwn(overrides, 'ageGender')
+          ? overrides.ageGender
+          : 'SYNTHETIC_AGE_GENDER',
+      ),
       occupation_school_status: makeReportField(
-        overrides.occupationSchoolStatus ?? 'SYNTHETIC_OCCUPATION_STATUS',
+        Object.hasOwn(overrides, 'occupationSchoolStatus')
+          ? overrides.occupationSchoolStatus
+          : 'SYNTHETIC_OCCUPATION_STATUS',
       ),
       marital_family_status: makeReportField(
-        overrides.maritalFamilyStatus ?? 'SYNTHETIC_FAMILY_STATUS',
+        Object.hasOwn(overrides, 'maritalFamilyStatus')
+          ? overrides.maritalFamilyStatus
+          : 'SYNTHETIC_FAMILY_STATUS',
       ),
     },
     problem_onset_course: {
       client_understanding: makeReportField(
-        overrides.clientUnderstanding ?? 'SYNTHETIC_CLIENT_UNDERSTANDING',
+        Object.hasOwn(overrides, 'clientUnderstanding')
+          ? overrides.clientUnderstanding
+          : 'SYNTHETIC_CLIENT_UNDERSTANDING',
       ),
     },
     assessment_testing_data: makeReportField(
-      overrides.assessmentTestingData ?? 'SYNTHETIC_ASSESSMENT_DATA',
+      Object.hasOwn(overrides, 'assessmentTestingData')
+        ? overrides.assessmentTestingData
+        : 'SYNTHETIC_ASSESSMENT_DATA',
     ),
     risk_assessment: {
       overall_risk_notes: makeReportField(
-        overrides.overallRiskNotes ?? 'SYNTHETIC_RISK_NOTES',
+        Object.hasOwn(overrides, 'overallRiskNotes')
+          ? overrides.overallRiskNotes
+          : 'SYNTHETIC_RISK_NOTES',
       ),
-      safety_plan: makeReportField(overrides.safetyPlan ?? 'SYNTHETIC_SAFETY_PLAN'),
+      safety_plan: makeReportField(
+        Object.hasOwn(overrides, 'safetyPlan')
+          ? overrides.safetyPlan
+          : 'SYNTHETIC_SAFETY_PLAN',
+      ),
     },
   }
 }
@@ -312,9 +340,69 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     expect(await screen.findByText('尚未建立 v2 手動資料草稿')).toBeInTheDocument()
+    expect(screen.getByText('需先建立 v2 草稿後才可預覽')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: '建立 v2 手動資料草稿' }),
     ).toBeInTheDocument()
+  })
+
+  test('loaded draft renders read-only v2 preview with five template sections and manual values', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(
+      screen.getByText('唯讀預覽，尚非正式報告；未產生 v2 AI 草稿。'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '一、基本資料與主訴' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '二、現況評估與觀察' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '三、心理評估' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('heading', { name: '四、理論取向與個案概念化' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '五、風險評估' })).toBeInTheDocument()
+
+    const basicSection = getSectionByHeading('一、基本資料與主訴')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_AGE_GENDER')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_OCCUPATION_STATUS')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_FAMILY_STATUS')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_REFERRAL_SOURCE')
+    expect(basicSection).toHaveTextContent('2 次／2026-05-21')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
+
+    const psychologicalSection = getSectionByHeading('三、心理評估')
+    expect(psychologicalSection).toHaveTextContent('SYNTHETIC_ASSESSMENT_DATA')
+
+    const riskSection = getSectionByHeading('五、風險評估')
+    expect(riskSection).toHaveTextContent('SYNTHETIC_RISK_NOTES')
+    expect(riskSection).toHaveTextContent('SYNTHETIC_SAFETY_PLAN')
+  })
+
+  test('preview displays safe missing and future placeholders without implying no risk', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({
+        ageGender: '',
+        occupationSchoolStatus: '',
+        maritalFamilyStatus: '',
+        referralSource: '',
+        sessionCount: '',
+        sessionDate: '',
+        clientUnderstanding: '',
+        assessmentTestingData: '',
+        overallRiskNotes: '',
+        safetyPlan: '',
+      }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(screen.getAllByText('待評估').length).toBeGreaterThan(3)
+    expect(
+      screen.getAllByText('此欄位待未來 AI 草稿或諮商師補充').length,
+    ).toBeGreaterThan(3)
+    expect(getSectionByHeading('五、風險評估')).not.toHaveTextContent('無風險')
   })
 
   test('Create Draft calls API and renders returned form', async () => {
@@ -378,6 +466,9 @@ describe('ReportPage behavior', () => {
 
     expect(await screen.findByText('已儲存')).toBeInTheDocument()
     expect(screen.getByDisplayValue('UPDATED_SAFETY_PLAN')).toBeInTheDocument()
+    expect(getSectionByHeading('五、風險評估')).toHaveTextContent(
+      'UPDATED_SAFETY_PLAN',
+    )
   })
 
   test('save failure shows generic error and preserves typed values', async () => {

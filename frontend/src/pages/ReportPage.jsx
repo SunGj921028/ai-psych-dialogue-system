@@ -22,6 +22,7 @@ import {
   getSessionSummaries,
   updateReportDraftManualInput,
 } from '../api/client.js'
+import ReportV2Preview from '../components/ReportV2Preview.jsx'
 
 function getFriendlyError(error, fallback = '操作失敗，請稍後再試。') {
   if (error?.response?.status === 404) {
@@ -938,6 +939,8 @@ export default function ReportPage() {
         onSaveDraft={handleSaveDraft}
         saveStatus={saveStatus}
       />
+
+      <ReportV2Preview draft={reportDraft} />
 
       <section className="grid gap-3 md:grid-cols-4">
         <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-4 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
