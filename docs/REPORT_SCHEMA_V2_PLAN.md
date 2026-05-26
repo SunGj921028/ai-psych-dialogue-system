@@ -2,9 +2,10 @@
 
 This document plans the next-generation report workflow for the counseling
 documentation system. It began as a planning artifact. Backend Pydantic models
-for Report Schema v2 now exist under `backend/models/report_schema_v2.py`, but
-manual-input persistence, AI draft generation, counselor review, ReportPage v2,
-API integration, database persistence, and PDF export are not implemented yet.
+for Report Schema v2 now exist under `backend/models/report_schema_v2.py`.
+Backend-side `report_drafts` persistence and manual input API endpoints also
+exist. AI draft generation, counselor review, ReportPage v2 UI, frontend API
+integration, and PDF export are not implemented yet.
 
 ## 1. Purpose and Scope
 
@@ -26,10 +27,12 @@ Current implementation status:
 
 - Backend Pydantic models for Report Schema v2 are implemented in
   `backend/models/report_schema_v2.py`.
+- Backend-side `report_drafts` persistence and manual input API endpoints are
+  implemented.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
-- No database persistence, API route changes, LLM prompt changes, ReportPage v2
-  UI, counselor review workflow, or PDF export have been implemented.
+- No LLM prompt changes, AI v2 generation, ReportPage v2 UI, counselor review
+  workflow, final-report workflow, or PDF export have been implemented.
 
 ## 2. Source Materials
 
@@ -67,8 +70,10 @@ Current implementation facts:
   generation.
 - Generated reports are transient and are not persisted.
 - Backend Pydantic models for the future Report Schema v2 workflow now exist in
-  `backend/models/report_schema_v2.py`, but they are not wired into current
-  report generation.
+  `backend/models/report_schema_v2.py`.
+- Backend `report_drafts` persistence and manual input API endpoints now exist.
+  They persist counselor manual input only; they do not generate AI v2 report
+  content.
 - PDF export is not implemented.
 - Browser storage must not store report text, report drafts, manual clinical
   input, summaries, crisis levels, crisis reasons, case notes, titles, or other
@@ -452,8 +457,10 @@ and confidentiality principles.
 ## 8. Proposed Report Schema v2 Direction
 
 The backend Pydantic model slice for this direction now exists in
-`backend/models/report_schema_v2.py`. The models are not yet connected to DB
-persistence, API routes, LLM prompts, ReportPage, or PDF export.
+`backend/models/report_schema_v2.py`. The models are connected to backend-side
+manual input draft persistence and API responses. They are not yet connected to
+LLM prompts, AI v2 report generation, ReportPage, counselor review/final report
+workflow, or PDF export.
 
 Implemented model names:
 
@@ -532,6 +539,9 @@ Implemented validation and safety behavior:
 - Safety flags default conservatively.
 - Models do not force diagnosis, medication, legal, testing, trauma,
   family-history, or safety-plan fields when absent.
+- `ReportDraftV2` can represent not-yet-generated sections as null for persisted
+  drafts; `ai_generated`, `counselor_edits`, and `final_report` may remain null
+  until their future workflow slices run.
 
 ## 9. Manual Input Workflow
 
@@ -576,11 +586,12 @@ Privacy guidance:
 
 ## 10. Report Draft Persistence Plan
 
-Report draft persistence should be implemented before PDF export.
+Report draft persistence has begun and should remain the foundation before PDF
+export.
 
-Recommended future table: `report_drafts`
+Implemented table: `report_drafts`
 
-Possible columns:
+Implemented columns:
 
 - `id`
 - `case_id`
@@ -597,6 +608,28 @@ Possible columns:
 - `generated_at`
 - `reviewed_at`
 - `exported_at`
+
+Implemented persistence behavior:
+
+- One current draft is enforced per `(case_id, session_id, schema_version)`.
+- `schema_version` is fixed to `report_schema_v2`.
+- New drafts default to status `manual_input_started`.
+- Draft IDs are UUID-like.
+- `manual_input_json` is persisted and validated through `ReportManualInputV2`.
+- `ai_generated_json`, `counselor_edits_json`, and `final_report_json` may remain
+  null until future generation, counselor review, and final-report workflow
+  slices.
+- `source_summary_ids_json`, `generated_at`, `reviewed_at`, and `exported_at`
+  remain future-use fields.
+- Archived sessions can create and update drafts when explicitly addressed by
+  case/session ID.
+
+Implemented DB helpers:
+
+- `create_or_get_report_draft(case_id, session_id, manual_input=None)`
+- `get_current_report_draft(case_id, session_id)`
+- `get_report_draft(draft_id)`
+- `update_report_manual_input(draft_id, manual_input)`
 
 Data that should not be stored:
 
@@ -647,17 +680,41 @@ Future tests should use mocked LLM outputs and should not call live providers.
 
 ## 12. API Roadmap
 
-Possible future endpoints:
+Implemented v2 draft endpoints:
 
 - `GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`
 - `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`
+
+  Optional request body:
+
+  ```json
+  {
+    "manual_input": {}
+  }
+  ```
+
+- `PATCH /api/report-drafts/{draft_id}/manual-input`
+
+  Request body:
+
+  ```json
+  {
+    "manual_input": {}
+  }
+  ```
+
+Each endpoint returns `ReportDraftV2`. Missing case/session/draft states return
+404, invalid manual input returns 422, and unexpected helper/DB failures return
+generic non-leaking 500 responses.
+
+Future endpoints:
+
 - `PATCH /api/report-drafts/{draft_id}`
 - `POST /api/report-drafts/{draft_id}/generate`
 - `POST /api/report-drafts/{draft_id}/review`
 - `POST /api/report-drafts/{draft_id}/export-pdf`
 
-The existing `POST /api/reports/generate` endpoint remains unchanged until v2 is
-implemented.
+The existing `POST /api/reports/generate` endpoint remains unchanged.
 
 Future endpoint behavior should include:
 
@@ -736,8 +793,24 @@ Current backend model tests cover:
 - conservative safety-flag defaults
 - JSON-compatible serialization
 - invalid values
+- persisted drafts can represent not-yet-generated sections as null
 
-The backend test suite passed after adding the Report Schema v2 models.
+Current backend draft persistence and route tests cover:
+
+- `report_drafts` table creation
+- create/get current draft
+- one-current-draft behavior
+- UUID-like draft IDs
+- default `manual_input_started` status
+- fixed `report_schema_v2` schema version
+- manual input validation through `ReportManualInputV2`
+- partial/empty manual input
+- invalid manual input
+- timestamp updates
+- null generated/final sections
+- archived session support
+- route 404/422/500 behavior
+- v1 report route preservation
 
 Frontend tests should cover:
 
@@ -756,8 +829,9 @@ Recommended implementation slices:
 
 1. Docs/schema planning artifact. Completed.
 2. Backend Pydantic models for Report Schema v2. Completed.
-3. Manual input schema/API. Future work.
-4. `report_drafts` persistence. Future work.
+3. Backend `report_drafts` persistence and manual input API. Completed.
+4. Frontend ReportPage v2 manual input form and frontend API helpers. Future
+   work.
 5. `analysis_agent` v2 mocked integration. Future work.
 6. ReportPage v2 read-only rendering. Future work.
 7. Counselor edit/review status flow. Future work.
