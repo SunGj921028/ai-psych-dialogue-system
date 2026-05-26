@@ -193,6 +193,16 @@ async def _raw_session_count(case_id: str) -> int:
     return int(row["n"])
 
 
+async def _raw_session_row(case_id: str, session_id: str) -> dict | None:
+    async with db_layer.get_db() as conn:
+        cursor = await conn.execute(
+            "SELECT * FROM sessions WHERE case_id = ? AND session_id = ?",
+            (case_id, session_id),
+        )
+        row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
 async def _set_session_timestamps(
     case_id: str,
     session_id: str,
@@ -319,6 +329,167 @@ def test_create_session_with_existing_id_is_idempotent(initialized_db):
     sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
     assert [session["session_id"] for session in sessions] == ["session-explicit"]
     assert sessions[0]["title"] == "First"
+
+
+def test_update_session_title_updates_and_trims_title(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-rename", None)
+
+    updated = anyio.run(
+        db_layer.update_session_title,
+        case["id"],
+        "session-rename",
+        "  Intake review  ",
+    )
+
+    assert updated["session_id"] == "session-rename"
+    assert updated["title"] == "Intake review"
+    assert anyio.run(db_layer.get_session, case["id"], "session-rename")["title"] == (
+        "Intake review"
+    )
+
+
+def test_update_session_title_clears_null_and_whitespace_titles(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-null-clear", "Initial")
+    anyio.run(db_layer.create_session, case["id"], "session-blank-clear", "Initial")
+
+    null_cleared = anyio.run(
+        db_layer.update_session_title,
+        case["id"],
+        "session-null-clear",
+        None,
+    )
+    blank_cleared = anyio.run(
+        db_layer.update_session_title,
+        case["id"],
+        "session-blank-clear",
+        "   ",
+    )
+
+    assert null_cleared["title"] is None
+    assert blank_cleared["title"] is None
+
+
+def test_update_session_title_rejects_over_length_title(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-long-title", None)
+
+    with pytest.raises(ValueError):
+        anyio.run(
+            db_layer.update_session_title,
+            case["id"],
+            "session-long-title",
+            "x" * 81,
+        )
+
+
+def test_update_session_title_updates_updated_at_without_touching_activity(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-timestamps", None)
+    anyio.run(
+        _set_session_timestamps,
+        case["id"],
+        "session-timestamps",
+        "2000-01-01T00:00:00+00:00",
+        "2000-01-01T00:00:00+00:00",
+        "2000-01-01T00:05:00+00:00",
+    )
+
+    updated = anyio.run(
+        db_layer.update_session_title,
+        case["id"],
+        "session-timestamps",
+        "Updated title",
+    )
+    raw_session = anyio.run(_raw_session_row, case["id"], "session-timestamps")
+
+    assert raw_session["title"] == "Updated title"
+    assert raw_session["updated_at"] != "2000-01-01T00:00:00+00:00"
+    assert raw_session["last_activity_at"] == "2000-01-01T00:05:00+00:00"
+    assert updated["last_updated"] == raw_session["updated_at"]
+
+
+def test_update_session_title_renames_legacy_derived_session_after_backfill(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    legacy_message = anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "legacy-derived-rename",
+        1,
+        "user",
+        "SYNTHETIC_LEGACY_RENAME_MESSAGE_SHOULD_NOT_LEAK",
+    )
+    anyio.run(
+        _set_message_created_at,
+        legacy_message["id"],
+        "2026-05-20T00:00:01+00:00",
+    )
+
+    assert anyio.run(_raw_session_count, case["id"]) == 0
+
+    updated = anyio.run(
+        db_layer.update_session_title,
+        case["id"],
+        "legacy-derived-rename",
+        "Legacy renamed",
+    )
+
+    assert updated["title"] == "Legacy renamed"
+    assert updated["message_count"] == 1
+    assert anyio.run(_raw_session_count, case["id"]) == 1
+
+
+def test_update_session_title_returns_none_for_missing_session(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    assert (
+        anyio.run(db_layer.update_session_title, case["id"], "missing-session", "Title")
+        is None
+    )
+
+
+def test_update_session_title_metadata_does_not_leak_sensitive_fields(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    message = anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "session-safe-rename",
+        1,
+        "user",
+        "SYNTHETIC_RENAME_PRIVATE_MESSAGE_SHOULD_NOT_LEAK",
+    )
+    summary = anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-safe-rename",
+        1,
+        _safe_preview_summary_json(
+            1,
+            primary="?行",
+            intensity=5,
+            key_statement="SYNTHETIC_RENAME_KEY_STATEMENT_SHOULD_NOT_LEAK",
+            crisis_flag=True,
+        ),
+        True,
+    )
+    anyio.run(_set_message_created_at, message["id"], "2026-05-20T00:00:01+00:00")
+    anyio.run(_set_summary_created_at, summary["id"], "2026-05-20T00:00:02+00:00")
+
+    updated = anyio.run(
+        db_layer.update_session_title,
+        case["id"],
+        "session-safe-rename",
+        "Counselor title",
+    )
+
+    serialized = json.dumps(updated, ensure_ascii=False)
+    assert updated["title"] == "Counselor title"
+    assert "round" not in serialized
+    assert "summary_json" not in serialized
+    assert "SYNTHETIC_RENAME_PRIVATE_MESSAGE_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_RENAME_KEY_STATEMENT_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_THEME_SHOULD_NOT_LEAK" not in serialized
 
 
 def test_get_session_returns_none_for_missing_session(initialized_db):
