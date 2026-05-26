@@ -55,9 +55,22 @@ Current reality:
   `會談次數`, `轉介來源`, `年齡／性別`, `職業／就學狀態`,
   `婚姻／家庭狀態`, `個案對問題的理解／主訴補充`,
   `心理測驗／衡鑑資料補充`, `正式風險評估備註`, and `安全計畫`.
+- `frontend/src/components/ReportV2Preview.jsx` exists and renders a read-only
+  Report Schema v2 five-section preview from loaded `draft.manual_input`.
+- ReportPage mounts the v2 preview below the manual input panel. If no draft
+  exists, the preview shows `需先建立 v2 草稿後才可預覽`. If a draft exists, it
+  shows all five authoritative sections: `一、基本資料與主訴`,
+  `二、現況評估與觀察`, `三、心理評估`, `四、理論取向與個案概念化`, and
+  `五、風險評估`.
+- The v2 preview maps current manual input fields into the template, displays
+  missing manual fields as `待評估`, displays future AI/counselor-owned fields as
+  `此欄位待未來 AI 草稿或諮商師補充`, and never displays missing risk fields as
+  `無風險`.
+- The v2 preview does not call APIs, does not call `generateReport`, and does
+  not generate content.
 - v1/v2 report behavior is intentionally separate: v2 save does not call
-  `generateReport`, and the v1 generate button still only calls existing v1
-  `generateReport`.
+  `generateReport`, the v2 preview does not call `generateReport`, and the v1
+  generate button still only calls existing v1 `generateReport`.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
 - HistoryPage displays `session.title` as the primary session label when present.
@@ -154,14 +167,17 @@ Current reality:
   regenerated after leaving or reloading.
 - ReportPage v2 manual input may contain clinical content and is saved
   backend-side only.
+- ReportPage v2 preview is client-side rendering from already loaded draft state
+  only. It does not write report preview text, manual input, report drafts, or
+  report text to `localStorage` or `sessionStorage`.
 - PDF export, hard delete/session data-retention workflow, title search/filter, richer
   session metadata, optional charts/Recharts, runtime/provider status endpoint
   if needed, and MCP integration are not implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
 - No v2 AI generation exists yet. No counselor final report workflow,
-  read-only v2 template rendering, PDF export, editable report fields, LLM
-  prompt changes, or Recharts integration has been implemented.
+  PDF export, editable report fields, LLM prompt changes, or Recharts
+  integration has been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -177,13 +193,13 @@ Remaining future behavior:
   optional HistoryPage crisis-level display, Settings backend integration, and
   MCP-related UI only when the corresponding tasks are prioritized.
 - Complete report workflow future work: Report Schema v2 AI generation,
-  `analysis_agent` v2 integration, read-only v2 template rendering,
+  `analysis_agent` v2 integration, v2 AI-generated field population,
   source/evidence traceability, counselor final report workflow, final PDF
   export, and optional Recharts/charts.
 - Smarter scroll behavior can be considered later as an optional UX refinement.
-- Add future frontend tests for v2 generation, v2 rendering, counselor final
-  report workflow, and PDF export as those features are implemented. Optional
-  Playwright/E2E and visual regression can be added later if needed.
+- Add future frontend tests for v2 generation, counselor final report workflow,
+  and PDF export as those features are implemented. Optional Playwright/E2E and
+  visual regression can be added later if needed.
 
 ## Current Frontend Test Coverage
 
@@ -206,7 +222,10 @@ Coverage includes:
 - ReportPage transient report note.
 - ReportPage v2 current draft load, missing-draft create state, Create Draft
   flow, editing/saving manual input, save success/error behavior, v1/v2
-  separation, missing session behavior, and storage safety.
+  separation, read-only preview prerequisite state, five-section headings,
+  manual field mapping, missing-data placeholders, future placeholder wording,
+  risk missing behavior, save-to-preview updates, missing session behavior, and
+  storage safety.
 - API helper path and payload contract tests, including `updateSessionTitle`,
   `getCurrentReportDraft`, `createReportDraft`, and
   `updateReportDraftManualInput`.
@@ -322,12 +341,18 @@ Responsibilities:
   reasons, case notes, or clinical content in browser storage.
 - Keep v1/v2 behavior separate: v2 save must not call `generateReport`, and the
   v1 generate button must only call existing v1 `generateReport`.
+- Render a read-only v2 five-section preview from loaded `draft.manual_input`
+  without calling APIs, calling `generateReport`, generating content, inferring
+  facts from summaries, or inferring risk/crisis status.
+- Show `需先建立 v2 草稿後才可預覽` when no v2 draft exists.
+- In the v2 preview, show missing manual fields as `待評估`, future
+  AI/counselor-owned fields as `此欄位待未來 AI 草稿或諮商師補充`, and missing
+  risk fields as `待評估` rather than `無風險`.
 
 Not currently implemented:
 
 - v2 AI generation.
 - `analysis_agent` v2 integration.
-- Read-only v2 template rendering.
 - Counselor edits/final report workflow.
 - PDF export.
 - Editable report fields.
@@ -810,8 +835,12 @@ Current implemented state:
   count, referral source, age/gender, occupation/school status,
   marital/family status, client understanding/chief-complaint supplement,
   testing/assessment supplement, formal risk assessment notes, and safety plan.
-- v2 save does not call `generateReport`; the v1 generate button calls only the
-  existing v1 `generateReport`.
+- ReportPage includes a read-only v2 five-section preview from loaded
+  `draft.manual_input`. It shows `需先建立 v2 草稿後才可預覽` when no draft exists,
+  maps current manual input fields into the template, uses `待評估` for missing
+  manual fields, and uses `此欄位待未來 AI 草稿或諮商師補充` for future fields.
+- v2 save and v2 preview do not call `generateReport`; the v1 generate button
+  calls only the existing v1 `generateReport`.
 - ReportPage review aids are not objective clinical measurements.
 - HistoryPage lists backend cases and lazily expands cases to show backend
   session metadata.
@@ -871,8 +900,8 @@ Future behavior:
 - Optional latest/peak session crisis aggregate display remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
 - Complete future report work after the report template stabilizes: formal Report
-  Schema v2 AI generation, `analysis_agent` v2 integration, read-only v2
-  template rendering, source/evidence traceability, counselor final report
+  Schema v2 AI generation, `analysis_agent` v2 integration, v2 AI-generated
+  field population, source/evidence traceability, counselor final report
   workflow, final PDF export, and optional Recharts/charts.
 - Smarter scroll behavior remains optional future UX work.
 - Add remaining frontend tests for ReportPage error handling.

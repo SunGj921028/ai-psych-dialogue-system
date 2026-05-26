@@ -74,6 +74,12 @@ mismatches.
   loads existing drafts, requires explicit Create Draft when none exists, does
   not auto-create drafts on page load, and saves manual input only through the
   backend Report v2 draft PATCH endpoint.
+- ReportPage mounts `ReportV2Preview` below the v2 manual input panel. The
+  preview renders all five authoritative v2 sections from loaded
+  `draft.manual_input`, shows `需先建立 v2 草稿後才可預覽` when no draft exists,
+  uses `待評估` for missing manual fields, uses
+  `此欄位待未來 AI 草稿或諮商師補充` for future AI/counselor-owned fields, does not
+  call APIs or `generateReport`, and does not generate content.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
 - HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
@@ -106,8 +112,8 @@ mismatches.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, report drafts, manual input, and clinical
   content are not stored in browser storage.
-- Report Schema v2 AI generation, `analysis_agent` v2 integration, read-only v2
-  template rendering, counselor final report workflow, PDF export, hard
+- Report Schema v2 AI generation, `analysis_agent` v2 integration, v2
+  AI-generated field population, counselor final report workflow, PDF export, hard
   delete/session data-retention workflow, title search/filter, richer session
   metadata, optional charts/Recharts, optional secret-safe runtime/provider
   status, and MCP integration remain future work.
