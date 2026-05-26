@@ -27,6 +27,9 @@ source code remains the implementation truth.
 | GET | `/api/cases/{case_id}/sessions/{session_id}/messages` | implemented | Returns messages with `turn_number`. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/summaries` | implemented | Returns parsed summary data. |
 | POST | `/api/reports/generate` | implemented | Generates a `ConceptualizationReport` for a case/session. |
+| GET | `/api/cases/{case_id}/sessions/{session_id}/report-drafts/current` | implemented | Returns the current Report Schema v2 draft for a case/session. |
+| POST | `/api/cases/{case_id}/sessions/{session_id}/report-drafts` | implemented | Creates or returns the current Report Schema v2 draft. |
+| PATCH | `/api/report-drafts/{draft_id}/manual-input` | implemented | Updates counselor manual input for an existing Report Schema v2 draft. |
 
 Routers are mounted under `/api` in `backend/main.py`.
 
@@ -615,12 +618,100 @@ Implementation notes:
   `agents.analysis_agent.generate_report()`.
 - Reuse `ConceptualizationReport` from `agents.analysis_agent`.
 - Do not let the LLM generate or override the fixed disclaimer.
+- Existing v1 report behavior is unchanged by Report Schema v2 draft endpoints.
+
+#### Get Current Report Draft
+
+Status: implemented
+
+`GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`
+
+Response: `ReportDraftV2`
+
+Implementation notes:
+
+- Confirms the case exists.
+- Confirms the session exists, including archived sessions when addressed
+  directly by case/session ID.
+- Returns the one current draft for `(case_id, session_id, report_schema_v2)`.
+- Return 404 if the case does not exist.
+- Return 404 if the session does not exist.
+- Return 404 if no draft exists.
+- Return 500 with a generic non-leaking message on helper/DB failures.
+
+#### Create Or Get Report Draft
+
+Status: implemented
+
+`POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`
+
+Request body is optional:
+
+```json
+{
+  "manual_input": {}
+}
+```
+
+Response: `ReportDraftV2`
+
+Implementation notes:
+
+- Confirms the case exists.
+- Confirms the session exists, including archived sessions when addressed
+  directly by case/session ID.
+- Creates or returns the one current draft for
+  `(case_id, session_id, report_schema_v2)`.
+- Draft IDs are UUID-like.
+- `schema_version` is fixed to `report_schema_v2`.
+- Default status is `manual_input_started`.
+- `manual_input` is validated through `ReportManualInputV2` and persisted in
+  `manual_input_json`.
+- Empty or partial manual input is allowed.
+- `ai_generated_json`, `counselor_edits_json`, and `final_report_json` may remain
+  null until future workflow slices.
+- Return 404 if the case does not exist.
+- Return 404 if the session does not exist.
+- Invalid manual input returns 422.
+- Return 500 with a generic non-leaking message on helper/DB failures.
+
+#### Update Report Draft Manual Input
+
+Status: implemented
+
+`PATCH /api/report-drafts/{draft_id}/manual-input`
+
+Request:
+
+```json
+{
+  "manual_input": {}
+}
+```
+
+Response: `ReportDraftV2`
+
+Implementation notes:
+
+- Updates only counselor manual input for an existing draft.
+- `manual_input` is validated through `ReportManualInputV2`.
+- Updates `updated_at`.
+- Does not change `ai_generated_json`, `counselor_edits_json`, or
+  `final_report_json`.
+- Archived sessions can still have their addressed drafts updated.
+- Return 404 if the draft does not exist.
+- Invalid manual input returns 422.
+- Return 500 with a generic non-leaking message on helper/DB failures.
+- No generic draft PATCH, v2 generate route, review route, or PDF export route is
+  implemented yet.
 
 ## Future Endpoints / Integrations
 
 These are not required for Task 09 or remain frontend integration work:
 
 - Latest summaries endpoint for dashboards.
+- Report Schema v2 AI generation endpoint.
+- Report Schema v2 counselor review/finalization endpoint.
 - PDF export endpoint.
 - Session hard-delete endpoint, if a future data-retention/privacy policy
   explicitly defines it.
@@ -717,6 +808,18 @@ These are not required for Task 09 or remain frontend integration work:
 4. Call `generate_report()`.
 5. Return `ConceptualizationReport`.
 
+### Report Draft Manual Input Flow
+
+1. Validate request shape and confirm the addressed case exists.
+2. Confirm the addressed session exists. Archived sessions are not blocked when
+   addressed directly.
+3. For creation, insert a new `report_drafts` row or return the existing row for
+   `(case_id, session_id, report_schema_v2)`.
+4. For manual input updates, load the draft by `draft_id`.
+5. Validate manual input through `ReportManualInputV2`.
+6. Persist `manual_input_json` and update `updated_at`.
+7. Return `ReportDraftV2`.
+
 ### Session Listing Flow
 
 1. Validate request and confirm `case_id` exists.
@@ -770,11 +873,30 @@ These are not required for Task 09 or remain frontend integration work:
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries` exposes top-level
   nullable `crisis_level`.
 - Report generation behavior is unchanged.
+- The `report_drafts` table stores backend-side clinical draft data for Report
+  Schema v2 manual input persistence.
+- One current draft is enforced per `(case_id, session_id, schema_version)`.
+- `schema_version` is fixed to `report_schema_v2`.
+- Draft IDs are UUID-like.
+- New drafts default to status `manual_input_started`.
+- `manual_input_json` is validated through `ReportManualInputV2`.
+- `ai_generated_json`, `counselor_edits_json`, and `final_report_json` may remain
+  null until future generation/review/final-report slices.
+- `source_summary_ids_json`, `generated_at`, `reviewed_at`, and `exported_at`
+  are future-use fields.
+- Report draft persistence must not store raw provider prompts, raw LLM
+  responses, API keys/secrets, raw message text, duplicated raw messages, or
+  crisis reasons.
+- Browser storage must not store manual input, report drafts, report text,
+  summaries, crisis reasons, case notes, or clinical content.
 
 ## Error Handling Expectations
 
 - Missing case: return 404.
 - Missing session for title rename/archive/unarchive: return 404.
+- Missing session for report draft current/create routes: return 404.
+- Missing report draft: return 404.
+- Invalid report draft manual input: return 422.
 - Session creation for an existing same-case/session pair is idempotent and
   returns existing metadata without overwriting title.
 - Over-length session title: reject with a validation error.
@@ -793,6 +915,8 @@ These are not required for Task 09 or remain frontend integration work:
   clearly invalid. Prefer preserving existing `analysis_agent.generate_report()` behavior.
 - Invalid request shape: let FastAPI/Pydantic return 422.
 - Database write failure: return 500 with a generic message; avoid leaking sensitive content.
+- Report draft helper failure: return 500 with a generic message; avoid leaking
+  manual input values, clinical content, or implementation details.
 - Agent failures: preserve current agent fallback behavior rather than failing the whole route
   unless persistence itself fails.
 

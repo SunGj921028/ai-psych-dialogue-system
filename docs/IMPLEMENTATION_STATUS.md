@@ -51,6 +51,21 @@ Current facts:
 - Session rows are linked to cases and cascade when a case is deleted.
 - Existing message/summary-derived sessions are backfilled idempotently.
 - Empty sessions can now exist durably through backend session creation.
+- A `report_drafts` table exists for Report Schema v2 manual-input draft
+  persistence. It enforces one current draft per
+  `(case_id, session_id, schema_version)`, with `schema_version` fixed to
+  `report_schema_v2` and default status `manual_input_started`.
+- `report_drafts.id` values are UUID-like. `manual_input_json` is persisted and
+  validated through `ReportManualInputV2`.
+- `ai_generated_json`, `counselor_edits_json`, and `final_report_json` may remain
+  null until future v2 generation, counselor review, and final-report slices.
+- `source_summary_ids_json`, `generated_at`, `reviewed_at`, and `exported_at`
+  exist as future-use fields.
+- Archived sessions can create and update report drafts when explicitly addressed
+  by case/session ID.
+- Report draft DB helpers exist: `create_or_get_report_draft`,
+  `get_current_report_draft`, `get_report_draft`, and
+  `update_report_manual_input`.
 - Session metadata must not store or expose raw messages, summaries,
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
   DB-internal `round`, or latest/peak `crisis_level` aggregates.
@@ -95,11 +110,13 @@ Current facts:
 - Evidence references use safe pointers such as `turn_number`, `summary_id`, and
   `note`; they do not duplicate raw message text.
 - Safety flags default conservatively.
-- These models are not wired into runtime report generation yet. Existing v1
-  `ConceptualizationReport`, `analysis_agent.generate_report()`, and
+- These models are wired into backend-side `report_drafts` manual input
+  persistence and manual-input API responses. They are not wired into runtime AI
+  report generation yet.
+- Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
-- No DB persistence, API route changes, LLM prompt changes, ReportPage v2 UI, or
-  PDF export have been implemented.
+- No LLM prompt changes, ReportPage v2 UI, counselor review/final report
+  workflow, AI v2 generation, or PDF export have been implemented.
 
 ### Backend Routers
 
@@ -126,6 +143,9 @@ Current facts:
   - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
   - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
   - `POST /api/reports/generate`
+  - `GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`
+  - `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`
+  - `PATCH /api/report-drafts/{draft_id}/manual-input`
 - Public route responses expose `turn_number`, not DB-internal `round`.
 - Summary responses expose parsed summary data, not raw `summary_json`.
 - `POST /api/cases/{case_id}/sessions` creates durable session metadata. The
@@ -175,6 +195,14 @@ Current facts:
 - `GET /api/cases/{case_id}/sessions` response shape is unchanged; no latest or
   peak `crisis_level` session aggregate was added.
 - Report generation behavior is unchanged.
+- Report draft endpoints return `ReportDraftV2`. They support loading the
+  current draft, creating or returning the one current draft, and updating
+  `manual_input_json` only.
+- Report draft routes return 404 for missing case/session/draft, 422 for invalid
+  manual input, and generic non-leaking 500 responses for helper/DB failures.
+- Report draft persistence is backend-side clinical content and must remain
+  protected. It does not store raw provider prompts, raw LLM responses, API
+  keys/secrets, raw message text, or crisis reasons.
 
 ### MCP Server
 
@@ -303,10 +331,12 @@ Current facts:
   endpoint if needed, and MCP integration remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
-- No persisted report drafts, editable report fields, LLM prompt changes,
-  Recharts integration, ReportPage v2 UI, or final report template mirroring has
-  been implemented for the report workspace. Backend Pydantic models for Report
-  Schema v2 exist, but they are not wired into the current report workflow.
+- Backend-side Report Schema v2 manual input draft persistence and API endpoints
+  exist, but no frontend ReportPage v2 UI or frontend API helpers have been
+  implemented yet.
+- No editable report fields, LLM prompt changes, AI v2 report generation,
+  Recharts integration, ReportPage v2 rendering, counselor review/final report
+  workflow, or PDF export has been implemented for the report workspace.
 
 ### Tests
 
@@ -363,6 +393,12 @@ Current facts:
   fixed schema version, missing data behavior, enum validation, evidence
   references, manual-only separation from AI-generated fields, conservative
   safety-flag defaults, JSON-compatible serialization, and invalid values.
+- Backend tests cover Report Schema v2 draft persistence, including table
+  creation, create/get current draft, one-current-draft behavior, UUID-like IDs,
+  default status, fixed schema version, manual input validation, partial/empty
+  manual input, invalid manual input, timestamp updates, null generated/final
+  sections, archived session support, route 404/422/500 behavior, and v1 report
+  route preservation.
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
@@ -409,7 +445,7 @@ Current facts:
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing and backend-only manual session rename. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, backend-level-only crisis UI behavior, and restored persisted `crisis_level` display from loaded summaries. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
-| Task 13 report page | partial | Counselor review workspace exists with manual transient generation, prominent backend disclaimer, and transient-report note. Backend Pydantic models for Report Schema v2 exist, but manual input API, persisted drafts, ReportPage v2 rendering, counselor review/edit workflow, PDF export, and runtime schema integration remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, and transient-report note. Backend Report Schema v2 models, backend `report_drafts` persistence, and backend manual input API exist. Frontend ReportPage v2 rendering, frontend draft API helpers, AI v2 generation, counselor review/edit workflow, PDF export, and runtime v2 generation integration remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback, keeps session IDs visible as secondary metadata, supports inline manual title rename/clear, and implements archive-only session lifecycle controls. Hard delete, title search/filter, labels, and richer session metadata remain future work. |
 | Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -447,8 +483,8 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: hard delete/data-retention policy,
-   title search/filter, persisted report drafts, PDF export, optional
-   charts/Recharts, editable report review workflow, report status, optional
+   title search/filter, ReportPage v2 manual input form/API helpers, PDF export,
+   optional charts/Recharts, editable report review workflow, report status, optional
    HistoryPage crisis-level display, and optional runtime/provider status if
    needed without leaking secrets.
 4. Fill remaining frontend test gaps: ReportPage error handling.
@@ -512,6 +548,10 @@ Current reality:
   not persisted.
 - Backend deterministic route, agent, DB, and Report Schema v2 model tests exist
   under `backend/tests/`.
+- Backend-side Report Schema v2 `report_drafts` manual input persistence and API
+  endpoints exist. One current draft is enforced per
+  `(case_id, session_id, schema_version)`, manual input is validated through
+  `ReportManualInputV2`, and not-yet-generated sections may remain null.
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
   SettingsPage static informational guidance, and light/dark theme support are
@@ -545,9 +585,10 @@ Current reality:
 - Starting a new session preserves the selected case, creates a durable backend
   session, uses the backend returned `session_id`, and clears current message and
   summary UI only after creation succeeds.
-- ReportPage generated reports are transient; report text is not persisted by the
-  backend or browser storage and must be regenerated after leaving or reloading
-  the page.
+- Current v1 ReportPage generated reports are transient; v1 report text is not
+  persisted by the browser storage and must be regenerated after leaving or
+  reloading the page. Backend v2 `report_drafts` can persist manual input, but
+  the current frontend does not use those endpoints yet.
 - Crisis UI uses backend crisis level only. ConversationPage restores persisted
   high, low, and none states from loaded summary rows' top-level nullable
   `crisis_level`, using precedence `high > low > none`. Loaded summaries that
@@ -593,11 +634,13 @@ Future intent:
 - Add title search/filter when prioritized.
 - Report Schema v2 backend Pydantic models now exist under
   `backend/models/report_schema_v2.py`, and a planning artifact exists at
-  `docs/REPORT_SCHEMA_V2_PLAN.md`. Remaining report workflow future work
-  includes manual input API, `report_drafts` persistence, analysis-agent v2
+  `docs/REPORT_SCHEMA_V2_PLAN.md`. Backend manual input API and
+  `report_drafts` persistence now exist. Remaining report workflow future work
+  includes frontend ReportPage v2 manual input UI/API helpers, analysis-agent v2
   mocked integration, ReportPage v2 rendering, counselor review/edit workflow,
   source/evidence traceability, final PDF export, and optional Recharts/charts.
-- Add report status and persisted report drafts when prioritized.
+- Add report status UI and counselor review/final-report workflow when
+  prioritized.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
 - Smarter scroll behavior can be considered later as optional UX refinement.
@@ -609,9 +652,10 @@ Future intent:
   designed.
 - Frontend testing should add ReportPage error handling tests, optional
   Playwright/E2E later, and visual regression later if needed.
-- Report Schema v2 runtime integration, PDF export, charts/Recharts, MCP, hard
-  delete, title search/filter, report status/drafts, latest/peak crisis
-  aggregates, and real provider settings UI remain separate future work.
+- Report Schema v2 AI generation/runtime integration, PDF export,
+  charts/Recharts, MCP, hard delete, title search/filter, report status UI,
+  counselor review/final-report workflow, latest/peak crisis aggregates, and
+  real provider settings UI remain separate future work.
 
 ## Related Context Documents
 
