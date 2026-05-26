@@ -195,6 +195,25 @@ def _validate_report_manual_input(
     return ReportManualInputV2.model_validate(manual_input)
 
 
+def _validate_report_ai_generated(
+    ai_generated: ReportAIGeneratedV2 | dict,
+) -> ReportAIGeneratedV2:
+    if isinstance(ai_generated, ReportAIGeneratedV2):
+        return ai_generated
+    return ReportAIGeneratedV2.model_validate(ai_generated)
+
+
+def _validate_report_source_refs(
+    source_refs: list[ReportSourceRefV2] | list[dict] | None,
+) -> list[ReportSourceRefV2]:
+    if source_refs is None:
+        return []
+    return [
+        ref if isinstance(ref, ReportSourceRefV2) else ReportSourceRefV2.model_validate(ref)
+        for ref in source_refs
+    ]
+
+
 def _model_from_json(model_type, raw_json: str | None):
     if raw_json is None:
         return None
@@ -625,6 +644,49 @@ async def update_report_manual_input(
             WHERE id = ?
             """,
             (validated_manual_input.model_dump_json(), updated_at, draft_id),
+        )
+        cur = await db.execute("SELECT changes() AS n")
+        row = await cur.fetchone()
+        changed = int(row["n"]) if row else 0
+        await db.commit()
+
+    if changed == 0:
+        return None
+    return await get_report_draft(draft_id)
+
+
+async def update_report_ai_generated(
+    draft_id: str,
+    ai_generated: ReportAIGeneratedV2 | dict,
+    source_refs: list[ReportSourceRefV2] | list[dict] | None = None,
+) -> ReportDraftV2 | None:
+    validated_ai_generated = _validate_report_ai_generated(ai_generated)
+    validated_source_refs = _validate_report_source_refs(source_refs)
+    updated_at = _now_iso()
+
+    async with get_db() as db:
+        await db.execute(
+            """
+            UPDATE report_drafts
+            SET
+                ai_generated_json = ?,
+                source_summary_ids_json = ?,
+                status = ?,
+                generated_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (
+                validated_ai_generated.model_dump_json(),
+                json.dumps(
+                    [ref.model_dump(mode="json") for ref in validated_source_refs],
+                    ensure_ascii=False,
+                ),
+                ReportDraftStatus.AI_GENERATED.value,
+                updated_at,
+                updated_at,
+                draft_id,
+            ),
         )
         cur = await db.execute("SELECT changes() AS n")
         row = await cur.fetchone()

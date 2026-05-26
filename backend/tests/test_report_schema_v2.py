@@ -109,6 +109,49 @@ def test_manual_only_fields_are_not_required_in_ai_generated_model():
     assert "diagnosis" not in dumped
 
 
+def test_ai_generated_model_rejects_unknown_manual_only_fields():
+    with pytest.raises(ValidationError):
+        ReportAIGeneratedV2.model_validate(
+            {
+                "chief_complaint_draft": {
+                    "label_zh": "主訴摘要",
+                    "value": "可能與近期壓力相關，仍需諮商師確認。",
+                    "source_type": "ai",
+                },
+                "formal_diagnosis_notes": "AI must not fill diagnosis",
+            }
+        )
+
+    with pytest.raises(ValidationError):
+        ReportAIGeneratedV2.model_validate(
+            {
+                "safety_plan": {
+                    "label_zh": "安全計畫",
+                    "value": "AI must not write safety plans",
+                    "source_type": "ai",
+                }
+            }
+        )
+
+
+def test_report_field_rejects_unknown_raw_or_manual_only_fields():
+    with pytest.raises(ValidationError):
+        ReportField(
+            label_zh="主訴摘要",
+            value="可能與壓力相關，仍需諮商師確認。",
+            source_type=ReportSourceType.AI,
+            raw_message_text="raw client text must not be accepted",
+        )
+
+    with pytest.raises(ValidationError):
+        ReportField(
+            label_zh="主訴摘要",
+            value="可能與壓力相關，仍需諮商師確認。",
+            source_type=ReportSourceType.AI,
+            medication="manual-only field must not be accepted",
+        )
+
+
 def test_evidence_refs_do_not_accept_raw_message_text():
     evidence = ReportEvidenceRefV2(
         turn_number=2,

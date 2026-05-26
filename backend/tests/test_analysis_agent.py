@@ -5,6 +5,7 @@ import anyio
 import backend.agents.analysis_agent as analysis_agent
 from backend.agents.analysis_agent import DISCLAIMER_TEXT, ConceptualizationReport
 from backend.agents.summary_agent import EmotionDetail, EmotionDimensions, TurnSummary
+from models.report_schema_v2 import ReportAIGeneratedV2, ReportManualInputV2
 from backend.tests.helpers import FakeLLMClient
 
 
@@ -64,6 +65,40 @@ def test_generate_report_with_insufficient_summaries_does_not_call_provider(
     assert result.emotion_pattern.peak_turn == 2
     assert result.has_crisis is True
     assert result.disclaimer == DISCLAIMER_TEXT
+
+
+def test_generate_report_v2_ai_draft_returns_conservative_schema_without_provider(
+    monkeypatch,
+):
+    def fail_if_provider_is_requested(provider):
+        raise AssertionError(f"provider should not be requested: {provider}")
+
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fail_if_provider_is_requested)
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[
+                {
+                    "id": "summary-1",
+                    "turn_number": 1,
+                    "summary": make_turn_summary(1, 5).model_dump(),
+                    "crisis_level": "none",
+                }
+            ],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    payload = result.model_dump(mode="json")
+    encoded = str(payload)
+    assert "formal_diagnosis_notes" not in encoded
+    assert "medication" not in encoded
+    assert "safety_plan" not in encoded
+    assert "legal" not in encoded
 
 
 def test_generate_report_uses_valid_provider_json_and_code_owned_disclaimer(

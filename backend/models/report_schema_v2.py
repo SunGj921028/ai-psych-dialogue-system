@@ -59,6 +59,8 @@ ReportSourceRefV2 = ReportEvidenceRefV2
 
 
 class ReportField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     label_zh: str
     value: FieldValue = None
     source_type: ReportSourceType = ReportSourceType.UNAVAILABLE
@@ -246,6 +248,8 @@ class ReportManualInputV2(BaseModel):
 
 
 class ReportAIGeneratedV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     chief_complaint_draft: ReportField = _field(
         "主訴摘要",
         source_type=ReportSourceType.AI,
