@@ -27,6 +27,9 @@ Current reality:
   `updateSessionTitle(caseId, sessionId, payload)`, which calls
   `PATCH /api/cases/{case_id}/sessions/{session_id}` with
   `{ title: string | null }`.
+- The frontend API layer exposes archive/unarchive helpers that call
+  `POST /api/cases/{case_id}/sessions/{session_id}/archive` and
+  `POST /api/cases/{case_id}/sessions/{session_id}/unarchive`.
 - ReportPage acts as a counselor review workspace integrated with the backend
   API. Report generation remains manual-only.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
@@ -49,6 +52,14 @@ Current reality:
 - Session titles are limited to 80 characters. Over-length titles show validation
   and do not call the API.
 - Failed saves show a friendly generic error and preserve the draft.
+- HistoryPage hides archived sessions by default.
+- HistoryPage provides an archive control with confirmation.
+- HistoryPage provides a `顯示已封存會談` toggle.
+- Archived sessions display an `已封存` badge when shown.
+- Archived sessions can be unarchived.
+- Archived sessions remain resumable and reportable when explicitly shown.
+- Rename/clear remains available for visible archived sessions.
+- No hard delete UI exists for sessions.
 - HistoryPage resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - HistoryPage report links use `/report/{caseId}?sessionId={sessionId}`.
 - SettingsPage is implemented as a static counselor-facing informational page.
@@ -98,6 +109,7 @@ Current reality:
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, session preview text, titles, drafts, and clinical content
   are not stored in browser storage.
+- Archive state and other session metadata are not stored in browser storage.
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
 - ConversationPage reads top-level nullable `crisis_level` from loaded session
@@ -120,7 +132,7 @@ Current reality:
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
   regenerated after leaving or reloading.
-- Deletion, PDF export, session deletion/archive, title search/filter, richer
+- PDF export, hard delete/session data-retention workflow, title search/filter, richer
   session metadata, optional charts/Recharts, runtime/provider status endpoint
   if needed, and MCP integration are not implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
@@ -138,7 +150,7 @@ Current reality:
 
 Remaining future behavior:
 
-- Complete deletion, session deletion/archive, title search/filter, richer
+- Complete hard delete/session data-retention policy, title search/filter, richer
   session metadata, optional latest/peak session crisis aggregate display,
   optional HistoryPage crisis-level display, Settings backend integration, and
   MCP-related UI only when the corresponding tasks are prioritized.
@@ -174,6 +186,10 @@ Coverage includes:
   rendering, title/fallback rendering, rename controls, save, clear, cancel,
   keyboard behavior, validation, error handling, single-row editing, and
   session navigation link behavior.
+- HistoryPage archive confirmation, show-archived toggle, archived badge,
+  unarchive behavior, archived-session resume/report links, rename compatibility
+  for visible archived sessions, archive/unarchive error handling, and storage
+  safety.
 - ReportPage back-to-conversation link preservation.
 - SettingsPage rendering, absence of secret/input controls, no API helper calls,
   no clinical sentinel persistence, and no new storage keys.
@@ -287,6 +303,13 @@ Responsibilities:
 - Display `session.title` as the primary session label when present.
 - Display `未命名會談` for untitled sessions.
 - Keep `session_id` visible as secondary metadata.
+- Hide archived sessions by default.
+- Provide a `顯示已封存會談` toggle that reloads or displays active plus archived
+  sessions.
+- Display an `已封存` badge for archived sessions.
+- Archive a session only after counselor confirmation.
+- Unarchive archived sessions.
+- Keep archived sessions resumable and reportable when explicitly shown.
 - Support inline manual title editing on one row at a time.
 - Provide an edit control, input, Save, Cancel, and Clear title action for the
   edited session row.
@@ -303,7 +326,7 @@ Responsibilities:
 Not currently implemented:
 
 - Case deletion.
-- Session deletion/archive.
+- Session hard delete.
 - Title search/filter.
 - Labels, report status, and richer session metadata.
 
@@ -370,14 +393,20 @@ Expected calls:
 
 - `GET /api/cases` to list cases.
 - `GET /api/cases/{case_id}/sessions` when a case is expanded.
+- `GET /api/cases/{case_id}/sessions?include_archived=true` when the counselor
+  enables the archived-session toggle.
 - `GET /api/cases/{case_id}` to inspect a selected case when the UI needs case
   detail.
 - `PATCH /api/cases/{case_id}/sessions/{session_id}` through
   `updateSessionTitle(caseId, sessionId, payload)` with
   `{ title: string | null }` when saving or clearing a session title.
+- `POST /api/cases/{case_id}/sessions/{session_id}/archive` when archiving after
+  confirmation.
+- `POST /api/cases/{case_id}/sessions/{session_id}/unarchive` when restoring an
+  archived session.
 
-Future calls may include case deletion, session deletion/archive, title
-search/filter, label, and report-status endpoints once implemented.
+Future calls may include case deletion, session hard delete, title search/filter,
+label, and report-status endpoints once implemented.
 
 ### SettingsPage
 
@@ -456,6 +485,7 @@ Notes:
 {
   session_id: 'session uuid',
   title: 'optional counselor-facing title or null',
+  archived_at: 'ISO-8601 UTC' | null,
   created_at: 'ISO-8601 UTC',
   updated_at: 'ISO-8601 UTC',
   last_activity_at: 'ISO-8601 UTC',
@@ -476,6 +506,8 @@ Notes:
   appear in HistoryPage when returned by the backend.
 - `title` is nullable safe operational metadata. Legacy/backfilled sessions
   return null, and HistoryPage falls back to `未命名會談` when no title is present.
+- `archived_at` is nullable safe operational metadata. `null` means active;
+  non-null means archived.
 - UI state must not include DB-internal `round`, raw `summary_json`, raw
   messages, full summaries, `key_statement`, themes, crisis reasons, report
   text, or latest/peak `crisis_level` aggregates.
@@ -657,6 +689,7 @@ Inherited constraints:
 - Browser `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content must not
   be written to browser storage.
+- Archive state must not be written to browser storage.
 - Use API data contracts rather than guessing backend internals.
 - Do not reference DB-internal `round` in UI code.
 
@@ -690,6 +723,11 @@ Current implemented state:
   trimmed saves, `{ title: null }` clearing, 80-character validation, Enter save,
   Escape cancel, single-row editing, friendly generic save errors, and draft
   preservation after failed saves.
+- HistoryPage hides archived sessions by default, archives only after
+  confirmation, provides the `顯示已封存會談` toggle, displays `已封存` badges for
+  archived sessions, supports unarchive, keeps visible archived sessions
+  resumable/reportable, and allows rename/clear for visible archived sessions.
+- No hard delete UI exists for sessions.
 - SettingsPage is a static counselor-facing informational page covering system
   purpose, safety boundaries, storage/privacy behavior, theme preference behavior,
   backend-managed model/service configuration, and counselor review reminders.
@@ -705,6 +743,7 @@ Current implemented state:
   reasons, and case notes are not stored in browser storage.
 - Session metadata, preview text, titles, drafts, and clinical content are not
   stored in browser storage.
+- Archive state is not stored in browser storage.
 - No title is stored in browser storage, generated by AI, or derived from raw
   messages, summaries, key statements, themes, crisis reasons, previews, or
   reports, notes, or other clinical content.
@@ -723,8 +762,9 @@ Current implemented state:
 Future behavior:
 
 - Keep UI state aligned with `backend/API_CONTRACT.md`.
-- Add deletion, session deletion/archive, title search/filter, labels, report
-  status, richer session metadata, optional runtime/provider status, and
+- Add hard delete only after a separate data-retention/privacy policy. Add title
+  search/filter, labels, report status, richer session metadata, optional
+  runtime/provider status, and
   MCP-related UI when prioritized.
 - Keep any future runtime/provider status endpoint secret-safe. Real provider
   settings UI remains out of scope unless explicitly designed.

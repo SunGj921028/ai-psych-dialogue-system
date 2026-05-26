@@ -51,7 +51,7 @@ mismatches.
 - FastAPI application in `backend/main.py`.
 - SQLite data layer in `backend/database/db.py` using `aiosqlite`.
 - Dedicated `sessions` table stores safe operational metadata only and supports
-  durable empty sessions.
+  durable empty sessions and archive-only lifecycle metadata.
 - Four implemented async agent modules in `backend/agents/`:
   - `crisis_agent.py`: crisis detection, Groq provider, fail-safe fallback.
   - `summary_agent.py`: per-turn JSON micro-summary, Groq provider.
@@ -76,6 +76,9 @@ mismatches.
 - HistoryPage supports inline counselor-entered session title rename/clear through
   the frontend `updateSessionTitle(caseId, sessionId, payload)` helper, which
   calls `PATCH /api/cases/{case_id}/sessions/{session_id}`.
+- HistoryPage implements archive-only session lifecycle: archived sessions are
+  hidden by default, can be shown with 「顯示已封存會談」, display 「已封存」, can be
+  unarchived, and remain resumable/reportable when explicitly shown.
 - SettingsPage is implemented as a static counselor-facing informational page
   covering system purpose, safety boundaries, storage/privacy behavior, theme
   preference behavior, backend-managed provider/model configuration, and
@@ -98,10 +101,10 @@ mismatches.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, drafts, and clinical content are not stored
   in browser storage.
-- PDF export, session deletion/archive, title search/filter, richer session
+- PDF export, hard delete/session data-retention workflow, title search/filter, richer session
   metadata, optional charts/Recharts, editable report workflow, optional
   secret-safe runtime/provider status, and MCP integration remain future work.
-- Session archive/delete, HistoryPage crisis-level display if desired, report
+- Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired, report
   status, persisted report drafts, and optional latest/peak session crisis
   aggregates remain future work.
 
@@ -116,8 +119,11 @@ The current active HTTP API includes:
 - `DELETE /api/cases/{case_id}`
 - `POST /api/cases/{case_id}/sessions`
 - `PATCH /api/cases/{case_id}/sessions/{session_id}`
+- `POST /api/cases/{case_id}/sessions/{session_id}/archive`
+- `POST /api/cases/{case_id}/sessions/{session_id}/unarchive`
 - `POST /api/conversation/turn`
 - `GET /api/cases/{case_id}/sessions`
+- `GET /api/cases/{case_id}/sessions?include_archived=true`
 - `GET /api/cases/{case_id}/sessions/{session_id}/messages`
 - `GET /api/cases/{case_id}/sessions/{session_id}/summaries`
 - `POST /api/reports/generate`
@@ -135,9 +141,9 @@ Recommended order:
 
 1. Keep repository context docs aligned with current code.
 2. Add deterministic pytest-style backend tests with mocked LLM clients as behavior expands.
-3. Complete remaining frontend workflows, including session deletion/archive,
-   title search/filter, report workflow completion, and focused frontend test
-   gaps.
+3. Complete remaining frontend workflows, including title search/filter, report
+   workflow completion, and focused frontend test gaps. Hard delete requires a
+   separate data-retention/privacy policy.
 4. Implement MCP Task 07 after API contracts, data access behavior, and frontend
    workflows are clear.
 
@@ -183,8 +189,8 @@ These are current code facts and should not be contradicted in new work:
 - `get_summaries_by_session()` and `get_latest_summaries()` return parsed summary
   data in a `summary` field, not raw `summary_json`.
 - A dedicated `sessions` table stores only `case_id`, `session_id`, `created_at`,
-  `updated_at`, `last_activity_at`, and nullable `title`; session rows cascade on
-  case delete.
+  `updated_at`, `last_activity_at`, nullable `title`, and nullable
+  `archived_at`; session rows cascade on case delete.
 - Session titles are nullable operational metadata only. They are not
   AI-generated and must not be derived from raw messages, summaries, key
   statements, themes, crisis reasons, previews, reports, notes, or other
@@ -193,8 +199,12 @@ These are current code facts and should not be contradicted in new work:
   manual title rename with shared normalization, nullable title clearing,
   `updated_at` changes, no `last_activity_at` changes, legacy/backfilled session
   support, and safe metadata responses.
+- Session archive/unarchive sets or clears nullable `archived_at`, updates
+  `updated_at`, does not update `last_activity_at`, preserves messages and
+  summaries, and has no hard-delete endpoint.
 - `GET /api/cases/{case_id}/sessions` includes explicit sessions plus legacy
-  message/summary-derived sessions and remains backward-compatible.
+  message/summary-derived sessions, excludes archived sessions by default, and
+  supports `include_archived=true` for active plus archived sessions.
 - `POST /api/conversation/turn` ensures/touches a session row without changing
   response shape or crisis logic.
 - `POST /api/conversation/turn` persists exact backend `crisis.crisis_level`
