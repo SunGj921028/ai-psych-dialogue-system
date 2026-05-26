@@ -272,4 +272,91 @@ describe('API helper contracts', () => {
     )
     expect(result).toEqual({ case_id: 'case-1', session_id: 'session-1' })
   })
+
+  test('getCurrentReportDraft calls the expected current draft path', async () => {
+    fakeApiClient.get.mockResolvedValue({
+      data: { draft_id: 'draft-1', case_id: 'case-1', session_id: 'session-1' },
+    })
+    const { getCurrentReportDraft } = await importClient()
+
+    const result = await getCurrentReportDraft('case-1', 'session-1')
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/report-drafts/current',
+    )
+    expect(result).toEqual({
+      draft_id: 'draft-1',
+      case_id: 'case-1',
+      session_id: 'session-1',
+    })
+  })
+
+  test('createReportDraft calls the expected path with an empty payload by default', async () => {
+    fakeApiClient.post.mockResolvedValue({
+      data: { draft_id: 'draft-1', case_id: 'case-1', session_id: 'session-1' },
+    })
+    const { createReportDraft } = await importClient()
+
+    const result = await createReportDraft('case-1', 'session-1')
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/report-drafts',
+      {},
+    )
+    expect(result).toEqual({
+      draft_id: 'draft-1',
+      case_id: 'case-1',
+      session_id: 'session-1',
+    })
+  })
+
+  test('createReportDraft passes optional payload through unchanged', async () => {
+    const payload = {
+      manual_input: {
+        basic_info: {
+          referral_source: { value: 'school counselor' },
+        },
+      },
+    }
+    fakeApiClient.post.mockResolvedValue({
+      data: { draft_id: 'draft-1', manual_input: payload.manual_input },
+    })
+    const { createReportDraft } = await importClient()
+
+    const result = await createReportDraft('case-1', 'session-1', payload)
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/report-drafts',
+      payload,
+    )
+    expect(result).toEqual({
+      draft_id: 'draft-1',
+      manual_input: payload.manual_input,
+    })
+  })
+
+  test('updateReportDraftManualInput calls PATCH with manual input payload', async () => {
+    const payload = {
+      manual_input: {
+        risk_assessment: {
+          safety_plan: { value: 'SYNTHETIC_SAFE_PLAN' },
+        },
+      },
+    }
+    fakeApiClient.patch.mockResolvedValue({
+      data: { draft_id: 'draft-1', manual_input: payload.manual_input },
+    })
+    const { updateReportDraftManualInput } = await importClient()
+
+    const result = await updateReportDraftManualInput('draft-1', payload)
+
+    expect(fakeApiClient.patch).toHaveBeenCalledWith(
+      '/api/report-drafts/draft-1/manual-input',
+      payload,
+    )
+    expect(result).toEqual({
+      draft_id: 'draft-1',
+      manual_input: payload.manual_input,
+    })
+  })
 })

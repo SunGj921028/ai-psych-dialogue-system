@@ -7,9 +7,12 @@ import { renderWithRouter } from '../test/renderWithRouter.jsx'
 import * as api from '../api/client.js'
 
 vi.mock('../api/client.js', () => ({
+  createReportDraft: vi.fn(),
   generateReport: vi.fn(),
+  getCurrentReportDraft: vi.fn(),
   getCase: vi.fn(),
   getSessionSummaries: vi.fn(),
+  updateReportDraftManualInput: vi.fn(),
 }))
 
 const caseId = 'case-1'
@@ -83,6 +86,79 @@ function makeReport() {
   }
 }
 
+function makeReportField(value, overrides = {}) {
+  return {
+    label_zh: overrides.label_zh ?? '測試欄位',
+    value,
+    source_type: overrides.source_type ?? 'manual',
+    missing_reason: overrides.missing_reason ?? null,
+    needs_review: overrides.needs_review ?? true,
+    evidence_refs: overrides.evidence_refs ?? [],
+  }
+}
+
+function makeManualInput(overrides = {}) {
+  return {
+    basic_info: {
+      session_date: makeReportField(overrides.sessionDate ?? '2026-05-21'),
+      session_count: makeReportField(overrides.sessionCount ?? '2'),
+      referral_source: makeReportField(
+        overrides.referralSource ?? 'SYNTHETIC_REFERRAL_SOURCE',
+        { missing_reason: 'no_data' },
+      ),
+      age_gender: makeReportField(overrides.ageGender ?? 'SYNTHETIC_AGE_GENDER'),
+      occupation_school_status: makeReportField(
+        overrides.occupationSchoolStatus ?? 'SYNTHETIC_OCCUPATION_STATUS',
+      ),
+      marital_family_status: makeReportField(
+        overrides.maritalFamilyStatus ?? 'SYNTHETIC_FAMILY_STATUS',
+      ),
+    },
+    problem_onset_course: {
+      client_understanding: makeReportField(
+        overrides.clientUnderstanding ?? 'SYNTHETIC_CLIENT_UNDERSTANDING',
+      ),
+    },
+    assessment_testing_data: makeReportField(
+      overrides.assessmentTestingData ?? 'SYNTHETIC_ASSESSMENT_DATA',
+    ),
+    risk_assessment: {
+      overall_risk_notes: makeReportField(
+        overrides.overallRiskNotes ?? 'SYNTHETIC_RISK_NOTES',
+      ),
+      safety_plan: makeReportField(overrides.safetyPlan ?? 'SYNTHETIC_SAFETY_PLAN'),
+    },
+  }
+}
+
+function makeReportDraft(overrides = {}) {
+  return {
+    schema_version: 'report_schema_v2',
+    draft_id: overrides.draftId ?? 'draft-1',
+    case_id: caseId,
+    session_id: sessionId,
+    status: 'manual_input_started',
+    manual_input: overrides.manualInput ?? makeManualInput(overrides),
+    ai_generated: null,
+    counselor_edits: null,
+    final_report: null,
+    source_refs: [],
+    safety_flags: {
+      has_crisis: false,
+      has_persisted_high_crisis: false,
+      contains_diagnostic_language_needing_review: false,
+      contains_manual_risk_input: false,
+      missing_required_manual_fields: true,
+    },
+    disclaimer: 'SYNTHETIC_BACKEND_DISCLAIMER',
+    created_at: '2026-05-20T00:00:00Z',
+    updated_at: overrides.updatedAt ?? '2026-05-20T00:00:00Z',
+    generated_at: null,
+    reviewed_at: null,
+    exported_at: null,
+  }
+}
+
 describe('ReportPage behavior', () => {
   beforeEach(() => {
     api.getCase.mockResolvedValue({
@@ -92,6 +168,11 @@ describe('ReportPage behavior', () => {
       note: null,
     })
     api.getSessionSummaries.mockResolvedValue([makeSummaryRow()])
+    api.getCurrentReportDraft.mockRejectedValue({
+      response: { status: 404 },
+    })
+    api.createReportDraft.mockResolvedValue(makeReportDraft())
+    api.updateReportDraftManualInput.mockResolvedValue(makeReportDraft())
     api.generateReport.mockResolvedValue(makeReport())
   })
 
@@ -102,6 +183,9 @@ describe('ReportPage behavior', () => {
     expect(screen.queryByRole('button')).not.toBeInTheDocument()
     expect(api.getCase).not.toHaveBeenCalled()
     expect(api.getSessionSummaries).not.toHaveBeenCalled()
+    expect(api.getCurrentReportDraft).not.toHaveBeenCalled()
+    expect(api.createReportDraft).not.toHaveBeenCalled()
+    expect(api.updateReportDraftManualInput).not.toHaveBeenCalled()
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 
@@ -111,11 +195,10 @@ describe('ReportPage behavior', () => {
     await waitFor(() => {
       expect(api.getCase).toHaveBeenCalledWith(caseId)
       expect(api.getSessionSummaries).toHaveBeenCalledWith(caseId, sessionId)
+      expect(api.getCurrentReportDraft).toHaveBeenCalledWith(caseId, sessionId)
     })
     expect(await screen.findByText('SYNTHETIC_SUMMARY_KEY')).toBeInTheDocument()
-    expect(
-      screen.getByText('目前草稿報告僅在本頁暫時顯示，離開或重新整理後需重新產生。'),
-    ).toBeInTheDocument()
+    expect(screen.getByText('目前 v1 AI 草稿產生')).toBeInTheDocument()
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 
@@ -135,7 +218,7 @@ describe('ReportPage behavior', () => {
     const user = userEvent.setup()
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    await user.click(screen.getAllByRole('button')[0])
+    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
 
     await waitFor(() => {
       expect(api.generateReport).toHaveBeenCalledWith({
@@ -149,7 +232,7 @@ describe('ReportPage behavior', () => {
     const user = userEvent.setup()
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    await user.click(screen.getAllByRole('button')[0])
+    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
 
     expect(await screen.findByText('SYNTHETIC_BACKEND_DISCLAIMER')).toBeInTheDocument()
   })
@@ -197,7 +280,7 @@ describe('ReportPage behavior', () => {
     const user = userEvent.setup()
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    await user.click(screen.getAllByRole('button')[0])
+    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
     await screen.findByText('SYNTHETIC_BACKEND_DISCLAIMER')
 
     const storedValues = [
@@ -208,6 +291,152 @@ describe('ReportPage behavior', () => {
     expect(storedValues).not.toContain('SYNTHETIC_SUMMARY_KEY')
     expect(storedValues).not.toContain('SYNTHETIC_CHIEF_COMPLAINT')
     expect(storedValues).not.toContain('SYNTHETIC_BACKEND_DISCLAIMER')
+  })
+
+  test('loads current draft when it exists and renders manual input values', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByDisplayValue('SYNTHETIC_REFERRAL_SOURCE')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_AGE_GENDER')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_OCCUPATION_STATUS')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_FAMILY_STATUS')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_CLIENT_UNDERSTANDING')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_ASSESSMENT_DATA')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_RISK_NOTES')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('SYNTHETIC_SAFETY_PLAN')).toBeInTheDocument()
+  })
+
+  test('missing current draft shows create state', async () => {
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('尚未建立 v2 手動資料草稿')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '建立 v2 手動資料草稿' }),
+    ).toBeInTheDocument()
+  })
+
+  test('Create Draft calls API and renders returned form', async () => {
+    const user = userEvent.setup()
+    api.createReportDraft.mockResolvedValue(makeReportDraft())
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(
+      await screen.findByRole('button', { name: '建立 v2 手動資料草稿' }),
+    )
+
+    expect(api.createReportDraft).toHaveBeenCalledWith(caseId, sessionId, {})
+    expect(await screen.findByDisplayValue('SYNTHETIC_SAFETY_PLAN')).toBeInTheDocument()
+  })
+
+  test('editing fields then saving calls PATCH with manual_input payload', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.updateReportDraftManualInput.mockResolvedValue(
+      makeReportDraft({ referralSource: 'UPDATED_REFERRAL_SOURCE' }),
+    )
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    const referralInput = await screen.findByLabelText('轉介來源')
+    await user.clear(referralInput)
+    await user.type(referralInput, 'UPDATED_REFERRAL_SOURCE')
+    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+
+    await waitFor(() => {
+      expect(api.updateReportDraftManualInput).toHaveBeenCalledWith(
+        'draft-1',
+        expect.objectContaining({
+          manual_input: expect.objectContaining({
+            basic_info: expect.objectContaining({
+              referral_source: expect.objectContaining({
+                value: 'UPDATED_REFERRAL_SOURCE',
+                missing_reason: 'no_data',
+              }),
+            }),
+          }),
+        }),
+      )
+    })
+    expect(api.generateReport).not.toHaveBeenCalled()
+  })
+
+  test('save success updates status and display', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.updateReportDraftManualInput.mockResolvedValue(
+      makeReportDraft({ safetyPlan: 'UPDATED_SAFETY_PLAN' }),
+    )
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    const safetyPlan = await screen.findByLabelText('安全計畫')
+    await user.clear(safetyPlan)
+    await user.type(safetyPlan, 'UPDATED_SAFETY_PLAN')
+    expect(screen.getByText('未儲存變更')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+
+    expect(await screen.findByText('已儲存')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('UPDATED_SAFETY_PLAN')).toBeInTheDocument()
+  })
+
+  test('save failure shows generic error and preserves typed values', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_MANUAL_INPUT_SAVE_SECRET'
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.updateReportDraftManualInput.mockRejectedValue(new Error(rawErrorSentinel))
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    const riskNotes = await screen.findByLabelText('正式風險評估備註')
+    await user.clear(riskNotes)
+    await user.type(riskNotes, 'UNSAVED_RISK_NOTES')
+    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+
+    expect(await screen.findByText('儲存失敗，請稍後再試')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('UNSAVED_RISK_NOTES')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+  })
+
+  test('draft load failure is sanitized and keeps v1 generation usable', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_DRAFT_LOAD_SECRET'
+    api.getCurrentReportDraft.mockRejectedValue(new Error(rawErrorSentinel))
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('無法載入 v2 手動資料草稿，請稍後再試。')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+
+    await user.click(screen.getByRole('button', { name: '產生 v1 AI 草稿' }))
+
+    await waitFor(() => {
+      expect(api.generateReport).toHaveBeenCalledWith({
+        case_id: caseId,
+        session_id: sessionId,
+      })
+    })
+  })
+
+  test('does not write manual input or report draft content to browser storage', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({ safetyPlan: 'SYNTHETIC_MANUAL_INPUT_SECRET' }),
+    )
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    const safetyPlan = await screen.findByLabelText('安全計畫')
+    await user.clear(safetyPlan)
+    await user.type(safetyPlan, 'SYNTHETIC_UNSAVED_DRAFT_SECRET')
+
+    const storedValues = [
+      ...Object.values(window.localStorage),
+      ...Object.values(window.sessionStorage),
+    ].join('\n')
+
+    expect(storedValues).not.toContain('SYNTHETIC_MANUAL_INPUT_SECRET')
+    expect(storedValues).not.toContain('SYNTHETIC_UNSAVED_DRAFT_SECRET')
+    expect(storedValues).not.toContain('draft-1')
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
   })
 })
 
@@ -220,6 +449,11 @@ describe('ReportPage error handling', () => {
       note: null,
     })
     api.getSessionSummaries.mockResolvedValue([makeSummaryRow()])
+    api.getCurrentReportDraft.mockRejectedValue({
+      response: { status: 404 },
+    })
+    api.createReportDraft.mockResolvedValue(makeReportDraft())
+    api.updateReportDraftManualInput.mockResolvedValue(makeReportDraft())
     api.generateReport.mockResolvedValue(makeReport())
   })
 
@@ -285,7 +519,7 @@ describe('ReportPage error handling', () => {
 
     expect(api.generateReport).not.toHaveBeenCalled()
 
-    await user.click(screen.getAllByRole('button')[0])
+    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
 
     await waitFor(() => {
       expect(api.generateReport).toHaveBeenCalledTimes(1)
