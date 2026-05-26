@@ -19,6 +19,7 @@ source code remains the implementation truth.
 | GET | `/api/cases/{case_id}` | implemented | Returns 404 when missing. |
 | DELETE | `/api/cases/{case_id}` | implemented | Deletes one case; DB cascades related rows. |
 | POST | `/api/cases/{case_id}/sessions` | implemented | Creates or returns durable safe session metadata. |
+| PATCH | `/api/cases/{case_id}/sessions/{session_id}` | implemented | Updates nullable counselor-entered session title metadata. |
 | POST | `/api/conversation/turn` | implemented | Runs conversation/crisis agents, persists messages and summary. |
 | GET | `/api/cases/{case_id}/sessions` | implemented | Returns explicit session metadata plus legacy derived sessions for a case. |
 | GET | `/api/cases/{case_id}/sessions/{session_id}/messages` | implemented | Returns messages with `turn_number`. |
@@ -335,6 +336,60 @@ Implementation notes:
 - `latest_summary_preview` must remain metadata-only and should be derived only
   from turn, emotion, and intensity when available.
 
+#### Update Case Session Title
+
+Status: implemented
+
+`PATCH /api/cases/{case_id}/sessions/{session_id}`
+
+Request:
+
+```json
+{
+  "title": "nullable counselor-facing title"
+}
+```
+
+Response:
+
+```json
+{
+  "session_id": "session uuid",
+  "title": "trimmed counselor-facing title or null",
+  "created_at": "ISO-8601 UTC",
+  "updated_at": "ISO-8601 UTC",
+  "last_activity_at": "ISO-8601 UTC",
+  "message_count": 0,
+  "summary_count": 0,
+  "last_turn_number": null,
+  "last_updated": "ISO-8601 UTC",
+  "has_crisis": false,
+  "latest_summary_preview": null
+}
+```
+
+Implementation notes:
+
+- Use `database.db.update_session_title(case_id, session_id, title)`.
+- The request body must include the `title` field, but the value may be null.
+- Null clears the title.
+- Empty or whitespace-only strings clear the title to null.
+- Valid strings are trimmed before storage.
+- Titles longer than 80 characters return 422.
+- Title normalization is shared with session creation behavior.
+- Rename updates `sessions.updated_at`.
+- Rename does not update `sessions.last_activity_at`.
+- Legacy message/summary-derived sessions can be renamed because the backend
+  backfills or ensures a durable `sessions` row before updating.
+- Return 404 if the case does not exist.
+- Return 404 if the session does not exist.
+- Return 500 with a generic non-leaking message on helper/DB failures.
+- The response shape matches the safe session metadata response and includes
+  nullable `title`.
+- Session titles remain counselor-entered operational metadata only. They must
+  not be AI-generated or derived from raw messages, summaries, key statements,
+  themes, crisis reasons, previews, reports, notes, or other clinical content.
+
 ### Session Messages
 
 #### Get Session Messages
@@ -459,12 +514,13 @@ Implementation notes:
 - Reuse `ConceptualizationReport` from `agents.analysis_agent`.
 - Do not let the LLM generate or override the fixed disclaimer.
 
-## Future Endpoints
+## Future Endpoints / Integrations
 
-These are not required for Task 09:
+These are not required for Task 09 or remain frontend integration work:
 
 - Latest summaries endpoint for dashboards.
-- PATCH session title endpoint for manual rename UI.
+- Frontend API helper and UI integration for the implemented PATCH session title
+  endpoint.
 - PDF export endpoint.
 - Prompt/settings management endpoints.
 - MCP-related HTTP bridge endpoints.
@@ -511,6 +567,18 @@ These are not required for Task 09:
 6. Return the current session metadata response shape, including nullable
    `title`.
 
+### Session Title Rename Flow
+
+1. Validate request shape; `title` is required but may be null.
+2. Confirm `case_id` exists.
+3. Confirm the session exists, including legacy message/summary-derived sessions
+   that can be backfilled into a durable session row before update.
+4. Normalize null, empty, or whitespace-only `title` to null; trim valid strings;
+   reject titles longer than 80 characters with 422.
+5. Update the session title and `sessions.updated_at` without touching
+   `sessions.last_activity_at`.
+6. Return the safe session metadata response shape, including nullable `title`.
+
 ### Report Generation Flow
 
 1. Validate request and confirm `case_id` exists.
@@ -544,6 +612,9 @@ These are not required for Task 09:
   report text.
 - Session rows are linked to cases and cascade on case delete.
 - Existing message/summary-derived sessions are backfilled idempotently.
+- `update_session_title(case_id, session_id, title)` updates nullable session
+  title metadata with the shared normalization rules, updates `sessions.updated_at`,
+  and does not update `sessions.last_activity_at`.
 - Session metadata responses must not expose raw messages, summaries, raw
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
   DB-internal `round`, or exact `crisis_level`.
@@ -552,13 +623,17 @@ These are not required for Task 09:
 ## Error Handling Expectations
 
 - Missing case: return 404.
+- Missing session for title rename: return 404.
 - Session creation for an existing same-case/session pair is idempotent and
   returns existing metadata without overwriting title.
 - Over-length session title: reject with a validation error.
+- PATCH session title requires a `title` field; invalid request shape returns 422.
+- PATCH session title normalizes null or whitespace-only title to null and trims
+  valid title strings.
 - Session listing for an existing case with no explicit or derived sessions:
   return `[]`.
-- Session creation/listing helper failure: return 500 with a generic message that
-  does not leak clinical content or implementation details.
+- Session creation/listing/title-update helper failure: return 500 with a generic
+  message that does not leak clinical content or implementation details.
 - Missing session data for report generation: return a valid insufficient-data report
   if the analysis agent supports that path, or return 404 only if the case/session is
   clearly invalid. Prefer preserving existing `analysis_agent.generate_report()` behavior.
