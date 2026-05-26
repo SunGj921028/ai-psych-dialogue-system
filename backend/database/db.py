@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     updated_at TEXT NOT NULL,
     last_activity_at TEXT,
     title TEXT,
+    archived_at TEXT,
     PRIMARY KEY (case_id, session_id),
     FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
 );
@@ -152,6 +153,7 @@ async def init_db() -> None:
         await db.execute("PRAGMA journal_mode=WAL")
         await db.executescript(SCHEMA)
         await _migrate_summaries_crisis_level(db)
+        await _migrate_sessions_archived_at(db)
         await _backfill_sessions(db)
         await db.commit()
 
@@ -173,11 +175,22 @@ async def _migrate_summaries_crisis_level(db: aiosqlite.Connection) -> None:
     )
 
 
+async def _migrate_sessions_archived_at(db: aiosqlite.Connection) -> None:
+    cursor = await db.execute("PRAGMA table_info(sessions)")
+    rows = await cursor.fetchall()
+    column_names = {row["name"] for row in rows}
+    if "archived_at" in column_names:
+        return
+
+    await db.execute("ALTER TABLE sessions ADD COLUMN archived_at TEXT")
+
+
 async def _backfill_sessions(db: aiosqlite.Connection) -> None:
     await db.execute(
         """
         INSERT OR IGNORE INTO sessions (
-            case_id, session_id, created_at, updated_at, last_activity_at, title
+            case_id, session_id, created_at, updated_at, last_activity_at,
+            title, archived_at
         )
         WITH activity AS (
             SELECT case_id, session_id, created_at FROM messages
@@ -190,7 +203,8 @@ async def _backfill_sessions(db: aiosqlite.Connection) -> None:
             MIN(created_at) AS created_at,
             MAX(created_at) AS updated_at,
             MAX(created_at) AS last_activity_at,
-            NULL AS title
+            NULL AS title,
+            NULL AS archived_at
         FROM activity
         GROUP BY case_id, session_id
         """
@@ -250,118 +264,91 @@ async def _get_session_metadata(
         cur = await db.execute(
             """
             SELECT
-                ? AS session_id,
+                :session_id AS session_id,
                 (
                     SELECT created_at
                     FROM sessions
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS session_created_at,
                 (
                     SELECT updated_at
                     FROM sessions
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS session_updated_at,
                 (
                     SELECT last_activity_at
                     FROM sessions
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS session_last_activity_at,
                 (
                     SELECT title
                     FROM sessions
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS session_title,
+                (
+                    SELECT archived_at
+                    FROM sessions
+                    WHERE case_id = :case_id AND session_id = :session_id
+                ) AS session_archived_at,
                 (
                     SELECT COUNT(*)
                     FROM messages
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS message_count,
                 (
                     SELECT COUNT(*)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS summary_count,
                 (
                     SELECT MAX(round)
                     FROM messages
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS message_last_turn,
                 (
                     SELECT MAX(round)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS summary_last_turn,
                 (
                     SELECT MAX(created_at)
                     FROM messages
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS message_last_updated,
                 (
                     SELECT MAX(created_at)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS summary_last_updated,
                 (
                     SELECT COALESCE(MAX(crisis_flag), 0)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS has_crisis,
                 (
                     SELECT summary_json
                     FROM summaries
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                     ORDER BY created_at DESC, round DESC
                     LIMIT 1
                 ) AS latest_summary_json,
                 EXISTS (
                     SELECT 1
                     FROM sessions
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS has_session_row,
                 EXISTS (
                     SELECT 1
                     FROM messages
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS has_message_row,
                 EXISTS (
                     SELECT 1
                     FROM summaries
-                    WHERE case_id = ? AND session_id = ?
+                    WHERE case_id = :case_id AND session_id = :session_id
                 ) AS has_summary_row
             """,
-            (
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-                case_id,
-                session_id,
-            ),
+            {"case_id": case_id, "session_id": session_id},
         )
         row = await cur.fetchone()
 
@@ -395,6 +382,7 @@ def _session_metadata_from_row(row: aiosqlite.Row) -> dict:
     return {
         "session_id": row["session_id"],
         "title": row["session_title"],
+        "archived_at": row["session_archived_at"],
         "message_count": int(row["message_count"] or 0),
         "summary_count": int(row["summary_count"] or 0),
         "last_turn_number": max(message_last_turn, summary_last_turn),
@@ -418,9 +406,10 @@ async def create_session(
         await db.execute(
             """
             INSERT OR IGNORE INTO sessions (
-                case_id, session_id, created_at, updated_at, last_activity_at, title
+                case_id, session_id, created_at, updated_at, last_activity_at,
+                title, archived_at
             )
-            VALUES (?, ?, ?, ?, NULL, ?)
+            VALUES (?, ?, ?, ?, NULL, ?, NULL)
             """,
             (case_id, session_id, created_at, created_at, title),
         )
@@ -459,6 +448,43 @@ async def update_session_title(
         return None
 
     return await get_session(case_id, session_id)
+
+
+async def _update_session_archive_state(
+    case_id: str,
+    session_id: str,
+    archive: bool,
+) -> dict | None:
+    updated_at = _now_iso()
+    archived_at = updated_at if archive else None
+
+    async with get_db() as db:
+        await _backfill_sessions(db)
+        await db.execute(
+            """
+            UPDATE sessions
+            SET archived_at = ?, updated_at = ?
+            WHERE case_id = ? AND session_id = ?
+            """,
+            (archived_at, updated_at, case_id, session_id),
+        )
+        cur = await db.execute("SELECT changes() AS n")
+        row = await cur.fetchone()
+        changed = int(row["n"]) if row else 0
+        await db.commit()
+
+    if changed == 0:
+        return None
+
+    return await get_session(case_id, session_id)
+
+
+async def archive_session(case_id: str, session_id: str) -> dict | None:
+    return await _update_session_archive_state(case_id, session_id, True)
+
+
+async def unarchive_session(case_id: str, session_id: str) -> dict | None:
+    return await _update_session_archive_state(case_id, session_id, False)
 
 
 async def get_session(case_id: str, session_id: str) -> dict | None:
@@ -662,104 +688,98 @@ async def get_summaries_by_session(case_id: str, session_id: str) -> list[dict]:
     return [_parse_summary_row(r) for r in rows]
 
 
-async def get_session_metadata_by_case(case_id: str) -> list[dict]:
+async def get_session_metadata_by_case(
+    case_id: str,
+    include_archived: bool = False,
+) -> list[dict]:
     async with get_db() as db:
         cur = await db.execute(
             """
             WITH session_ids AS (
-                SELECT session_id FROM sessions WHERE case_id = ?
+                SELECT session_id FROM sessions WHERE case_id = :case_id
                 UNION
-                SELECT session_id FROM messages WHERE case_id = ?
+                SELECT session_id FROM messages WHERE case_id = :case_id
                 UNION
-                SELECT session_id FROM summaries WHERE case_id = ?
+                SELECT session_id FROM summaries WHERE case_id = :case_id
             )
             SELECT
                 session_ids.session_id,
                 (
                     SELECT created_at
                     FROM sessions
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS session_created_at,
                 (
                     SELECT updated_at
                     FROM sessions
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS session_updated_at,
                 (
                     SELECT last_activity_at
                     FROM sessions
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS session_last_activity_at,
                 (
                     SELECT title
                     FROM sessions
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS session_title,
+                (
+                    SELECT archived_at
+                    FROM sessions
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
+                ) AS session_archived_at,
                 (
                     SELECT COUNT(*)
                     FROM messages
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS message_count,
                 (
                     SELECT COUNT(*)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS summary_count,
                 (
                     SELECT MAX(round)
                     FROM messages
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS message_last_turn,
                 (
                     SELECT MAX(round)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS summary_last_turn,
                 (
                     SELECT MAX(created_at)
                     FROM messages
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS message_last_updated,
                 (
                     SELECT MAX(created_at)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS summary_last_updated,
                 (
                     SELECT COALESCE(MAX(crisis_flag), 0)
                     FROM summaries
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                 ) AS has_crisis,
                 (
                     SELECT summary_json
                     FROM summaries
-                    WHERE case_id = ? AND session_id = session_ids.session_id
+                    WHERE case_id = :case_id AND session_id = session_ids.session_id
                     ORDER BY created_at DESC, round DESC
                     LIMIT 1
                 ) AS latest_summary_json
             FROM session_ids
             """,
-            (
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-                case_id,
-            ),
+            {"case_id": case_id},
         )
         rows = await cur.fetchall()
 
     sessions = [_session_metadata_from_row(row) for row in rows]
+    if not include_archived:
+        sessions = [session for session in sessions if session["archived_at"] is None]
 
     return sorted(
         sessions,

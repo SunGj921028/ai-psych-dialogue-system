@@ -44,8 +44,9 @@ export async function getSessionMessages(caseId, sessionId) {
   return response.data
 }
 
-export async function listCaseSessions(caseId) {
-  const response = await apiClient.get(`/api/cases/${caseId}/sessions`)
+export async function listCaseSessions(caseId, options = {}) {
+  const query = options.includeArchived ? '?include_archived=true' : ''
+  const response = await apiClient.get(`/api/cases/${caseId}/sessions${query}`)
   return response.data
 }
 
@@ -61,6 +62,20 @@ export async function updateSessionTitle(caseId, sessionId, payload) {
   const response = await apiClient.patch(
     `/api/cases/${caseId}/sessions/${sessionId}`,
     payload,
+  )
+  return response.data
+}
+
+export async function archiveSession(caseId, sessionId) {
+  const response = await apiClient.post(
+    `/api/cases/${caseId}/sessions/${sessionId}/archive`,
+  )
+  return response.data
+}
+
+export async function unarchiveSession(caseId, sessionId) {
+  const response = await apiClient.post(
+    `/api/cases/${caseId}/sessions/${sessionId}/unarchive`,
   )
   return response.data
 }

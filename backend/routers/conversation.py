@@ -15,6 +15,7 @@ from agents.summary_agent import TurnSummary, generate_summary
 from database.db import (
     add_message,
     add_summary,
+    archive_session,
     create_session,
     ensure_session,
     get_case,
@@ -23,6 +24,7 @@ from database.db import (
     get_summaries_by_session,
     normalize_session_title,
     touch_session,
+    unarchive_session,
     update_session_title,
 )
 
@@ -71,6 +73,7 @@ class SummaryRowResponse(BaseModel):
 class SessionMetadataResponse(BaseModel):
     session_id: str
     title: str | None = None
+    archived_at: str | None = None
     message_count: int
     summary_count: int
     last_turn_number: int
@@ -112,10 +115,16 @@ async def _ensure_case_exists(case_id: str) -> None:
     "/cases/{case_id}/sessions",
     response_model=list[SessionMetadataResponse],
 )
-async def list_case_sessions_route(case_id: str) -> list[dict]:
+async def list_case_sessions_route(
+    case_id: str,
+    include_archived: bool = False,
+) -> list[dict]:
     await _ensure_case_exists(case_id)
     try:
-        return await get_session_metadata_by_case(case_id)
+        return await get_session_metadata_by_case(
+            case_id,
+            include_archived=include_archived,
+        )
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to list sessions") from exc
 
@@ -157,6 +166,40 @@ async def update_session_title_route(
         )
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Failed to update session") from exc
+
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return session
+
+
+@router.post(
+    "/cases/{case_id}/sessions/{session_id}/archive",
+    response_model=SessionMetadataResponse,
+)
+async def archive_session_route(case_id: str, session_id: str) -> dict:
+    await _ensure_case_exists(case_id)
+    try:
+        session = await archive_session(case_id, session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to archive session") from exc
+
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return session
+
+
+@router.post(
+    "/cases/{case_id}/sessions/{session_id}/unarchive",
+    response_model=SessionMetadataResponse,
+)
+async def unarchive_session_route(case_id: str, session_id: str) -> dict:
+    await _ensure_case_exists(case_id)
+    try:
+        session = await unarchive_session(case_id, session_id)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Failed to unarchive session") from exc
 
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")

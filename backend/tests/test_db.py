@@ -164,6 +164,83 @@ def _create_legacy_database_without_sessions(db_path: Path, case_id: str) -> Non
         conn.commit()
 
 
+def _create_legacy_database_with_sessions_without_archived_at(
+    db_path: Path,
+    case_id: str,
+) -> None:
+    with sqlite3.connect(db_path) as conn:
+        conn.executescript(
+            """
+            PRAGMA foreign_keys=ON;
+
+            CREATE TABLE cases (
+                id TEXT PRIMARY KEY,
+                code_name TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                note TEXT
+            );
+
+            CREATE TABLE messages (
+                id TEXT PRIMARY KEY,
+                case_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                round INTEGER NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                CHECK (role IN ('user', 'assistant')),
+                FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE summaries (
+                id TEXT PRIMARY KEY,
+                case_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                round INTEGER NOT NULL,
+                summary_json TEXT NOT NULL,
+                crisis_flag INTEGER NOT NULL DEFAULT 0,
+                crisis_level TEXT CHECK (
+                    crisis_level IN ('none', 'low', 'high') OR crisis_level IS NULL
+                ),
+                created_at TEXT NOT NULL,
+                FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE sessions (
+                case_id TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                last_activity_at TEXT,
+                title TEXT,
+                PRIMARY KEY (case_id, session_id),
+                FOREIGN KEY (case_id) REFERENCES cases (id) ON DELETE CASCADE
+            );
+            """
+        )
+        conn.execute(
+            "INSERT INTO cases (id, code_name, created_at, note) VALUES (?, ?, ?, ?)",
+            (case_id, "LEGACY", "2026-05-20T00:00:00+00:00", None),
+        )
+        conn.execute(
+            """
+            INSERT INTO sessions (
+                case_id, session_id, created_at, updated_at, last_activity_at, title
+            )
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (
+                case_id,
+                "legacy-session",
+                "2026-05-20T00:00:00+00:00",
+                "2026-05-20T00:00:01+00:00",
+                "2026-05-20T00:00:01+00:00",
+                "Legacy title",
+            ),
+        )
+        conn.commit()
+
+
 async def _table_names() -> set[str]:
     async with db_layer.get_db() as conn:
         cursor = await conn.execute(
@@ -195,6 +272,34 @@ async def _raw_session_count(case_id: str) -> int:
         cursor = await conn.execute(
             "SELECT COUNT(*) AS n FROM sessions WHERE case_id = ?",
             (case_id,),
+        )
+        row = await cursor.fetchone()
+    return int(row["n"])
+
+
+async def _raw_message_count(case_id: str, session_id: str) -> int:
+    async with db_layer.get_db() as conn:
+        cursor = await conn.execute(
+            """
+            SELECT COUNT(*) AS n
+            FROM messages
+            WHERE case_id = ? AND session_id = ?
+            """,
+            (case_id, session_id),
+        )
+        row = await cursor.fetchone()
+    return int(row["n"])
+
+
+async def _raw_summary_count(case_id: str, session_id: str) -> int:
+    async with db_layer.get_db() as conn:
+        cursor = await conn.execute(
+            """
+            SELECT COUNT(*) AS n
+            FROM summaries
+            WHERE case_id = ? AND session_id = ?
+            """,
+            (case_id, session_id),
         )
         row = await cursor.fetchone()
     return int(row["n"])
@@ -233,6 +338,7 @@ def test_init_db_creates_required_tables_and_preserves_wal(initialized_db):
     assert initialized_db.exists()
     assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
     assert "crisis_level" in anyio.run(_table_columns, "summaries")
+    assert "archived_at" in anyio.run(_table_columns, "sessions")
     assert anyio.run(_journal_mode) == "wal"
 
 
@@ -251,6 +357,7 @@ def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path
 
     session = anyio.run(db_layer.get_session, case_id, "legacy-session")
     assert session["session_id"] == "legacy-session"
+    assert session["archived_at"] is None
     assert session["message_count"] == 1
     assert session["summary_count"] == 1
     assert session["last_turn_number"] == 3
@@ -259,6 +366,20 @@ def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path
     summaries = anyio.run(db_layer.get_summaries_by_session, case_id, "legacy-session")
     assert summaries[0]["crisis_level"] is None
     assert session["latest_summary_preview"] == "第 3 輪 · 主要情緒：焦慮 · 強度 6/10"
+
+
+def test_init_db_migrates_existing_sessions_archived_at_column(tmp_path, monkeypatch):
+    db_path = tmp_path / "legacy-with-sessions.db"
+    case_id = "legacy-case"
+    _create_legacy_database_with_sessions_without_archived_at(db_path, case_id)
+    monkeypatch.setenv("DATABASE_PATH", str(db_path))
+
+    anyio.run(db_layer.init_db)
+    anyio.run(db_layer.init_db)
+
+    assert "archived_at" in anyio.run(_table_columns, "sessions")
+    raw_session = anyio.run(_raw_session_row, case_id, "legacy-session")
+    assert raw_session["archived_at"] is None
 
 
 def test_case_crud_uses_current_missing_case_behavior(initialized_db):
@@ -288,6 +409,7 @@ def test_create_session_creates_empty_durable_session_metadata(initialized_db):
 
     assert session["session_id"]
     assert session["title"] is None
+    assert session["archived_at"] is None
     assert session["message_count"] == 0
     assert session["summary_count"] == 0
     assert session["last_turn_number"] == 0
@@ -531,6 +653,180 @@ def test_ensure_session_creates_once_and_touch_updates_activity(initialized_db):
     )
 
 
+def test_archive_session_sets_archived_at_and_preserves_activity(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-archive", None)
+    anyio.run(
+        _set_session_timestamps,
+        case["id"],
+        "session-archive",
+        "2000-01-01T00:00:00+00:00",
+        "2000-01-01T00:00:00+00:00",
+        "2000-01-01T00:05:00+00:00",
+    )
+
+    archived = anyio.run(db_layer.archive_session, case["id"], "session-archive")
+    raw_session = anyio.run(_raw_session_row, case["id"], "session-archive")
+
+    assert archived["archived_at"]
+    assert raw_session["archived_at"] == archived["archived_at"]
+    assert raw_session["updated_at"] == archived["archived_at"]
+    assert raw_session["last_activity_at"] == "2000-01-01T00:05:00+00:00"
+    assert archived["last_updated"] == raw_session["updated_at"]
+
+
+def test_unarchive_session_clears_archived_at_and_preserves_activity(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-unarchive", None)
+    anyio.run(
+        _set_session_timestamps,
+        case["id"],
+        "session-unarchive",
+        "2000-01-01T00:00:00+00:00",
+        "2000-01-01T00:00:00+00:00",
+        "2000-01-01T00:05:00+00:00",
+    )
+    anyio.run(db_layer.archive_session, case["id"], "session-unarchive")
+
+    unarchived = anyio.run(db_layer.unarchive_session, case["id"], "session-unarchive")
+    raw_session = anyio.run(_raw_session_row, case["id"], "session-unarchive")
+
+    assert unarchived["archived_at"] is None
+    assert raw_session["archived_at"] is None
+    assert raw_session["updated_at"] != "2000-01-01T00:00:00+00:00"
+    assert raw_session["last_activity_at"] == "2000-01-01T00:05:00+00:00"
+    assert unarchived["last_updated"] == raw_session["updated_at"]
+
+
+def test_archive_session_backfills_legacy_derived_session(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "legacy-derived-archive",
+        1,
+        "user",
+        "SYNTHETIC_LEGACY_ARCHIVE_MESSAGE_SHOULD_NOT_LEAK",
+    )
+
+    assert anyio.run(_raw_session_count, case["id"]) == 0
+
+    archived = anyio.run(
+        db_layer.archive_session,
+        case["id"],
+        "legacy-derived-archive",
+    )
+
+    assert archived["archived_at"]
+    assert archived["message_count"] == 1
+    assert anyio.run(_raw_session_count, case["id"]) == 1
+
+
+def test_archive_session_returns_none_for_missing_session(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    assert anyio.run(db_layer.archive_session, case["id"], "missing-session") is None
+    assert anyio.run(db_layer.unarchive_session, case["id"], "missing-session") is None
+
+
+def test_session_metadata_excludes_archived_by_default_and_can_include_archived(
+    initialized_db,
+):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "active-session", None)
+    anyio.run(db_layer.create_session, case["id"], "archived-session", None)
+    anyio.run(db_layer.archive_session, case["id"], "archived-session")
+
+    default_sessions = anyio.run(db_layer.get_session_metadata_by_case, case["id"])
+    all_sessions = anyio.run(
+        db_layer.get_session_metadata_by_case,
+        case["id"],
+        True,
+    )
+
+    assert [session["session_id"] for session in default_sessions] == [
+        "active-session"
+    ]
+    assert {session["session_id"] for session in all_sessions} == {
+        "active-session",
+        "archived-session",
+    }
+    archived = next(
+        session for session in all_sessions if session["session_id"] == "archived-session"
+    )
+    assert archived["archived_at"]
+
+
+def test_archive_and_unarchive_preserve_messages_and_summaries(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(db_layer.create_session, case["id"], "session-preserve", None)
+    anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "session-preserve",
+        1,
+        "user",
+        "SYNTHETIC_ARCHIVED_PRIVATE_MESSAGE_SHOULD_NOT_LEAK",
+    )
+    anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-preserve",
+        1,
+        _safe_preview_summary_json(
+            1,
+            key_statement="SYNTHETIC_ARCHIVED_KEY_STATEMENT_SHOULD_NOT_LEAK",
+        ),
+        False,
+    )
+
+    anyio.run(db_layer.archive_session, case["id"], "session-preserve")
+    anyio.run(db_layer.unarchive_session, case["id"], "session-preserve")
+
+    assert anyio.run(_raw_message_count, case["id"], "session-preserve") == 1
+    assert anyio.run(_raw_summary_count, case["id"], "session-preserve") == 1
+    assert len(anyio.run(db_layer.get_messages_by_session, case["id"], "session-preserve")) == 1
+    assert len(anyio.run(db_layer.get_summaries_by_session, case["id"], "session-preserve")) == 1
+
+
+def test_archive_session_metadata_does_not_leak_sensitive_fields(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+    anyio.run(
+        db_layer.add_message,
+        case["id"],
+        "session-safe-archive",
+        1,
+        "user",
+        "SYNTHETIC_ARCHIVE_PRIVATE_MESSAGE_SHOULD_NOT_LEAK",
+    )
+    anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-safe-archive",
+        1,
+        _safe_preview_summary_json(
+            1,
+            key_statement="SYNTHETIC_ARCHIVE_KEY_STATEMENT_SHOULD_NOT_LEAK",
+            crisis_flag=True,
+        ),
+        True,
+    )
+
+    archived = anyio.run(
+        db_layer.archive_session,
+        case["id"],
+        "session-safe-archive",
+    )
+
+    serialized = json.dumps(archived, ensure_ascii=False)
+    assert archived["archived_at"]
+    assert "round" not in serialized
+    assert "summary_json" not in serialized
+    assert "SYNTHETIC_ARCHIVE_PRIVATE_MESSAGE_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_ARCHIVE_KEY_STATEMENT_SHOULD_NOT_LEAK" not in serialized
+    assert "SYNTHETIC_THEME_SHOULD_NOT_LEAK" not in serialized
+
+
 def test_session_metadata_includes_explicit_empty_sessions(initialized_db):
     case = anyio.run(db_layer.create_case, "A001")
     created = anyio.run(db_layer.create_session, case["id"], "empty-session", None)
@@ -541,6 +837,7 @@ def test_session_metadata_includes_explicit_empty_sessions(initialized_db):
         {
             "session_id": "empty-session",
             "title": None,
+            "archived_at": None,
             "message_count": 0,
             "summary_count": 0,
             "last_turn_number": 0,
@@ -604,6 +901,7 @@ def test_session_metadata_combines_explicit_empty_and_legacy_derived_sessions(in
     ]
     assert sessions[0]["message_count"] == 0
     assert sessions[0]["title"] is None
+    assert sessions[0]["archived_at"] is None
     assert sessions[0]["summary_count"] == 0
     assert sessions[0]["last_turn_number"] == 0
     assert sessions[0]["last_updated"] == "2026-05-20T00:00:03+00:00"
@@ -612,6 +910,7 @@ def test_session_metadata_combines_explicit_empty_and_legacy_derived_sessions(in
 
     assert sessions[1]["message_count"] == 1
     assert sessions[1]["title"] is None
+    assert sessions[1]["archived_at"] is None
     assert sessions[1]["summary_count"] == 1
     assert sessions[1]["last_turn_number"] == 5
     assert sessions[1]["last_updated"] == "2026-05-20T00:00:02+00:00"
