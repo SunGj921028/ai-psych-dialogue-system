@@ -519,8 +519,6 @@ Implementation notes:
 These are not required for Task 09 or remain frontend integration work:
 
 - Latest summaries endpoint for dashboards.
-- Frontend API helper and UI integration for the implemented PATCH session title
-  endpoint.
 - PDF export endpoint.
 - Prompt/settings management endpoints.
 - MCP-related HTTP bridge endpoints.
@@ -529,6 +527,9 @@ These are not required for Task 09 or remain frontend integration work:
 
 - The frontend API helper `createSession(caseId, payload = {})` calls
   `POST /api/cases/{case_id}/sessions`.
+- The frontend API helper `updateSessionTitle(caseId, sessionId, payload)` calls
+  `PATCH /api/cases/{case_id}/sessions/{session_id}` with
+  `{ title: string | null }`.
 - Normal frontend-created sessions omit `session_id` and use the backend returned
   `session_id`.
 - Backend report generation receives `session_id` in the
