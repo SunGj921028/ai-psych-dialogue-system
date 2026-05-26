@@ -176,6 +176,13 @@ async def _table_names() -> set[str]:
     return {row["name"] for row in rows}
 
 
+async def _table_columns(table_name: str) -> set[str]:
+    async with db_layer.get_db() as conn:
+        cursor = await conn.execute(f"PRAGMA table_info({table_name})")
+        rows = await cursor.fetchall()
+    return {row["name"] for row in rows}
+
+
 async def _journal_mode() -> str:
     async with db_layer.get_db() as conn:
         cursor = await conn.execute("PRAGMA journal_mode")
@@ -225,6 +232,7 @@ async def _set_session_timestamps(
 def test_init_db_creates_required_tables_and_preserves_wal(initialized_db):
     assert initialized_db.exists()
     assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
+    assert "crisis_level" in anyio.run(_table_columns, "summaries")
     assert anyio.run(_journal_mode) == "wal"
 
 
@@ -238,6 +246,7 @@ def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path
     anyio.run(db_layer.init_db)
 
     assert anyio.run(_table_names) == {"cases", "messages", "summaries", "sessions"}
+    assert "crisis_level" in anyio.run(_table_columns, "summaries")
     assert anyio.run(_raw_session_count, case_id) == 1
 
     session = anyio.run(db_layer.get_session, case_id, "legacy-session")
@@ -247,6 +256,8 @@ def test_init_db_backfills_legacy_sessions_without_overwriting_metadata(tmp_path
     assert session["last_turn_number"] == 3
     assert session["last_updated"] == "2026-05-20T00:00:04+00:00"
     assert session["has_crisis"] is True
+    summaries = anyio.run(db_layer.get_summaries_by_session, case_id, "legacy-session")
+    assert summaries[0]["crisis_level"] is None
     assert session["latest_summary_preview"] == "第 3 輪 · 主要情緒：焦慮 · 強度 6/10"
 
 
@@ -639,6 +650,7 @@ def test_summaries_are_persisted_ordered_parsed_and_publicly_mapped(initialized_
         2,
         _summary_json(2, crisis_flag=True),
         True,
+        "high",
     )
     anyio.run(
         db_layer.add_summary,
@@ -653,11 +665,71 @@ def test_summaries_are_persisted_ordered_parsed_and_publicly_mapped(initialized_
 
     assert [summary["turn_number"] for summary in summaries] == [1, 2]
     assert [summary["crisis_flag"] for summary in summaries] == [False, True]
+    assert [summary["crisis_level"] for summary in summaries] == [None, "high"]
     assert summaries[0]["summary"]["turn_number"] == 1
     assert summaries[1]["summary"]["turn_number"] == 2
     assert all("round" not in summary for summary in summaries)
     assert all("summary_json" not in summary for summary in summaries)
     assert all(isinstance(summary["summary"], dict) for summary in summaries)
+
+
+@pytest.mark.parametrize("level", ["none", "low", "high"])
+def test_add_summary_persists_allowed_crisis_levels(initialized_db, level):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    summary = anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-crisis-levels",
+        1,
+        _summary_json(1, crisis_flag=level != "none"),
+        level != "none",
+        level,
+    )
+
+    assert summary["crisis_level"] == level
+    summaries = anyio.run(
+        db_layer.get_summaries_by_session,
+        case["id"],
+        "session-crisis-levels",
+    )
+    assert summaries[0]["crisis_level"] == level
+
+
+def test_add_summary_omitted_crisis_level_remains_null(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    summary = anyio.run(
+        db_layer.add_summary,
+        case["id"],
+        "session-null-crisis-level",
+        1,
+        _summary_json(1, crisis_flag=True),
+        True,
+    )
+
+    assert summary["crisis_level"] is None
+    summaries = anyio.run(
+        db_layer.get_summaries_by_session,
+        case["id"],
+        "session-null-crisis-level",
+    )
+    assert summaries[0]["crisis_level"] is None
+
+
+def test_add_summary_rejects_invalid_crisis_level(initialized_db):
+    case = anyio.run(db_layer.create_case, "A001")
+
+    with pytest.raises(ValueError):
+        anyio.run(
+            db_layer.add_summary,
+            case["id"],
+            "session-invalid-crisis-level",
+            1,
+            _summary_json(1, crisis_flag=True),
+            True,
+            "medium",
+        )
 
 
 async def _insert_invalid_summary_json(case_id: str, session_id: str) -> None:
