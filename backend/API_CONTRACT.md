@@ -210,11 +210,14 @@ Implementation notes:
 - Persist summary through `database.db.add_summary()`.
 - Ensure/touch a durable session row for the case/session.
 - `summary.crisis_flag` must use the crisis detector result.
+- Persist the exact backend `crisis.crisis_level` value into the summary row as
+  nullable per-summary metadata.
+- Do not inject `crisis_level` into the `TurnSummary` JSON.
+- Do not persist `crisis.reason`.
 - The request-provided `session_id` should be accepted for conversation turns;
   current frontend create-case and new-session flows normally obtain it first
   from `POST /api/cases/{case_id}/sessions`.
 - Conversation response shape and crisis logic are unchanged.
-- Exact `crisis_level` is not persisted in this milestone.
 
 ### Session Listing
 
@@ -265,7 +268,8 @@ Implementation notes:
 - The response shape matches the current session metadata response.
 - Session metadata is safe operational metadata only. It must not store or expose
   raw messages, summaries, raw `summary_json`, summary `key_statement`, themes,
-  crisis reasons, report text, DB-internal `round`, or exact `crisis_level`.
+  crisis reasons, report text, DB-internal `round`, or latest/peak
+  `crisis_level` aggregates.
 - Titles must not be AI-generated or derived from raw messages, summaries, key
   statements, themes, crisis reasons, previews, or report text.
 
@@ -332,7 +336,7 @@ Implementation notes:
 - Do not expose themes.
 - Do not expose crisis reasons.
 - Do not expose report text.
-- Do not expose exact `crisis_level`.
+- Do not expose latest or peak `crisis_level` aggregates.
 - `latest_summary_preview` must remain metadata-only and should be derived only
   from turn, emotion, and intensity when available.
 
@@ -455,6 +459,7 @@ Response:
       "crisis_flag": false
     },
     "crisis_flag": false,
+    "crisis_level": "none",
     "created_at": "ISO-8601 UTC"
   }
 ]
@@ -464,6 +469,13 @@ Implementation notes:
 
 - Use `database.db.get_summaries_by_session()`.
 - DB helper returns parsed `summary` data.
+- `crisis_level` is top-level nullable per-summary metadata. Allowed values are
+  `none`, `low`, `high`, or null.
+- Legacy rows keep `crisis_level: null`; old `crisis_flag` values are not
+  backfilled into `none`, `low`, or `high`.
+- `crisis_level` is not injected into the parsed `summary` / `TurnSummary`
+  payload.
+- Crisis reasons and internal fields are not exposed through summary metadata.
 - Do not expose raw `summary_json` unless a future task explicitly asks for it.
 
 ### Reports
@@ -553,7 +565,8 @@ These are not required for Task 09 or remain frontend integration work:
 5. Persist user message with role `user`.
 6. Persist assistant message with role `assistant`.
 7. Generate `TurnSummary` with the crisis detector's `crisis_flag`.
-8. Persist summary JSON and crisis flag.
+8. Persist summary JSON, crisis flag, and the exact backend
+   `crisis.crisis_level` as nullable summary metadata.
 9. Return assistant response, crisis result, and summary.
 
 ### Session Creation Flow
@@ -603,7 +616,13 @@ These are not required for Task 09 or remain frontend integration work:
 - Do not leak DB-internal `round` in HTTP responses.
 - DB summary rows contain raw `summary_json`, but DB helper return values expose parsed
   `summary`.
-- When persisting a summary, serialize the `TurnSummary` model to JSON.
+- Summary rows contain nullable `crisis_level` metadata with allowed values
+  `none`, `low`, `high`, or null. Legacy rows remain null and are not backfilled
+  from old `crisis_flag` values.
+- When persisting a summary, serialize the `TurnSummary` model to JSON, store
+  `crisis_flag` separately, and store `crisis_level` separately.
+- Do not inject `crisis_level` into `TurnSummary` JSON.
+- Do not persist `crisis.reason`.
 - The `sessions` table stores safe operational metadata only: `case_id`,
   `session_id`, `created_at`, `updated_at`, `last_activity_at`, and nullable
   `title`.
@@ -618,8 +637,12 @@ These are not required for Task 09 or remain frontend integration work:
   and does not update `sessions.last_activity_at`.
 - Session metadata responses must not expose raw messages, summaries, raw
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
-  DB-internal `round`, or exact `crisis_level`.
-- Exact `crisis_level` is not persisted in this milestone.
+  DB-internal `round`, or latest/peak `crisis_level` aggregates.
+- `GET /api/cases/{case_id}/sessions` response shape is unchanged and does not
+  include latest or peak `crisis_level`.
+- `GET /api/cases/{case_id}/sessions/{session_id}/summaries` exposes top-level
+  nullable `crisis_level`.
+- Report generation behavior is unchanged.
 
 ## Error Handling Expectations
 

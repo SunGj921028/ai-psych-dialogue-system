@@ -86,8 +86,8 @@ Current reality:
 - Light/dark theme support exists and stores only the theme preference under the
   `ai-psych-theme` localStorage key.
 - The frontend does not store clinical message content, summaries, session
-  metadata, previews, report text, crisis reasons, case notes, titles, drafts, or
-  other clinical content in browser storage.
+  metadata, previews, report text, crisis levels, crisis reasons, case notes,
+  titles, drafts, or other clinical content in browser storage.
 - Session titles are nullable operational metadata only. The frontend does not
   generate titles with AI and must not derive titles from raw messages,
   summaries, key statements, themes, crisis reasons, previews, reports, notes,
@@ -101,13 +101,17 @@ Current reality:
 - Crisis UI uses backend `crisis_level` only and shows the red banner only when
   `crisis_level === 'high'`.
 - The default/no-crisis wording is 「未偵測到危機」.
-- Loaded summaries that contain `crisis_flag` but no persisted `crisis_level`
-  show safe counselor-review metadata such as
+- Loaded summaries may now include top-level nullable `crisis_level`, but
+  restored persisted `crisis_level` display integration has not been implemented
+  yet. Loaded summaries that contain `crisis_flag` but no persisted
+  `crisis_level` show safe counselor-review metadata such as
   「最新摘要有危機註記，請諮商師重新檢視」.
 - The frontend must not infer low/high crisis level from `summary.crisis_flag`.
 - The high-risk modal/dialog appears only when a backend response has
   `crisis.crisis_level === 'high'`; dismissing the modal does not remove
   high-risk page metadata, and low/default crisis states do not open the modal.
+- Current recommendation for restored data is no high-risk modal replay; any
+  replay policy remains future work.
 - Generated reports are currently transient. `POST /api/reports/generate`
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
@@ -117,9 +121,9 @@ Current reality:
   if needed, and MCP integration are not implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
-- Persisted report drafts, persisted exact `crisis_level` for summaries, Report
-  Schema v2, editable report fields, LLM prompt changes, Recharts integration,
-  and final report template mirroring have not been implemented.
+- Persisted report drafts, frontend restored persisted `crisis_level` display,
+  Report Schema v2, editable report fields, LLM prompt changes, Recharts
+  integration, and final report template mirroring have not been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -131,9 +135,10 @@ Current reality:
 Remaining future behavior:
 
 - Complete deletion, session deletion/archive, title search/filter, richer
-  session metadata, persisted exact `crisis_level` if exact crisis level should
-  survive reload/navigation, Settings backend integration, and MCP-related UI
-  only when the corresponding tasks are prioritized.
+  session metadata, restored persisted `crisis_level` display from loaded
+  summaries, optional latest/peak session crisis aggregate display, Settings
+  backend integration, and MCP-related UI only when the corresponding tasks are
+  prioritized.
 - Complete report workflow future work: formal Report Schema v2 after the
   template stabilizes, persisted report drafts, source/evidence traceability,
   final PDF export, optional Recharts/charts, and editable counselor review
@@ -173,8 +178,8 @@ Test boundaries:
 - Tests mock API helpers.
 - Tests do not call the live backend, LLM providers, or network.
 - Storage safety tests confirm clinical message content, summaries, report text,
-  crisis reasons, case notes, session metadata, previews, titles, drafts, and
-  other clinical content are not persisted to browser storage.
+  crisis levels, crisis reasons, case notes, session metadata, previews, titles,
+  drafts, and other clinical content are not persisted to browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content are not
@@ -309,9 +314,9 @@ Responsibilities:
 - Remind counselors that they remain the final reviewer and decision-maker.
 - Explain browser storage/privacy behavior: `localStorage` stores only
   `ai-psych-theme`, and `sessionStorage` stores only active case/session IDs.
-- State that clinical messages, summaries, reports, crisis reasons, case notes,
-  titles, drafts, previews, session metadata, provider keys, and secrets are not
-  stored in browser storage.
+- State that clinical messages, summaries, reports, crisis levels, crisis
+  reasons, case notes, titles, drafts, previews, session metadata, provider
+  keys, and secrets are not stored in browser storage.
 - Explain that model/service/API key configuration is backend environment-managed.
 - Explain theme behavior without adding another theme toggle.
 - Perform no storage writes.
@@ -427,9 +432,17 @@ Notes:
     crisis_flag: false
   },
   crisis_flag: false,
+  crisis_level: 'none' | 'low' | 'high' | null,
   created_at: 'ISO-8601 UTC'
 }
 ```
+
+Notes:
+
+- `crisis_level` is top-level nullable backend metadata, not part of
+  `summary`.
+- Old rows may return `crisis_level: null`; the frontend must not infer low/high
+  from `summary.crisis_flag`.
 
 ### Session Metadata
 
@@ -459,7 +472,7 @@ Notes:
   return null, and HistoryPage falls back to `未命名會談` when no title is present.
 - UI state must not include DB-internal `round`, raw `summary_json`, raw
   messages, full summaries, `key_statement`, themes, crisis reasons, report
-  text, or exact `crisis_level`.
+  text, or latest/peak `crisis_level` aggregates.
 - `latest_summary_preview` is metadata-only and should be treated as a compact
   scan aid, not clinical content for browser storage.
 
@@ -477,12 +490,14 @@ Notes:
 
 - Red banner only when `crisis_level === 'high'`.
 - The frontend should not reinterpret or recalculate crisis level.
-- Loaded summary rows may only include `summary.crisis_flag`; the frontend must
-  not infer `low` or `high` from that flag.
+- Loaded summary rows may include top-level nullable `crisis_level`; the
+  frontend must not infer `low` or `high` from `summary.crisis_flag`.
 - If loaded summaries contain `crisis_flag` but no persisted `crisis_level`, show
   safe metadata such as 「最新摘要有危機註記，請諮商師重新檢視」.
-- Persisting exact summary-level `crisis_level` remains future work if exact
-  crisis level should survive reload/navigation.
+- Restored persisted `crisis_level` display integration remains future work.
+- High-risk restored UI should use only backend/persisted
+  `crisis_level === 'high'`; current recommendation is no modal replay on
+  restored data.
 
 ### Report Data
 
@@ -608,9 +623,10 @@ Source:
 The indicator should reflect existing backend data only. The frontend must not
 recalculate crisis level or upgrade risk.
 
-When loaded summaries only include `crisis_flag` without a persisted
-`crisis_level`, the indicator should show safe counselor-review metadata rather
-than an inferred low/high level.
+When loaded summaries include top-level nullable `crisis_level`, the indicator
+may use it only as backend/persisted data. When summaries only include
+`crisis_flag` without a persisted `crisis_level`, the indicator should show safe
+counselor-review metadata rather than an inferred low/high level.
 
 ## UX Constraints
 
@@ -623,8 +639,8 @@ Inherited constraints:
 - Do not expose provider secrets or backend environment values.
 - Avoid storing sensitive text in browser logs.
 - Do not store clinical message content, summaries, session metadata, previews,
-  report text, crisis reasons, case notes, titles, drafts, or other clinical
-  content in browser storage.
+  report text, crisis levels, crisis reasons, case notes, titles, drafts, or
+  other clinical content in browser storage.
 - Browser `localStorage` is used only for the `ai-psych-theme` preference.
 - Browser `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content must not
@@ -673,8 +689,8 @@ Current implemented state:
 - ReportPage back-to-conversation links preserve case/session IDs.
 - Header navigation and light/dark theme toggle are implemented.
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
-- Clinical message content, summaries, report text, crisis reasons, and case
-  notes are not stored in browser storage.
+- Clinical message content, summaries, report text, crisis levels, crisis
+  reasons, and case notes are not stored in browser storage.
 - Session metadata, preview text, titles, drafts, and clinical content are not
   stored in browser storage.
 - No title is stored in browser storage, generated by AI, or derived from raw
@@ -684,7 +700,8 @@ Current implemented state:
   remains limited to `ai-psych-theme` in `localStorage` and active case/session
   identifiers in `sessionStorage`.
 - Crisis UI uses backend `crisis_level` only. Summary-only `crisis_flag` fallback
-  metadata is counselor-review wording, not a low/high inference.
+  metadata is counselor-review wording, not a low/high inference. Restored
+  persisted `crisis_level` display has not been implemented yet.
 - Frontend tests are implemented with Vitest, React Testing Library, and jsdom,
   using mocked API helpers and no live backend/provider/network calls.
 
@@ -696,8 +713,11 @@ Future behavior:
   MCP-related UI when prioritized.
 - Keep any future runtime/provider status endpoint secret-safe. Real provider
   settings UI remains out of scope unless explicitly designed.
-- Add persisted exact `crisis_level` later if exact crisis level should survive
-  reload/navigation.
+- Add frontend restored persisted `crisis_level` display later; use only
+  backend/persisted `crisis_level === 'high'` for high-risk restored UI.
+- Optional latest/peak session crisis aggregate display remains future work.
+- High-risk modal replay policy for restored data remains future work; current
+  recommendation is no modal replay on restored data.
 - Complete future report work after the report template stabilizes: formal Report
   Schema v2, persisted report drafts, source/evidence traceability, final PDF
   export, optional Recharts/charts, and editable counselor review workflow.
@@ -711,5 +731,5 @@ Future behavior:
 - How a future formal report schema should support source/evidence traceability
   and editable counselor review.
 - Whether and where to persist report drafts.
-- Whether summary rows should persist exact `crisis_level` for reload/navigation
-  fidelity.
+- Whether a future frontend should display latest or peak persisted
+  `crisis_level` at the session level.

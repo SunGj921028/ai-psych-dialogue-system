@@ -85,7 +85,7 @@ mismatches.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
   network.
 - Browser storage safety tests confirm clinical message content, summaries,
-  report text, crisis reasons, and case notes are not persisted.
+  report text, crisis levels, crisis reasons, and case notes are not persisted.
 - ConversationPage uses backend durable sessions for create-case and new-session
   flows, while query-param resume takes precedence over stale `sessionStorage`
   and does not create a new session.
@@ -95,8 +95,9 @@ mismatches.
 - PDF export, session deletion/archive, title search/filter, richer session
   metadata, optional charts/Recharts, editable report workflow, optional
   secret-safe runtime/provider status, and MCP integration remain future work.
-- Session archive/delete, report status, persisted report drafts, and exact
-  persisted `crisis_level` remain future work.
+- Session archive/delete, report status, persisted report drafts, frontend
+  restored persisted `crisis_level` display, and optional latest/peak session
+  crisis aggregates remain future work.
 
 ### Active API Reality
 
@@ -158,7 +159,8 @@ All agent, API, report, and UI work must preserve these boundaries:
 ### Crisis Handling
 
 - Crisis detection must be conservative.
-- `crisis_level` values are only `none`, `low`, and `high`.
+- Runtime `crisis_level` values are only `none`, `low`, and `high`; persisted
+  per-summary `crisis_level` may also be null for legacy rows.
 - Frontend red crisis banners should be shown only when `crisis_level == "high"`.
 - `crisis_flag` is controlled by the crisis detection result and must not be
   independently reinterpreted by the summary agent.
@@ -189,9 +191,12 @@ These are current code facts and should not be contradicted in new work:
   message/summary-derived sessions and remains backward-compatible.
 - `POST /api/conversation/turn` ensures/touches a session row without changing
   response shape or crisis logic.
+- `POST /api/conversation/turn` persists exact backend `crisis.crisis_level`
+  into nullable per-summary metadata. Legacy summary rows remain null and are
+  not backfilled from old `crisis_flag` values.
 - Session metadata must not store or expose raw messages, summaries,
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
-  DB-internal `round`, or exact `crisis_level`.
+  DB-internal `round`, or latest/peak `crisis_level` aggregates.
 - Existing Pydantic models inside agent files should be reused instead of duplicated:
   - `ConversationMessage`, `ConversationResponse`
   - `CrisisDetectionResult`
@@ -253,8 +258,8 @@ deletion seems necessary, stop and ask the user to handle it manually.
 - API calls should go through `frontend/src/api/client.js`.
 - Preserve the existing API integration patterns in the implemented frontend pages.
 - Do not store clinical message content, summaries, session metadata, previews,
-  report text, crisis reasons, case notes, titles, drafts, or other clinical
-  content in browser storage.
+  report text, crisis levels, crisis reasons, case notes, titles, drafts, or
+  other clinical content in browser storage.
 - `localStorage` is used only for the existing `ai-psych-theme` key.
 - `sessionStorage` may store only active case/session identifiers.
 
