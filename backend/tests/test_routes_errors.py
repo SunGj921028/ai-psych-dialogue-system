@@ -248,6 +248,44 @@ def test_create_session_helper_failure_returns_generic_non_leaking_500(
     _assert_response_does_not_leak(response, exception_text, "session-secret")
 
 
+def test_archive_session_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_ARCHIVE_SESSION_ERROR_DO_NOT_LEAK"
+
+    async def fake_archive_session(case_id, session_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.conversation.archive_session", fake_archive_session)
+
+    response = client.post(f"/api/cases/{case_id}/sessions/session-secret/archive")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to archive session"}
+    _assert_response_does_not_leak(response, exception_text, "session-secret")
+
+
+def test_unarchive_session_helper_failure_returns_generic_non_leaking_500(
+    client,
+    monkeypatch,
+):
+    case_id = _create_case(client)
+    exception_text = "PRIVATE_UNARCHIVE_SESSION_ERROR_DO_NOT_LEAK"
+
+    async def fake_unarchive_session(case_id, session_id):
+        raise RuntimeError(exception_text)
+
+    monkeypatch.setattr("routers.conversation.unarchive_session", fake_unarchive_session)
+
+    response = client.post(f"/api/cases/{case_id}/sessions/session-secret/unarchive")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to unarchive session"}
+    _assert_response_does_not_leak(response, exception_text, "session-secret")
+
+
 def test_report_route_preserves_code_owned_report_fields_with_mocked_llm(
     client,
     monkeypatch,

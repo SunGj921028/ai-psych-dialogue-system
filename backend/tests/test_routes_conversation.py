@@ -526,6 +526,115 @@ def test_list_case_sessions_includes_nullable_title(client):
     assert response.json()[0]["title"] == "Review prep"
 
 
+def test_archive_session_route_returns_safe_metadata_with_archived_at(client):
+    case_id = _create_case(client)
+    client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "archive-route-session"},
+    )
+
+    response = client.post(
+        f"/api/cases/{case_id}/sessions/archive-route-session/archive"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == "archive-route-session"
+    assert data["archived_at"]
+    assert "round" not in data
+    assert "summary_json" not in data
+
+
+def test_unarchive_session_route_returns_safe_metadata_with_null_archived_at(client):
+    case_id = _create_case(client)
+    client.post(
+        f"/api/cases/{case_id}/sessions",
+        json={"session_id": "unarchive-route-session"},
+    )
+    client.post(f"/api/cases/{case_id}/sessions/unarchive-route-session/archive")
+
+    response = client.post(
+        f"/api/cases/{case_id}/sessions/unarchive-route-session/unarchive"
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["session_id"] == "unarchive-route-session"
+    assert data["archived_at"] is None
+    assert "round" not in data
+    assert "summary_json" not in data
+
+
+def test_archive_and_unarchive_missing_case_return_404(client):
+    archive_response = client.post(
+        "/api/cases/missing-case/sessions/session-1/archive"
+    )
+    unarchive_response = client.post(
+        "/api/cases/missing-case/sessions/session-1/unarchive"
+    )
+
+    assert archive_response.status_code == 404
+    assert archive_response.json() == {"detail": "Case not found"}
+    assert unarchive_response.status_code == 404
+    assert unarchive_response.json() == {"detail": "Case not found"}
+
+
+def test_archive_and_unarchive_missing_session_return_404(client):
+    case_id = _create_case(client)
+
+    archive_response = client.post(
+        f"/api/cases/{case_id}/sessions/missing-session/archive"
+    )
+    unarchive_response = client.post(
+        f"/api/cases/{case_id}/sessions/missing-session/unarchive"
+    )
+
+    assert archive_response.status_code == 404
+    assert archive_response.json() == {"detail": "Session not found"}
+    assert unarchive_response.status_code == 404
+    assert unarchive_response.json() == {"detail": "Session not found"}
+
+
+def test_list_case_sessions_excludes_archived_by_default_and_includes_with_query(client):
+    case_id = _create_case(client)
+    client.post(f"/api/cases/{case_id}/sessions", json={"session_id": "active"})
+    client.post(f"/api/cases/{case_id}/sessions", json={"session_id": "archived"})
+    archive_response = client.post(f"/api/cases/{case_id}/sessions/archived/archive")
+
+    default_response = client.get(f"/api/cases/{case_id}/sessions")
+    include_response = client.get(
+        f"/api/cases/{case_id}/sessions?include_archived=true"
+    )
+
+    assert archive_response.status_code == 200
+    assert default_response.status_code == 200
+    assert [session["session_id"] for session in default_response.json()] == ["active"]
+    assert include_response.status_code == 200
+    assert {session["session_id"] for session in include_response.json()} == {
+        "active",
+        "archived",
+    }
+    archived_session = next(
+        session for session in include_response.json() if session["session_id"] == "archived"
+    )
+    assert archived_session["archived_at"]
+
+
+def test_patch_session_title_still_works_for_archived_session(client):
+    case_id = _create_case(client)
+    client.post(f"/api/cases/{case_id}/sessions", json={"session_id": "archived-title"})
+    client.post(f"/api/cases/{case_id}/sessions/archived-title/archive")
+
+    response = client.patch(
+        f"/api/cases/{case_id}/sessions/archived-title",
+        json={"title": "Archived title"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["title"] == "Archived title"
+    assert response.json()["archived_at"]
+
+
 def test_list_case_sessions_missing_case_returns_404(client):
     response = client.get("/api/cases/missing-case/sessions")
 

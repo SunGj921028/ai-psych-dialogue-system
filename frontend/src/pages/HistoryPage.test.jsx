@@ -6,8 +6,10 @@ import { renderWithRouter } from '../test/renderWithRouter.jsx'
 import * as api from '../api/client.js'
 
 vi.mock('../api/client.js', () => ({
+  archiveSession: vi.fn(),
   listCaseSessions: vi.fn(),
   listCases: vi.fn(),
+  unarchiveSession: vi.fn(),
   updateSessionTitle: vi.fn(),
 }))
 
@@ -25,6 +27,7 @@ function makeSession(overrides = {}) {
   return {
     session_id: 'session-alpha-id',
     title: null,
+    archived_at: null,
     message_count: 2,
     summary_count: 1,
     last_turn_number: 3,
@@ -39,7 +42,10 @@ describe('HistoryPage behavior', () => {
   beforeEach(() => {
     api.listCases.mockResolvedValue([])
     api.listCaseSessions.mockResolvedValue([])
+    api.archiveSession.mockReset()
+    api.unarchiveSession.mockReset()
     api.updateSessionTitle.mockReset()
+    window.confirm = vi.fn(() => true)
   })
 
   test('calls listCases on mount', async () => {
@@ -149,6 +155,153 @@ describe('HistoryPage behavior', () => {
       'href',
       '/report/case-alpha-id?sessionId=session-alpha-id',
     )
+    expect(screen.getByRole('button', { name: /封存/i })).toBeInTheDocument()
+  })
+
+  test('archive confirmation is required before calling the archive API', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([makeSession()])
+    window.confirm = vi.fn(() => false)
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /封存/i }))
+
+    expect(window.confirm).toHaveBeenCalledWith('確認封存此會談？')
+    expect(api.archiveSession).not.toHaveBeenCalled()
+  })
+
+  test('archiving a session removes it from the default visible list', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([makeSession()])
+    api.archiveSession.mockResolvedValue(
+      makeSession({
+        archived_at: '2026-05-20T02:00:00Z',
+      }),
+    )
+    window.confirm = vi.fn(() => true)
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /封存/i }))
+
+    await waitFor(() => {
+      expect(api.archiveSession).toHaveBeenCalledWith(
+        'case-alpha-id',
+        'session-alpha-id',
+      )
+    })
+
+    expect(screen.queryByText('session-alpha-id')).not.toBeInTheDocument()
+  })
+
+  test('show archived toggle loads archived sessions and keeps navigation links', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([
+        makeSession({
+          archived_at: '2026-05-20T02:00:00Z',
+        }),
+      ])
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    await waitFor(() => {
+      expect(api.listCaseSessions).toHaveBeenCalledWith('case-alpha-id')
+    })
+
+    fireEvent.click(
+      within(caseArticle).getByRole('checkbox', {
+        name: '顯示已封存會談',
+      }),
+    )
+
+    await waitFor(() => {
+      expect(api.listCaseSessions).toHaveBeenLastCalledWith('case-alpha-id', {
+        includeArchived: true,
+      })
+    })
+
+    expect(await screen.findByText('session-alpha-id')).toBeInTheDocument()
+    expect(screen.getByText('已封存')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: /resume conversation/i }),
+    ).toHaveAttribute(
+      'href',
+      '/?caseId=case-alpha-id&sessionId=session-alpha-id',
+    )
+    expect(screen.getByRole('link', { name: /open report/i })).toHaveAttribute(
+      'href',
+      '/report/case-alpha-id?sessionId=session-alpha-id',
+    )
+  })
+
+  test('unarchive control updates a visible archived session', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        archived_at: '2026-05-20T02:00:00Z',
+      }),
+    ])
+    api.unarchiveSession.mockResolvedValue(makeSession())
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+    fireEvent.click(
+      within(caseArticle).getByRole('checkbox', {
+        name: '顯示已封存會談',
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /取消封存/i }))
+
+    await waitFor(() => {
+      expect(api.unarchiveSession).toHaveBeenCalledWith(
+        'case-alpha-id',
+        'session-alpha-id',
+      )
+    })
+
+    expect(screen.queryByText('已封存')).not.toBeInTheDocument()
+    expect(screen.getByText('session-alpha-id')).toBeInTheDocument()
   })
 
   test('renders provided session title as the primary session label', async () => {
@@ -294,6 +447,56 @@ describe('HistoryPage behavior', () => {
       'href',
       '/report/case-alpha-id?sessionId=session-alpha-id',
     )
+  })
+
+  test('rename still works for a visible archived session', async () => {
+    const user = userEvent.setup()
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        archived_at: '2026-05-20T02:00:00Z',
+      }),
+    ])
+    api.updateSessionTitle.mockResolvedValue(
+      makeSession({
+        title: 'Archived renamed session',
+        archived_at: '2026-05-20T02:00:00Z',
+      }),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+    fireEvent.click(
+      within(caseArticle).getByRole('checkbox', {
+        name: '顯示已封存會談',
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /edit title/i }))
+
+    const input = within(sessionRow).getByRole('textbox', { name: /session title/i })
+    await user.clear(input)
+    await user.type(input, 'Archived renamed session')
+    await user.click(within(sessionRow).getByRole('button', { name: /^save$/i }))
+
+    await waitFor(() => {
+      expect(api.updateSessionTitle).toHaveBeenCalledWith(
+        'case-alpha-id',
+        'session-alpha-id',
+        { title: 'Archived renamed session' },
+      )
+    })
+    expect(await screen.findByText('Archived renamed session')).toBeInTheDocument()
+    expect(screen.getByText('已封存')).toBeInTheDocument()
   })
 
   test('clear title saves null and restores the fallback label', async () => {
@@ -466,6 +669,76 @@ describe('HistoryPage behavior', () => {
     expect(within(sessionRow).getByRole('textbox', { name: /session title/i })).toHaveValue(
       'Draft survives failed save',
     )
+  })
+
+  test('archive failure shows friendly error without raw text', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([makeSession()])
+    api.archiveSession.mockRejectedValue(
+      new Error('INTERNAL_ARCHIVE_FAILURE_SECRET'),
+    )
+    window.confirm = vi.fn(() => true)
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /封存/i }))
+
+    await waitFor(() => {
+      expect(api.archiveSession).toHaveBeenCalledTimes(1)
+    })
+
+    expect(document.body.textContent).not.toContain('INTERNAL_ARCHIVE_FAILURE_SECRET')
+    expect(within(sessionRow).getByText('封存狀態更新失敗，請稍後再試。')).toBeInTheDocument()
+  })
+
+  test('unarchive failure shows friendly error without raw text', async () => {
+    api.listCases.mockResolvedValue([makeCase()])
+    api.listCaseSessions.mockResolvedValue([
+      makeSession({
+        archived_at: '2026-05-20T02:00:00Z',
+      }),
+    ])
+    api.unarchiveSession.mockRejectedValue(
+      new Error('INTERNAL_UNARCHIVE_FAILURE_SECRET'),
+    )
+
+    renderWithRouter(<HistoryPage />, { initialEntries: ['/history'] })
+
+    const caseHeading = await screen.findByText('CASE_ALPHA')
+    const caseArticle = caseHeading.closest('article')
+    fireEvent.click(
+      within(caseArticle).getByRole('button', {
+        name: /show sessions for CASE_ALPHA/i,
+      }),
+    )
+    fireEvent.click(
+      within(caseArticle).getByRole('checkbox', {
+        name: '顯示已封存會談',
+      }),
+    )
+
+    const sessionId = await screen.findByText('session-alpha-id')
+    const sessionRow = sessionId.closest('section')
+    fireEvent.click(within(sessionRow).getByRole('button', { name: /取消封存/i }))
+
+    await waitFor(() => {
+      expect(api.unarchiveSession).toHaveBeenCalledTimes(1)
+    })
+
+    expect(document.body.textContent).not.toContain(
+      'INTERNAL_UNARCHIVE_FAILURE_SECRET',
+    )
+    expect(within(sessionRow).getByText('封存狀態更新失敗，請稍後再試。')).toBeInTheDocument()
   })
 
   test('starting edit on another session closes the previous editor without saving', async () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  Archive,
   ArrowRight,
   ChevronDown,
   ChevronUp,
@@ -9,10 +10,13 @@ import {
   FolderOpen,
   Pencil,
   Plus,
+  RotateCcw,
 } from 'lucide-react'
 import {
+  archiveSession,
   listCaseSessions,
   listCases,
+  unarchiveSession,
   updateSessionTitle,
 } from '../api/client.js'
 
@@ -21,6 +25,8 @@ const MAX_SESSION_TITLE_LENGTH = 80
 const TITLE_PRIVACY_HELPER = '請避免輸入可識別個資或敏感臨床內容'
 const TITLE_LENGTH_ERROR = '標題最多 80 個字'
 const TITLE_SAVE_ERROR = '無法更新會談標題，請稍後再試。'
+const ARCHIVE_CONFIRM_MESSAGE = '確認封存此會談？'
+const ARCHIVE_SAVE_ERROR = '封存狀態更新失敗，請稍後再試。'
 
 function getFriendlyError(error) {
   if (!error?.response) {
@@ -61,10 +67,13 @@ export default function HistoryPage() {
   const [sessionsByCaseId, setSessionsByCaseId] = useState({})
   const [loadingSessionsByCaseId, setLoadingSessionsByCaseId] = useState({})
   const [sessionErrorsByCaseId, setSessionErrorsByCaseId] = useState({})
+  const [showArchivedByCaseId, setShowArchivedByCaseId] = useState({})
   const [editingSessionKey, setEditingSessionKey] = useState('')
   const [titleDraft, setTitleDraft] = useState('')
   const [titleValidationError, setTitleValidationError] = useState('')
   const [titleSaveError, setTitleSaveError] = useState('')
+  const [archiveErrorsBySessionKey, setArchiveErrorsBySessionKey] = useState({})
+  const [archivingSessionKey, setArchivingSessionKey] = useState('')
   const [savingSessionKey, setSavingSessionKey] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
@@ -87,21 +96,7 @@ export default function HistoryPage() {
     loadCases()
   }, [])
 
-  async function handleToggleSessions(caseItem) {
-    const isExpanded = expandedCaseIds.has(caseItem.id)
-    const nextExpandedCaseIds = new Set(expandedCaseIds)
-
-    if (isExpanded) {
-      nextExpandedCaseIds.delete(caseItem.id)
-      setExpandedCaseIds(nextExpandedCaseIds)
-      return
-    }
-
-    nextExpandedCaseIds.add(caseItem.id)
-    setExpandedCaseIds(nextExpandedCaseIds)
-
-    if (sessionsByCaseId[caseItem.id]) return
-
+  async function loadSessions(caseItem, includeArchived = false) {
     setLoadingSessionsByCaseId((current) => ({
       ...current,
       [caseItem.id]: true,
@@ -112,7 +107,9 @@ export default function HistoryPage() {
     }))
 
     try {
-      const sessions = await listCaseSessions(caseItem.id)
+      const sessions = includeArchived
+        ? await listCaseSessions(caseItem.id, { includeArchived: true })
+        : await listCaseSessions(caseItem.id)
       setSessionsByCaseId((current) => ({
         ...current,
         [caseItem.id]: sessions,
@@ -128,6 +125,33 @@ export default function HistoryPage() {
         [caseItem.id]: false,
       }))
     }
+  }
+
+  async function handleToggleSessions(caseItem) {
+    const isExpanded = expandedCaseIds.has(caseItem.id)
+    const nextExpandedCaseIds = new Set(expandedCaseIds)
+
+    if (isExpanded) {
+      nextExpandedCaseIds.delete(caseItem.id)
+      setExpandedCaseIds(nextExpandedCaseIds)
+      return
+    }
+
+    nextExpandedCaseIds.add(caseItem.id)
+    setExpandedCaseIds(nextExpandedCaseIds)
+
+    if (sessionsByCaseId[caseItem.id]) return
+
+    await loadSessions(caseItem, showArchivedByCaseId[caseItem.id] === true)
+  }
+
+  async function handleToggleShowArchived(caseItem) {
+    const includeArchived = showArchivedByCaseId[caseItem.id] !== true
+    setShowArchivedByCaseId((current) => ({
+      ...current,
+      [caseItem.id]: includeArchived,
+    }))
+    await loadSessions(caseItem, includeArchived)
   }
 
   function handleStartEdit(caseItem, session) {
@@ -153,6 +177,67 @@ export default function HistoryPage() {
           : session,
       ),
     }))
+  }
+
+  function removeSession(caseId, sessionId) {
+    setSessionsByCaseId((current) => ({
+      ...current,
+      [caseId]: (current[caseId] ?? []).filter(
+        (session) => session.session_id !== sessionId,
+      ),
+    }))
+  }
+
+  function clearArchiveError(caseId, sessionId) {
+    const editKey = getEditKey(caseId, sessionId)
+    setArchiveErrorsBySessionKey((current) => ({
+      ...current,
+      [editKey]: '',
+    }))
+  }
+
+  async function handleArchiveSession(caseItem, session) {
+    if (!window.confirm(ARCHIVE_CONFIRM_MESSAGE)) {
+      return
+    }
+
+    const editKey = getEditKey(caseItem.id, session.session_id)
+    setArchivingSessionKey(editKey)
+    clearArchiveError(caseItem.id, session.session_id)
+
+    try {
+      const updatedSession = await archiveSession(caseItem.id, session.session_id)
+      if (showArchivedByCaseId[caseItem.id]) {
+        replaceSession(caseItem.id, updatedSession)
+      } else {
+        removeSession(caseItem.id, session.session_id)
+      }
+    } catch {
+      setArchiveErrorsBySessionKey((current) => ({
+        ...current,
+        [editKey]: ARCHIVE_SAVE_ERROR,
+      }))
+    } finally {
+      setArchivingSessionKey('')
+    }
+  }
+
+  async function handleUnarchiveSession(caseItem, session) {
+    const editKey = getEditKey(caseItem.id, session.session_id)
+    setArchivingSessionKey(editKey)
+    clearArchiveError(caseItem.id, session.session_id)
+
+    try {
+      const updatedSession = await unarchiveSession(caseItem.id, session.session_id)
+      replaceSession(caseItem.id, updatedSession)
+    } catch {
+      setArchiveErrorsBySessionKey((current) => ({
+        ...current,
+        [editKey]: ARCHIVE_SAVE_ERROR,
+      }))
+    } finally {
+      setArchivingSessionKey('')
+    }
   }
 
   async function handleSaveTitle(caseItem, session) {
@@ -318,6 +403,15 @@ export default function HistoryPage() {
 
                 {expandedCaseIds.has(caseItem.id) ? (
                   <div className="md:col-span-3">
+                    <label className="mb-3 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        checked={showArchivedByCaseId[caseItem.id] === true}
+                        className="h-4 w-4 rounded border-slate-300 text-indigo-700 focus:ring-indigo-500"
+                        onChange={() => handleToggleShowArchived(caseItem)}
+                        type="checkbox"
+                      />
+                      顯示已封存會談
+                    </label>
                     {sessionErrorsByCaseId[caseItem.id] ? (
                       <div className="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
                         {sessionErrorsByCaseId[caseItem.id]}
@@ -444,6 +538,11 @@ export default function HistoryPage() {
                                     <p className="break-words font-semibold">
                                       {getSessionDisplayTitle(session)}
                                     </p>
+                                    {session.archived_at ? (
+                                      <span className="rounded-full border border-slate-300 bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-200">
+                                        已封存
+                                      </span>
+                                    ) : null}
                                     <button
                                       aria-label={`Edit title for ${session.session_id}`}
                                       className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border bg-white text-muted-foreground transition hover:bg-slate-100 hover:text-foreground dark:border-input dark:bg-card dark:hover:bg-slate-800"
@@ -482,6 +581,17 @@ export default function HistoryPage() {
                             ) : null}
 
                             <div className="mt-3 flex flex-wrap gap-2">
+                              {archiveErrorsBySessionKey[
+                                getEditKey(caseItem.id, session.session_id)
+                              ] ? (
+                                <p className="basis-full text-xs text-destructive">
+                                  {
+                                    archiveErrorsBySessionKey[
+                                      getEditKey(caseItem.id, session.session_id)
+                                    ]
+                                  }
+                                </p>
+                              ) : null}
                               <Link
                                 className="inline-flex items-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/70 px-3 py-2 text-sm font-medium text-indigo-950 transition hover:bg-indigo-100 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100 dark:hover:bg-indigo-900/45"
                                 to={`/?caseId=${encodeURIComponent(caseItem.id)}&sessionId=${encodeURIComponent(session.session_id)}`}
@@ -496,6 +606,37 @@ export default function HistoryPage() {
                                 <FileText className="h-4 w-4" />
                                 Open report
                               </Link>
+                              {session.archived_at ? (
+                                <button
+                                  className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-55 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                                  disabled={
+                                    archivingSessionKey ===
+                                    getEditKey(caseItem.id, session.session_id)
+                                  }
+                                  onClick={() =>
+                                    handleUnarchiveSession(caseItem, session)
+                                  }
+                                  type="button"
+                                >
+                                  <RotateCcw className="h-4 w-4" />
+                                  取消封存
+                                </button>
+                              ) : (
+                                <button
+                                  className="inline-flex items-center gap-2 rounded-md border bg-white px-3 py-2 text-sm font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-55 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                                  disabled={
+                                    archivingSessionKey ===
+                                    getEditKey(caseItem.id, session.session_id)
+                                  }
+                                  onClick={() =>
+                                    handleArchiveSession(caseItem, session)
+                                  }
+                                  type="button"
+                                >
+                                  <Archive className="h-4 w-4" />
+                                  封存
+                                </button>
+                              )}
                             </div>
                           </section>
                         ))}

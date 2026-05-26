@@ -127,6 +127,18 @@ describe('API helper contracts', () => {
     expect(result).toEqual([])
   })
 
+  test('listCaseSessions can include archived sessions with query string', async () => {
+    fakeApiClient.get.mockResolvedValue({ data: [] })
+    const { listCaseSessions } = await importClient()
+
+    const result = await listCaseSessions('case-1', { includeArchived: true })
+
+    expect(fakeApiClient.get).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions?include_archived=true',
+    )
+    expect(result).toEqual([])
+  })
+
   test('createSession calls POST /api/cases/{caseId}/sessions with an empty payload by default', async () => {
     fakeApiClient.post.mockResolvedValue({
       data: { session_id: 'backend-session-1' },
@@ -194,6 +206,40 @@ describe('API helper contracts', () => {
       payload,
     )
     expect(result).toEqual({ session_id: 'session-1', title: null })
+  })
+
+  test('archiveSession calls the expected session archive path', async () => {
+    fakeApiClient.post.mockResolvedValue({
+      data: {
+        session_id: 'session-1',
+        archived_at: '2026-05-20T00:00:00Z',
+      },
+    })
+    const { archiveSession } = await importClient()
+
+    const result = await archiveSession('case-1', 'session-1')
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/archive',
+    )
+    expect(result).toEqual({
+      session_id: 'session-1',
+      archived_at: '2026-05-20T00:00:00Z',
+    })
+  })
+
+  test('unarchiveSession calls the expected session unarchive path', async () => {
+    fakeApiClient.post.mockResolvedValue({
+      data: { session_id: 'session-1', archived_at: null },
+    })
+    const { unarchiveSession } = await importClient()
+
+    const result = await unarchiveSession('case-1', 'session-1')
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/cases/case-1/sessions/session-1/unarchive',
+    )
+    expect(result).toEqual({ session_id: 'session-1', archived_at: null })
   })
 
   test('getSessionSummaries calls the expected session summaries path', async () => {

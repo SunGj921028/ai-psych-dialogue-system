@@ -7,6 +7,7 @@ import { renderWithRouter } from './renderWithRouter.jsx'
 import * as api from '../api/client.js'
 
 vi.mock('../api/client.js', () => ({
+  archiveSession: vi.fn(),
   createCase: vi.fn(),
   createSession: vi.fn(),
   getSessionMessages: vi.fn(),
@@ -14,6 +15,7 @@ vi.mock('../api/client.js', () => ({
   listCaseSessions: vi.fn(),
   listCases: vi.fn(),
   sendConversationTurn: vi.fn(),
+  unarchiveSession: vi.fn(),
   updateSessionTitle: vi.fn(),
 }))
 
@@ -28,6 +30,7 @@ const clinicalSentinels = [
   'SYNTHETIC_CRISIS_REASON',
   'SYNTHETIC_CASE_NOTE_SECRET',
   'SYNTHETIC_SESSION_TITLE_SECRET',
+  'SYNTHETIC_ARCHIVE_METADATA_SECRET',
 ]
 
 function storageEntries(storage) {
@@ -104,6 +107,7 @@ describe('browser storage safety', () => {
       {
         session_id: activeSessionId,
         title: 'SYNTHETIC_SESSION_TITLE_SECRET',
+        archived_at: 'SYNTHETIC_ARCHIVE_METADATA_SECRET',
         message_count: 2,
         summary_count: 1,
         last_turn_number: 1,
