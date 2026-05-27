@@ -118,4 +118,9 @@ export async function updateReportDraftManualInput(draftId, payload) {
   return response.data
 }
 
+export async function generateReportDraftV2(draftId) {
+  const response = await apiClient.post(`/api/report-drafts/${draftId}/generate`)
+  return response.data
+}
+
 export default apiClient

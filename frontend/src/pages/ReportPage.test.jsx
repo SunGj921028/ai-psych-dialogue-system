@@ -9,6 +9,7 @@ import * as api from '../api/client.js'
 vi.mock('../api/client.js', () => ({
   createReportDraft: vi.fn(),
   generateReport: vi.fn(),
+  generateReportDraftV2: vi.fn(),
   getCurrentReportDraft: vi.fn(),
   getCase: vi.fn(),
   getSessionSummaries: vi.fn(),
@@ -101,6 +102,64 @@ function makeReportField(value, overrides = {}) {
   }
 }
 
+function makeAiField(value, overrides = {}) {
+  return makeReportField(value, {
+    label_zh: overrides.label_zh,
+    source_type: overrides.source_type ?? 'ai',
+    missing_reason: overrides.missing_reason ?? null,
+    needs_review: overrides.needs_review ?? true,
+    evidence_refs: overrides.evidence_refs ?? [],
+  })
+}
+
+function makeAiGenerated(overrides = {}) {
+  return {
+    chief_complaint_draft: makeAiField(
+      overrides.chiefComplaint ?? 'SYNTHETIC_V2_CHIEF_AI',
+      {
+        evidence_refs: [{ turn_number: 2, summary_id: 'summary-secret-2' }],
+      },
+    ),
+    problem_development_draft: makeAiField(
+      overrides.problemDevelopment ?? 'SYNTHETIC_V2_PROBLEM_AI',
+    ),
+    client_understanding_draft: makeAiField(
+      overrides.clientUnderstanding ?? 'SYNTHETIC_V2_CLIENT_AI',
+    ),
+    emotion_pattern: makeAiField(overrides.emotionPattern ?? 'SYNTHETIC_V2_EMOTION_AI'),
+    cognitive_pattern: makeAiField(
+      overrides.cognitivePattern ?? 'SYNTHETIC_V2_COGNITIVE_AI',
+    ),
+    behavior_coping_pattern: makeAiField(
+      overrides.behaviorCopingPattern ?? 'SYNTHETIC_V2_BEHAVIOR_AI',
+    ),
+    psychological_factors: makeAiField(
+      overrides.psychologicalFactors ?? 'SYNTHETIC_V2_PSYCHOLOGICAL_AI',
+    ),
+    theoretical_orientation_rationale: makeAiField(
+      overrides.theoryRationale ?? 'SYNTHETIC_V2_THEORY_AI',
+    ),
+    conceptualization_narrative: makeAiField(
+      overrides.conceptualization ?? 'SYNTHETIC_V2_CONCEPTUALIZATION_AI',
+    ),
+    formation_factors: makeAiField(overrides.formation ?? 'SYNTHETIC_V2_FORMATION_AI'),
+    precipitating_factors: makeAiField(
+      overrides.precipitating ?? 'SYNTHETIC_V2_PRECIPITATING_AI',
+    ),
+    maintaining_factors: makeAiField(
+      overrides.maintaining ?? 'SYNTHETIC_V2_MAINTAINING_AI',
+    ),
+    protective_factors: makeAiField(
+      overrides.protective ?? 'SYNTHETIC_V2_PROTECTIVE_AI',
+    ),
+    crisis_language_summary: makeAiField(
+      overrides.crisisLanguage ?? 'SYNTHETIC_V2_CRISIS_LANGUAGE_AI',
+    ),
+    formal_risk_level: makeAiField('SYNTHETIC_FORBIDDEN_RISK_LEVEL'),
+    safety_plan: makeAiField('SYNTHETIC_FORBIDDEN_AI_SAFETY_PLAN'),
+  }
+}
+
 function makeManualInput(overrides = {}) {
   return {
     basic_info: {
@@ -160,14 +219,18 @@ function makeManualInput(overrides = {}) {
 }
 
 function makeReportDraft(overrides = {}) {
+  const aiGenerated = Object.hasOwn(overrides, 'aiGenerated')
+    ? overrides.aiGenerated
+    : null
+
   return {
     schema_version: 'report_schema_v2',
     draft_id: overrides.draftId ?? 'draft-1',
     case_id: caseId,
     session_id: sessionId,
-    status: 'manual_input_started',
+    status: overrides.status ?? (aiGenerated ? 'ai_generated' : 'manual_input_started'),
     manual_input: overrides.manualInput ?? makeManualInput(overrides),
-    ai_generated: null,
+    ai_generated: aiGenerated,
     counselor_edits: null,
     final_report: null,
     source_refs: [],
@@ -181,7 +244,7 @@ function makeReportDraft(overrides = {}) {
     disclaimer: 'SYNTHETIC_BACKEND_DISCLAIMER',
     created_at: '2026-05-20T00:00:00Z',
     updated_at: overrides.updatedAt ?? '2026-05-20T00:00:00Z',
-    generated_at: null,
+    generated_at: overrides.generatedAt ?? (aiGenerated ? '2026-05-21T00:00:00Z' : null),
     reviewed_at: null,
     exported_at: null,
   }
@@ -201,6 +264,9 @@ describe('ReportPage behavior', () => {
     })
     api.createReportDraft.mockResolvedValue(makeReportDraft())
     api.updateReportDraftManualInput.mockResolvedValue(makeReportDraft())
+    api.generateReportDraftV2.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
     api.generateReport.mockResolvedValue(makeReport())
   })
 
@@ -214,6 +280,7 @@ describe('ReportPage behavior', () => {
     expect(api.getCurrentReportDraft).not.toHaveBeenCalled()
     expect(api.createReportDraft).not.toHaveBeenCalled()
     expect(api.updateReportDraftManualInput).not.toHaveBeenCalled()
+    expect(api.generateReportDraftV2).not.toHaveBeenCalled()
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 
@@ -342,8 +409,129 @@ describe('ReportPage behavior', () => {
     expect(await screen.findByText('尚未建立 v2 手動資料草稿')).toBeInTheDocument()
     expect(screen.getByText('需先建立 v2 草稿後才可預覽')).toBeInTheDocument()
     expect(
+      screen.queryByRole('button', { name: '產生 v2 AI 草稿' }),
+    ).not.toBeInTheDocument()
+    expect(
       screen.getByRole('button', { name: '建立 v2 手動資料草稿' }),
     ).toBeInTheDocument()
+  })
+
+  test('v2 generate action renders when a draft exists', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('v2 AI 草稿產生')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        '依目前已儲存的手動資料與會談摘要產生五段式報告的 AI 草稿。此草稿需由諮商師審閱，且不會影響目前 v1 暫時報告。',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '產生 v2 AI 草稿' }),
+    ).toBeInTheDocument()
+  })
+
+  test('successful v2 generation updates the draft preview without calling v1 generation', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.generateReportDraftV2.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(
+      await screen.findByRole('button', { name: '產生 v2 AI 草稿' }),
+    )
+
+    await waitFor(() => {
+      expect(api.generateReportDraftV2).toHaveBeenCalledWith('draft-1')
+    })
+    expect(api.generateReport).not.toHaveBeenCalled()
+    expect(await screen.findByText('已產生 v2 AI 草稿')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
+  })
+
+  test('unsaved manual input blocks v2 generation until the counselor saves first', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.updateReportDraftManualInput.mockResolvedValue(
+      makeReportDraft({ referralSource: 'UPDATED_REFERRAL_SOURCE' }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    const referralInput = await screen.findByLabelText('轉介來源')
+    await user.clear(referralInput)
+    await user.type(referralInput, 'UPDATED_REFERRAL_SOURCE')
+    await user.click(screen.getByRole('button', { name: '產生 v2 AI 草稿' }))
+
+    expect(api.generateReportDraftV2).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('請先儲存手動資料，再產生 v2 AI 草稿'),
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+    await user.click(await screen.findByRole('button', { name: '產生 v2 AI 草稿' }))
+
+    await waitFor(() => {
+      expect(api.generateReportDraftV2).toHaveBeenCalledWith('draft-1')
+    })
+  })
+
+  test('existing ai_generated draft uses regeneration wording', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(
+      await screen.findByRole('button', { name: '重新產生 v2 AI 草稿' }),
+    ).toBeInTheDocument()
+  })
+
+  test('v2 generation 422 shows friendly insufficient-summary message and conversation link', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_BACKEND_DETAIL_SECRET'
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.generateReportDraftV2.mockRejectedValue({
+      response: { status: 422, data: { detail: rawErrorSentinel } },
+    })
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(
+      await screen.findByRole('button', { name: '產生 v2 AI 草稿' }),
+    )
+
+    expect(
+      await screen.findByText('至少需要一筆會談摘要才能產生 v2 AI 草稿'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: '回到工作台新增會談摘要' }),
+    ).toHaveAttribute('href', `/?caseId=${caseId}&sessionId=${sessionId}`)
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
+    expect(screen.queryByText('SYNTHETIC_V2_CHIEF_AI')).not.toBeInTheDocument()
+  })
+
+  test('generic v2 generation failure preserves existing preview and hides raw error text', async () => {
+    const user = userEvent.setup()
+    const rawErrorSentinel = 'RAW_V2_GENERATE_FAILURE_SECRET'
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated({ chiefComplaint: 'EXISTING_AI' }) }),
+    )
+    api.generateReportDraftV2.mockRejectedValue(new Error(rawErrorSentinel))
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('EXISTING_AI')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: '重新產生 v2 AI 草稿' }))
+
+    expect(await screen.findByText('產生失敗，請稍後再試')).toBeInTheDocument()
+    expect(screen.getByText('EXISTING_AI')).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain(rawErrorSentinel)
   })
 
   test('loaded draft renders read-only v2 preview with five template sections and manual values', async () => {
@@ -403,6 +591,61 @@ describe('ReportPage behavior', () => {
       screen.getAllByText('此欄位待未來 AI 草稿或諮商師補充').length,
     ).toBeGreaterThan(3)
     expect(getSectionByHeading('五、風險評估')).not.toHaveTextContent('無風險')
+  })
+
+  test('preview renders ai_generated fields with review badges and safe turn refs', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
+    const basicSection = getSectionByHeading('一、基本資料與主訴')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
+    expect(basicSection).toHaveTextContent('AI 補充草稿')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_V2_CLIENT_AI')
+    expect(basicSection).toHaveTextContent('第 2 輪')
+    expect(basicSection).not.toHaveTextContent('summary-secret-2')
+
+    const currentSection = getSectionByHeading('二、現況評估與觀察')
+    expect(currentSection).toHaveTextContent('SYNTHETIC_V2_EMOTION_AI')
+    expect(currentSection).toHaveTextContent('SYNTHETIC_V2_COGNITIVE_AI')
+    expect(currentSection).toHaveTextContent('SYNTHETIC_V2_BEHAVIOR_AI')
+
+    const psychologicalSection = getSectionByHeading('三、心理評估')
+    expect(psychologicalSection).toHaveTextContent('SYNTHETIC_V2_PSYCHOLOGICAL_AI')
+
+    const formulationSection = getSectionByHeading('四、理論取向與個案概念化')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_THEORY_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_CONCEPTUALIZATION_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_FORMATION_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_PRECIPITATING_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_MAINTAINING_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_PROTECTIVE_AI')
+
+    const riskSection = getSectionByHeading('五、風險評估')
+    expect(riskSection).toHaveTextContent('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')
+    expect(riskSection).toHaveTextContent('SYNTHETIC_RISK_NOTES')
+    expect(riskSection).toHaveTextContent('SYNTHETIC_SAFETY_PLAN')
+    expect(riskSection).not.toHaveTextContent('SYNTHETIC_FORBIDDEN_RISK_LEVEL')
+    expect(riskSection).not.toHaveTextContent('SYNTHETIC_FORBIDDEN_AI_SAFETY_PLAN')
+    expect(screen.getAllByText('AI 草稿，需諮商師審閱').length).toBeGreaterThan(5)
+  })
+
+  test('manual client understanding can be empty so ai draft fills the main field', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({
+        aiGenerated: makeAiGenerated({ clientUnderstanding: 'SYNTHETIC_AI_MAIN_CLIENT' }),
+        clientUnderstanding: '',
+      }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('SYNTHETIC_AI_MAIN_CLIENT')).toBeInTheDocument()
+    const basicSection = getSectionByHeading('一、基本資料與主訴')
+    expect(basicSection).not.toHaveTextContent('AI 補充草稿')
   })
 
   test('Create Draft calls API and renders returned form', async () => {
@@ -529,6 +772,29 @@ describe('ReportPage behavior', () => {
     expect(Object.keys(window.localStorage)).toEqual([])
     expect(Object.keys(window.sessionStorage)).toEqual([])
   })
+
+  test('does not write generated v2 draft content to browser storage', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+    api.generateReportDraftV2.mockResolvedValue(
+      makeReportDraft({
+        aiGenerated: makeAiGenerated({ chiefComplaint: 'SYNTHETIC_V2_GENERATED_SECRET' }),
+      }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(
+      await screen.findByRole('button', { name: '產生 v2 AI 草稿' }),
+    )
+    expect(await screen.findByText('SYNTHETIC_V2_GENERATED_SECRET')).toBeInTheDocument()
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain('SYNTHETIC_V2_GENERATED_SECRET')
+    expect(storedData).not.toContain('draft-1')
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
+  })
 })
 
 describe('ReportPage error handling', () => {
@@ -545,6 +811,9 @@ describe('ReportPage error handling', () => {
     })
     api.createReportDraft.mockResolvedValue(makeReportDraft())
     api.updateReportDraftManualInput.mockResolvedValue(makeReportDraft())
+    api.generateReportDraftV2.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
     api.generateReport.mockResolvedValue(makeReport())
   })
 

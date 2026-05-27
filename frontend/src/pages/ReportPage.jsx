@@ -17,6 +17,7 @@ import {
 import {
   createReportDraft,
   generateReport,
+  generateReportDraftV2,
   getCurrentReportDraft,
   getCase,
   getSessionSummaries,
@@ -467,6 +468,71 @@ function ReportDraftManualInputPanel({
   )
 }
 
+function ReportDraftGeneratePanel({
+  conversationUrl,
+  draft,
+  generateStatus,
+  hasUnsavedChanges,
+  isGeneratingDraft,
+  isSavingDraft,
+  onGenerateDraft,
+  showConversationLink,
+}) {
+  const hasDraft = Boolean(getDraftId(draft))
+
+  if (!hasDraft) return null
+
+  const hasAiGenerated = Boolean(draft?.ai_generated)
+  const buttonLabel = hasAiGenerated ? '重新產生 v2 AI 草稿' : '產生 v2 AI 草稿'
+  const disabled = isSavingDraft || isGeneratingDraft
+
+  return (
+    <SectionCard
+      title="v2 AI 草稿產生"
+      description="依目前已儲存的手動資料與會談摘要產生五段式報告的 AI 草稿。此草稿需由諮商師審閱，且不會影響目前 v1 暫時報告。"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="text-sm leading-6 text-muted-foreground">
+          <p>產生時只會使用後端已儲存的手動資料與會談摘要。</p>
+          {hasUnsavedChanges ? (
+            <p className="mt-1 text-amber-800 dark:text-amber-200">
+              請先儲存手動資料，再產生 v2 AI 草稿
+            </p>
+          ) : null}
+        </div>
+        <button
+          className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
+          disabled={disabled}
+          onClick={onGenerateDraft}
+          type="button"
+        >
+          {isGeneratingDraft ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <RefreshCcw className="h-4 w-4" />
+          )}
+          {isGeneratingDraft ? '產生中' : buttonLabel}
+        </button>
+      </div>
+
+      {generateStatus ? (
+        <div className="mt-4 rounded-md border border-slate-200 bg-slate-50/80 p-3 text-sm text-slate-800 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-100">
+          <p>{generateStatus}</p>
+          {showConversationLink ? (
+            <Link
+              className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-indigo-800 hover:text-indigo-950 dark:text-indigo-200 dark:hover:text-indigo-100"
+              to={conversationUrl}
+            >
+              <ArrowLeft className="h-4 w-4" />
+              回到工作台新增會談摘要
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+    </SectionCard>
+  )
+}
+
 function EmotionIntensityTrend({ summaries }) {
   if (summaries.length === 0) {
     return <p className="text-sm text-muted-foreground">尚無可整理的情緒強度資料。</p>
@@ -707,8 +773,12 @@ export default function ReportPage() {
   const [draftError, setDraftError] = useState('')
   const [isCreatingDraft, setIsCreatingDraft] = useState(false)
   const [isSavingDraft, setIsSavingDraft] = useState(false)
+  const [isGeneratingDraftV2, setIsGeneratingDraftV2] = useState(false)
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
   const [saveStatus, setSaveStatus] = useState('已儲存')
+  const [draftGenerateStatus, setDraftGenerateStatus] = useState('')
+  const [showDraftGenerateConversationLink, setShowDraftGenerateConversationLink] =
+    useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
@@ -729,6 +799,8 @@ export default function ReportPage() {
     setFormManualInput({})
     setHasUnsavedChanges(false)
     setSaveStatus('已儲存')
+    setDraftGenerateStatus('')
+    setShowDraftGenerateConversationLink(false)
 
     try {
       const draftResultPromise = getCurrentReportDraft(caseId, sessionId)
@@ -802,6 +874,8 @@ export default function ReportPage() {
       setDraftState('ready')
       setHasUnsavedChanges(false)
       setSaveStatus('已儲存')
+      setDraftGenerateStatus('')
+      setShowDraftGenerateConversationLink(false)
     } catch {
       setDraftError('無法建立 v2 手動資料草稿，請稍後再試。')
     } finally {
@@ -815,6 +889,8 @@ export default function ReportPage() {
     )
     setHasUnsavedChanges(true)
     setSaveStatus('未儲存變更')
+    setDraftGenerateStatus('')
+    setShowDraftGenerateConversationLink(false)
   }
 
   async function handleSaveDraft(event) {
@@ -839,6 +915,40 @@ export default function ReportPage() {
       setSaveStatus('儲存失敗，請稍後再試')
     } finally {
       setIsSavingDraft(false)
+    }
+  }
+
+  async function handleGenerateDraftV2() {
+    const draftId = getDraftId(reportDraft)
+
+    if (!draftId) return
+
+    if (hasUnsavedChanges) {
+      setDraftGenerateStatus('')
+      setShowDraftGenerateConversationLink(false)
+      return
+    }
+
+    setIsGeneratingDraftV2(true)
+    setDraftGenerateStatus('')
+    setShowDraftGenerateConversationLink(false)
+
+    try {
+      const updatedDraft = await generateReportDraftV2(draftId)
+      setReportDraft(updatedDraft)
+      setFormManualInput(updatedDraft.manual_input ?? formManualInput)
+      setHasUnsavedChanges(false)
+      setDraftGenerateStatus('已產生 v2 AI 草稿')
+    } catch (generateDraftError) {
+      if (generateDraftError?.response?.status === 422) {
+        setDraftGenerateStatus('至少需要一筆會談摘要才能產生 v2 AI 草稿')
+        setShowDraftGenerateConversationLink(Boolean(caseId && sessionId))
+      } else {
+        setDraftGenerateStatus('產生失敗，請稍後再試')
+        setShowDraftGenerateConversationLink(false)
+      }
+    } finally {
+      setIsGeneratingDraftV2(false)
     }
   }
 
@@ -938,6 +1048,17 @@ export default function ReportPage() {
         onFieldChange={handleManualInputFieldChange}
         onSaveDraft={handleSaveDraft}
         saveStatus={saveStatus}
+      />
+
+      <ReportDraftGeneratePanel
+        conversationUrl={conversationUrl}
+        draft={reportDraft}
+        generateStatus={draftGenerateStatus}
+        hasUnsavedChanges={hasUnsavedChanges}
+        isGeneratingDraft={isGeneratingDraftV2}
+        isSavingDraft={isSavingDraft}
+        onGenerateDraft={handleGenerateDraftV2}
+        showConversationLink={showDraftGenerateConversationLink}
       />
 
       <ReportV2Preview draft={reportDraft} />
