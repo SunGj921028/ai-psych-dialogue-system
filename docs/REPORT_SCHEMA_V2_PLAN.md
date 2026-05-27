@@ -10,8 +10,10 @@ exist. Backend-only deterministic AI draft generation also exists through
 manual input slice, frontend draft API helpers including
 `generateReportDraftV2(draftId)`, the separate v2 generation action card, and
 read-only five-section preview rendering of manual plus generated draft fields
-also exist. Real provider/prompt integration, counselor review/final report
-workflow, and PDF export are not implemented yet.
+also exist. Backend Report v2 prompt/input builder helpers and provider output
+parser now exist, with a provider boundary stub for future integration. Live
+provider calls, counselor review/final report workflow, and PDF export are not
+implemented yet.
 
 ## 1. Purpose and Scope
 
@@ -48,10 +50,15 @@ Current implementation status:
   call a live provider, uses `ReportAIGeneratedV2`, persists
   `ai_generated_json`, and keeps missing/unsupported fields pending for
   counselor review.
+- Backend Report v2 prompt/input builder helpers are implemented with
+  `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`.
+- Backend Report v2 provider output parsing is implemented for future provider
+  mode, but no live provider call is wired into a route.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
-- No real v2 LLM prompt changes, live provider integration, counselor review
-  workflow, final-report workflow, or PDF export have been implemented.
+- No live v2 provider integration, disabled-by-default provider mode,
+  environment/config provider control, counselor review workflow, final-report
+  workflow, frontend behavior change, or PDF export has been implemented.
 
 ## 2. Source Materials
 
@@ -96,6 +103,20 @@ Current implementation facts:
 - `analysis_agent.generate_report_v2_ai_draft(...)` exists beside the existing
   v1 `analysis_agent.generate_report(...)`. The v2 function is conservative and
   deterministic for now and does not call a live provider.
+- `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"` exists.
+- Backend Report v2 prompt/input builder helpers use fixed curated knowledge-base
+  excerpts and safety instructions, shape summaries into safe provider input,
+  bound/truncate `key_statement`, and exclude raw messages, crisis detector
+  reasons, DB-internal `round`, and session title.
+- Backend Report v2 provider output parsing accepts JSON string or dict input,
+  rejects invalid JSON and non-object JSON, validates with
+  `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
+  validation, and rejects unsafe evidence ref notes. Evidence notes are limited
+  to pointer-only labels such as `summary metadata`, `manual input`, and
+  `persisted crisis level`.
+- `_call_report_v2_provider(...)` exists as a provider boundary and currently
+  raises `NotImplementedError`. No live provider call is wired in, and no route
+  default calls a live provider.
 - `POST /api/report-drafts/{draft_id}/generate` loads a draft, requires at least
   one persisted session summary, validates/generates `ReportAIGeneratedV2`,
   persists `ai_generated_json`, updates status to `ai_generated`, sets
@@ -125,9 +146,10 @@ Current implementation facts:
   report drafts, manual clinical input, summaries, crisis levels, crisis
   reasons, case notes, titles, or other clinical content.
 
-The existing `POST /api/reports/generate` endpoint should remain unchanged until
-v2 is explicitly integrated into frontend workflows. The backend-only v2 draft
-generation endpoint exists beside it and does not change v1 behavior.
+The existing `POST /api/reports/generate` endpoint remains unchanged. The
+backend-only v2 draft generation endpoint exists beside it, keeps its
+deterministic/conservative default behavior, and does not change v1 or
+ReportPage frontend behavior.
 
 ## 4. Report Template v2 Structure
 
@@ -508,9 +530,11 @@ The backend Pydantic model slice for this direction now exists in
 manual input draft persistence, API responses, the first frontend ReportPage v2
 manual input slice, a read-only frontend template preview that renders
 `ai_generated` fields, frontend v2 generation controls, and backend-only
-deterministic v2 AI draft generation. They are not yet connected to real LLM
-prompts, live provider calls, counselor review/final report workflow, or PDF
-export.
+deterministic v2 AI draft generation. Backend prompt/input builder helpers and
+provider output parser now exist for future provider mode. They are not yet
+connected to live provider calls, disabled-by-default provider mode,
+environment/config provider control, counselor review/final report workflow, or
+PDF export.
 
 Implemented model names:
 
@@ -771,6 +795,14 @@ Data that should not be stored:
 - raw crisis detector reasons
 - provider debug output
 
+Current prompt/provider-parser slice behavior:
+
+- raw prompts and raw provider responses are not persisted
+- raw messages are not used
+- crisis detector reasons are not used
+- session titles are not used as provider input
+- knowledge-base excerpts are reference/writing guidance only, not case facts
+
 Report persistence increases privacy responsibility. The future implementation
 should keep generic non-leaking errors, avoid sensitive logs, and preserve the
 existing browser-storage prohibition.
@@ -782,8 +814,10 @@ Initial strategy:
 - Keep the v1 report endpoint unchanged.
 - Add Report Schema v2 beside v1.
 - Keep the current backend-only v2 generation deterministic and conservative
-  until real provider/prompt integration is designed.
-- Do not rewrite the current prompt as part of this backend-only slice.
+  until disabled-by-default provider mode and config controls are explicitly
+  designed.
+- Keep provider prompt/input preparation and provider output parsing behind
+  backend boundaries; do not make route defaults call a live provider.
 
 Current backend-only `analysis_agent` v2 behavior:
 
@@ -792,13 +826,36 @@ Current backend-only `analysis_agent` v2 behavior:
 - It does not call a live provider.
 - It returns schema-valid pending/missing fields rather than fabricated content.
 
-Future real-provider `analysis_agent` v2 should accept:
+Current prompt/input builder behavior:
 
-- session summaries
-- persisted `crisis_level` metadata
-- manual input
-- template/schema instructions
-- curated knowledge-base excerpts
+- `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"` identifies the prompt
+  payload contract.
+- Builder helpers use fixed curated knowledge-base excerpts and safety
+  instructions.
+- Summaries are shaped into safe provider input with `turn_number`, summary
+  metadata, persisted `crisis_level`, and bounded/truncated `key_statement`.
+- Raw messages, crisis detector reasons, DB-internal `round`, and session title
+  are excluded.
+- Knowledge-base excerpts are writing/reference guidance only and are not case
+  facts.
+
+Current provider parser behavior:
+
+- The parser accepts either a JSON string or a dict.
+- It rejects invalid JSON and non-object JSON.
+- It validates output with `ReportAIGeneratedV2`.
+- It rejects unknown/manual-only fields through strict schema validation.
+- It rejects unsafe evidence ref notes.
+- Evidence notes are limited to pointer-only labels such as `summary metadata`,
+  `manual input`, and `persisted crisis level`.
+
+Current provider boundary behavior:
+
+- `_call_report_v2_provider(...)` exists and raises `NotImplementedError`.
+- No live provider call is wired in.
+- Automated tests do not call live providers.
+- `POST /api/report-drafts/{draft_id}/generate` remains
+  deterministic/conservative by default.
 
 The LLM should fill only AI-owned fields. Manual-only and system-owned fields
 must remain outside LLM control.
@@ -972,7 +1029,8 @@ Backend tests should cover:
 - manual input validation
 - report draft CRUD
 - deterministic v2 AI draft fallback
-- mocked LLM/provider parsing when real provider integration is added later
+- prompt payload safety and source shaping
+- provider output parsing with mocked payloads
 - missing data behavior
 - no fabricated manual-only fields
 - generic non-leaking errors
@@ -1019,6 +1077,20 @@ Current backend draft persistence and route tests cover:
 - archived session support
 - route 404/422/500 behavior
 - v1 report route preservation
+
+Current backend prompt/parser/provider-boundary tests cover:
+
+- prompt payload safety and source shaping
+- message safety instructions
+- valid provider parser output
+- invalid JSON rejection
+- non-object JSON rejection
+- unknown/manual-only field rejection through `ReportAIGeneratedV2`
+- unsafe evidence ref note rejection
+- provider boundary behavior with `NotImplementedError`
+- v1 `analysis_agent.generate_report()` preservation
+- v1 `POST /api/reports/generate` preservation
+- deterministic v2 preservation without live provider calls
 
 Frontend tests should cover:
 
@@ -1067,9 +1139,14 @@ Recommended implementation slices:
 7. Backend v2 generate route and `ai_generated_json` persistence. Completed.
 8. Frontend v2 generate action and `generateReportDraftV2` helper. Completed.
 9. ReportV2Preview rendering of `ai_generated` fields. Completed.
-10. Real provider/prompt integration for v2. Future work.
-11. Counselor edit/review status flow. Future work.
-12. PDF export planning and implementation. Future work.
+10. Backend Report v2 prompt/input builder and provider parser. Completed.
+11. Disabled-by-default provider mode and environment/config controls. Future
+    work.
+12. Real provider call integration for v2. Future work.
+13. Frontend behavior changes for provider mode, if explicitly designed. Future
+    work.
+14. Counselor edit/review status flow. Future work.
+15. PDF export planning and implementation. Future work.
 
 Each implementation slice should be small, testable, and reviewable. Safety and
 browser-storage regression tests should accompany behavior changes.
@@ -1079,10 +1156,14 @@ browser-storage regression tests should accompany behavior changes.
 Out of scope for this planning slice:
 
 - immediate PDF implementation
-- immediate prompt rewrite
 - live provider integration for v2
+- disabled-by-default provider mode
+- environment/config provider control
+- frontend behavior changes
 - diagnosis automation
 - medication advice
+- formal risk-level automation
+- safety plan generation
 - emergency workflow automation
 - treatment plan automation
 - browser storage of report drafts, generated report text, `ai_generated` JSON,
@@ -1106,3 +1187,6 @@ Human decisions needed before coding:
 - Should any diagnosis-related section remain limited to `診斷性思考` only?
 - Should regeneration preserve counselor edits by default?
 - Should report drafts support archive or lock behavior after export?
+- What environment/config flag should enable disabled-by-default provider mode?
+- What provider/model should be used when real Report v2 provider calls are
+  explicitly enabled?

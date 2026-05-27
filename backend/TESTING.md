@@ -31,7 +31,7 @@ Current deterministic tests live under `backend/tests/`:
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
-| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, and deterministic/conservative v2 AI draft fallback without live provider calls. |
+| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, message safety instructions, valid provider parser output, invalid/manual-only/unsafe parser rejection, and provider boundary behavior without live provider calls. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
 | `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, archive/unarchive behavior, default archived-session exclusion, `include_archived=true` listing, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and safe session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures and report draft helper failures. |
@@ -157,6 +157,18 @@ Covered deterministic behaviors include:
 - Analysis report computes `has_crisis`, `peak_turn`, and fixed disclaimer in code.
 - Report Schema v2 AI draft fallback returns a conservative schema-valid
   `ReportAIGeneratedV2` without live provider calls.
+- Report Schema v2 prompt/input builder uses
+  `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`, fixed curated
+  knowledge-base excerpts, safety instructions, safe summary-shaped provider
+  input, bounded/truncated `key_statement`, and excludes raw messages, crisis
+  detector reasons, DB-internal `round`, and session title.
+- Report Schema v2 provider output parser accepts JSON strings or dicts; rejects
+  invalid JSON, non-object JSON, unknown/manual-only fields, and unsafe evidence
+  ref notes; validates with `ReportAIGeneratedV2`; and limits evidence notes to
+  pointer-only labels such as `summary metadata`, `manual input`, and
+  `persisted crisis level`.
+- `_call_report_v2_provider(...)` currently raises `NotImplementedError`, and
+  automated tests verify that no live provider is required.
 - Gemini JSON `response_format` compatibility failures are handled through fallback paths
   or robust parsing where applicable.
 
@@ -221,6 +233,8 @@ Task 09 route tests verify:
   - invalid manual input 422 behavior.
   - generic non-leaking 500 behavior.
 - Existing v1 `POST /api/reports/generate` behavior remains covered and unchanged.
+- Existing `POST /api/report-drafts/{draft_id}/generate` default behavior remains
+  deterministic/conservative and is not wired to a live provider call.
 
 For route tests, prefer monkeypatching agent functions instead of mocking provider clients
 deep inside each agent.
