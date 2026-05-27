@@ -30,6 +30,7 @@ source code remains the implementation truth.
 | GET | `/api/cases/{case_id}/sessions/{session_id}/report-drafts/current` | implemented | Returns the current Report Schema v2 draft for a case/session. |
 | POST | `/api/cases/{case_id}/sessions/{session_id}/report-drafts` | implemented | Creates or returns the current Report Schema v2 draft. |
 | PATCH | `/api/report-drafts/{draft_id}/manual-input` | implemented | Updates counselor manual input for an existing Report Schema v2 draft. |
+| POST | `/api/report-drafts/{draft_id}/generate` | implemented | Generates and persists a backend-only deterministic Report Schema v2 AI draft. |
 
 Routers are mounted under `/api` in `backend/main.py`.
 
@@ -619,6 +620,9 @@ Implementation notes:
 - Reuse `ConceptualizationReport` from `agents.analysis_agent`.
 - Do not let the LLM generate or override the fixed disclaimer.
 - Existing v1 report behavior is unchanged by Report Schema v2 draft endpoints.
+- `generate_report_v2_ai_draft(...)` exists beside the existing v1
+  `generate_report(...)`. It is deterministic/conservative for now and does not
+  call a live provider.
 
 #### Get Current Report Draft
 
@@ -702,15 +706,57 @@ Implementation notes:
 - Return 404 if the draft does not exist.
 - Invalid manual input returns 422.
 - Return 500 with a generic non-leaking message on helper/DB failures.
-- No generic draft PATCH, v2 generate route, review route, or PDF export route is
-  implemented yet.
+- No generic draft PATCH, review route, or PDF export route is implemented yet.
+
+#### Generate Report Draft AI Content
+
+Status: implemented
+
+`POST /api/report-drafts/{draft_id}/generate`
+
+Response: `ReportDraftV2`
+
+Implementation notes:
+
+- Loads the report draft by `draft_id`.
+- Returns 404 if the draft does not exist.
+- Loads persisted summaries for the draft's `case_id` and `session_id`.
+- Requires at least one persisted session summary.
+- Returns 422 if no summaries exist.
+- Calls `agents.analysis_agent.generate_report_v2_ai_draft(...)`.
+- The current v2 agent function is deterministic and conservative and does not
+  call a live provider.
+- Validates the result as `ReportAIGeneratedV2`.
+- `ReportAIGeneratedV2` and nested `ReportField` reject unknown fields.
+- AI output cannot silently include manual-only fields such as diagnosis,
+  medication, legal issues, testing scores, safety plans, formal risk level,
+  treatment decisions, trauma/family history, or other counselor-owned fields.
+- Missing or unsupported generated fields must remain null / `待評估` /
+  `not_assessed`-compatible.
+- Persists `ai_generated_json` through
+  `database.db.update_report_ai_generated(...)`.
+- Stores pointer-only source refs / source summary IDs. Source refs may include
+  `turn_number`, `summary_id`, and a generic note, but must not duplicate raw
+  messages or crisis detector reasons.
+- Updates draft status to `ai_generated`.
+- Sets `generated_at` and `updated_at`.
+- Preserves `manual_input_json`.
+- Leaves `final_report_json` null.
+- Returns `ReportDraftV2`.
+- Invalid agent output or helper/DB failure returns a generic non-leaking 500.
+- Existing v1 `POST /api/reports/generate` behavior remains unchanged.
+- This endpoint does not add diagnosis automation, medication advice, emergency
+  workflow automation, treatment plan automation, PDF export, browser storage,
+  live provider calls, or real v2 prompt integration.
 
 ## Future Endpoints / Integrations
 
 These are not required for Task 09 or remain frontend integration work:
 
 - Latest summaries endpoint for dashboards.
-- Report Schema v2 AI generation endpoint.
+- Real provider/prompt integration for Report Schema v2 AI generation.
+- Frontend ReportPage v2 generate button.
+- ReportV2Preview rendering of `ai_generated` fields.
 - Report Schema v2 counselor review/finalization endpoint.
 - PDF export endpoint.
 - Session hard-delete endpoint, if a future data-retention/privacy policy
@@ -739,6 +785,8 @@ These are not required for Task 09 or remain frontend integration work:
   `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`, and
   `updateReportDraftManualInput(draftId, payload)` calls
   `PATCH /api/report-drafts/{draft_id}/manual-input`.
+- No frontend helper or ReportPage button calls
+  `POST /api/report-drafts/{draft_id}/generate` yet.
 - Frontend resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - Frontend report links use `/report/{caseId}?sessionId={sessionId}`.
 - Conversation query params take precedence over stale `sessionStorage`
@@ -827,6 +875,22 @@ These are not required for Task 09 or remain frontend integration work:
 6. Persist `manual_input_json` and update `updated_at`.
 7. Return `ReportDraftV2`.
 
+### Report Draft AI Generation Flow
+
+1. Load the draft by `draft_id`.
+2. Return 404 if the draft is missing.
+3. Load persisted summaries for the draft's case/session.
+4. Return 422 when no summaries exist.
+5. Call deterministic/conservative `generate_report_v2_ai_draft(...)` with
+   summaries and existing manual input.
+6. Validate the output as `ReportAIGeneratedV2`.
+7. Collect pointer-only source refs / source summary IDs from generated evidence
+   refs or from persisted summary row IDs.
+8. Persist `ai_generated_json` through `update_report_ai_generated(...)`.
+9. Set status to `ai_generated`, set `generated_at` and `updated_at`, preserve
+   `manual_input_json`, and leave `final_report_json` null.
+10. Return `ReportDraftV2`.
+
 ### Session Listing Flow
 
 1. Validate request and confirm `case_id` exists.
@@ -887,13 +951,21 @@ These are not required for Task 09 or remain frontend integration work:
 - Draft IDs are UUID-like.
 - New drafts default to status `manual_input_started`.
 - `manual_input_json` is validated through `ReportManualInputV2`.
-- `ai_generated_json`, `counselor_edits_json`, and `final_report_json` may remain
-  null until future generation/review/final-report slices.
-- `source_summary_ids_json`, `generated_at`, `reviewed_at`, and `exported_at`
-  are future-use fields.
+- `ai_generated_json` may remain null until the v2 generate endpoint runs.
+  `counselor_edits_json` and `final_report_json` may remain null until future
+  review/final-report slices.
+- `update_report_ai_generated(...)` validates and persists
+  `ai_generated_json`, stores pointer-only source refs / source summary IDs in
+  `source_summary_ids_json`, updates status to `ai_generated`, sets
+  `generated_at` and `updated_at`, preserves `manual_input_json`, and leaves
+  `final_report_json` null.
+- `reviewed_at` and `exported_at` are future-use fields.
 - Report draft persistence must not store raw provider prompts, raw LLM
   responses, API keys/secrets, raw message text, duplicated raw messages, or
   crisis reasons.
+- Report draft source refs / source summary IDs must remain pointer-only and
+  must not store raw prompts, raw LLM responses, raw messages, or crisis
+  detector reasons.
 - Browser storage must not store manual input, report drafts, report text,
   summaries, crisis reasons, case notes, or clinical content.
 
@@ -904,6 +976,8 @@ These are not required for Task 09 or remain frontend integration work:
 - Missing session for report draft current/create routes: return 404.
 - Missing report draft: return 404.
 - Invalid report draft manual input: return 422.
+- Report draft AI generation with no persisted summaries: return 422.
+- Invalid v2 AI generated output: return 500 with a generic non-leaking message.
 - Session creation for an existing same-case/session pair is idempotent and
   returns existing metadata without overwriting title.
 - Over-length session title: reject with a validation error.

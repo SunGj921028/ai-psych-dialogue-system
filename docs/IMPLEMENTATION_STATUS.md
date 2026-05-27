@@ -57,15 +57,24 @@ Current facts:
   `report_schema_v2` and default status `manual_input_started`.
 - `report_drafts.id` values are UUID-like. `manual_input_json` is persisted and
   validated through `ReportManualInputV2`.
-- `ai_generated_json`, `counselor_edits_json`, and `final_report_json` may remain
-  null until future v2 generation, counselor review, and final-report slices.
-- `source_summary_ids_json`, `generated_at`, `reviewed_at`, and `exported_at`
-  exist as future-use fields.
+- `ai_generated_json` is populated by the backend-only Report Schema v2 AI draft
+  generation slice. `counselor_edits_json` and `final_report_json` may remain
+  null until future counselor review and final-report slices.
+- `source_summary_ids_json` stores pointer-only source references / source
+  summary IDs for v2 AI draft generation. It must not store raw prompts, raw LLM
+  responses, raw messages, or crisis detector reasons.
+- `generated_at` is set when v2 AI draft generation persists
+  `ai_generated_json`; `reviewed_at` and `exported_at` remain future-use fields.
 - Archived sessions can create and update report drafts when explicitly addressed
   by case/session ID.
 - Report draft DB helpers exist: `create_or_get_report_draft`,
   `get_current_report_draft`, `get_report_draft`, and
   `update_report_manual_input`.
+- `update_report_ai_generated(draft_id, ai_generated, source_refs)` exists for
+  the backend-only v2 AI draft slice. It validates and persists
+  `ai_generated_json`, stores pointer-only source refs / source summary IDs,
+  updates status to `ai_generated`, sets `generated_at` and `updated_at`,
+  preserves `manual_input_json`, and leaves `final_report_json` null.
 - Session metadata must not store or expose raw messages, summaries,
   `summary_json`, `key_statement`, themes, crisis reasons, report text,
   DB-internal `round`, or latest/peak `crisis_level` aggregates.
@@ -84,12 +93,17 @@ Current facts:
   and contains safety fallback behavior.
 - `analysis_agent.py` generates `ConceptualizationReport` objects from summaries.
   It computes `has_crisis`, `peak_turn`, and the fixed disclaimer in code.
+- `analysis_agent.py` also exposes `generate_report_v2_ai_draft(...)` beside the
+  existing v1 `generate_report(...)`. The v2 function is deterministic and
+  conservative for now, returns schema-valid pending/missing fields, and does not
+  call a live provider.
+- Existing v1 `analysis_agent.generate_report()` remains unchanged.
 - Gemini JSON mode via `response_format={"type": "json_object"}` is a known
   compatibility risk.
 
 ### Backend Models
 
-Status: partially implemented for future Report Schema v2 work.
+Status: partially implemented for Report Schema v2 work.
 
 Current facts:
 
@@ -103,22 +117,35 @@ Current facts:
 - `schema_version` is fixed to `report_schema_v2`.
 - Status, source type, missing reason, and risk level accept only strict allowed
   values.
+- `ReportAIGeneratedV2` and `ReportField` reject unknown fields.
+- `ReportAIGeneratedV2` accepts only AI-owned draft fields and rejects
+  manual-only fields. AI output cannot silently include diagnosis, medication,
+  legal issues, testing scores, safety plans, formal risk level, treatment
+  decisions, trauma/family history, or other counselor-owned fields.
 - Missing data can be represented as null, blank-compatible values, or `待評估`,
   with structured missing reasons.
+- Missing or unsupported AI draft fields remain null / `待評估` /
+  `not_assessed`-compatible rather than being fabricated.
 - AI-generated fields do not require manual-only diagnosis, medication, legal,
   testing, trauma, family-history, or safety-plan content when absent.
 - Evidence references use safe pointers such as `turn_number`, `summary_id`, and
   `note`; they do not duplicate raw message text.
 - Safety flags default conservatively.
 - These models are wired into backend-side `report_drafts` manual input
-  persistence and manual-input API responses. They are not wired into runtime AI
-  report generation yet.
+  persistence, manual-input API responses, and backend-only deterministic v2 AI
+  draft generation. Real provider/prompt integration is not implemented yet.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
 - Frontend ReportPage v2 manual input UI/API helpers and read-only template
-  preview are implemented for the first manual-input slice. No LLM prompt
-  changes, AI v2 generation, counselor review/final report workflow, or PDF
-  export have been implemented.
+  preview are implemented for the first manual-input slice. No real v2 provider
+  prompt rewrite, frontend v2 generate button, ReportV2Preview rendering of
+  `ai_generated` fields, counselor review/final report workflow, or PDF export
+  has been implemented.
+- Report v2 safety/privacy constraints remain unchanged: no live provider
+  integration yet, no real prompt rewrite yet, no frontend ReportPage v2
+  generate button yet, no browser storage of generated report text, no diagnosis
+  automation, no medication advice, no emergency workflow automation, no
+  treatment plan automation, no PDF export, and v1 behavior remains unchanged.
 
 ### Backend Routers
 
@@ -148,6 +175,7 @@ Current facts:
   - `GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`
   - `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`
   - `PATCH /api/report-drafts/{draft_id}/manual-input`
+  - `POST /api/report-drafts/{draft_id}/generate`
 - Public route responses expose `turn_number`, not DB-internal `round`.
 - Summary responses expose parsed summary data, not raw `summary_json`.
 - `POST /api/cases/{case_id}/sessions` creates durable session metadata. The
@@ -198,10 +226,17 @@ Current facts:
   peak `crisis_level` session aggregate was added.
 - Report generation behavior is unchanged.
 - Report draft endpoints return `ReportDraftV2`. They support loading the
-  current draft, creating or returning the one current draft, and updating
-  `manual_input_json` only.
+  current draft, creating or returning the one current draft, updating
+  `manual_input_json`, and backend-only deterministic v2 AI draft generation.
+- `POST /api/report-drafts/{draft_id}/generate` loads the draft, requires at
+  least one persisted session summary, returns 422 when no summaries exist,
+  validates/generates `ReportAIGeneratedV2`, persists `ai_generated_json`,
+  updates status to `ai_generated`, sets `generated_at` and `updated_at`,
+  preserves `manual_input_json`, leaves `final_report_json` null, and returns
+  `ReportDraftV2`.
 - Report draft routes return 404 for missing case/session/draft, 422 for invalid
-  manual input, and generic non-leaking 500 responses for helper/DB failures.
+  manual input or missing summaries, and generic non-leaking 500 responses for
+  invalid agent output or helper/DB failures.
 - Report draft persistence is backend-side clinical content and must remain
   protected. It does not store raw provider prompts, raw LLM responses, API
   keys/secrets, raw message text, or crisis reasons.
@@ -365,9 +400,10 @@ Current facts:
   endpoint if needed, and MCP integration remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
-- No v2 AI generation exists yet. No editable counselor final report workflow,
-  LLM prompt changes, Recharts integration, or PDF export has been implemented
-  for the report workspace.
+- Backend-only deterministic v2 AI draft generation exists. No frontend v2
+  generate button, real provider/prompt integration, ReportV2Preview rendering
+  of `ai_generated` fields, editable counselor final report workflow, Recharts
+  integration, or PDF export has been implemented for the report workspace.
 
 ### Tests
 
@@ -423,13 +459,16 @@ Current facts:
 - Backend tests cover Report Schema v2 models, including valid minimal drafts,
   fixed schema version, missing data behavior, enum validation, evidence
   references, manual-only separation from AI-generated fields, conservative
-  safety-flag defaults, JSON-compatible serialization, and invalid values.
+  safety-flag defaults, JSON-compatible serialization, invalid values, unknown
+  field rejection, and rejection of manual-only fields in `ReportAIGeneratedV2`.
 - Backend tests cover Report Schema v2 draft persistence, including table
   creation, create/get current draft, one-current-draft behavior, UUID-like IDs,
   default status, fixed schema version, manual input validation, partial/empty
-  manual input, invalid manual input, timestamp updates, null generated/final
-  sections, archived session support, route 404/422/500 behavior, and v1 report
-  route preservation.
+  manual input, invalid manual input, timestamp updates, v2 AI generated JSON
+  persistence, status transition to `ai_generated`, `generated_at`, manual input
+  preservation, final report remaining null, safe pointer-only source refs,
+  archived session support, route 404/422/500 behavior, invalid v2 agent output,
+  helper/DB failure behavior, and v1 report route preservation.
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
@@ -462,10 +501,10 @@ Current facts:
 - Frontend storage expectations are explicit: `localStorage` is used only for
   `ai-psych-theme`, and `sessionStorage` may store only active case/session
   identifiers.
-- Remaining future frontend testing work includes v2 AI generation, counselor
-  final report workflow, and PDF export coverage when those features are
-  implemented, plus optional Playwright/E2E and visual regression later if
-  needed.
+- Remaining future frontend testing work includes the frontend v2 generate
+  button, ReportV2Preview rendering of `ai_generated` fields, counselor final
+  report workflow, and PDF export coverage when those features are implemented,
+  plus optional Playwright/E2E and visual regression later if needed.
 - GitHub Actions CI exists and runs deterministic backend tests under
   `backend/tests/` plus frontend `npm run test` and `npm run build`.
 - CI does not run live provider/manual scripts under `backend/manual_checks/`.
@@ -484,7 +523,7 @@ Current facts:
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing and backend-only manual session rename. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, backend-level-only crisis UI behavior, and restored persisted `crisis_level` display from loaded summaries. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
-| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, transient-report note, summary-derived review aids, a visually separate Report Schema v2 manual input panel, and a read-only v2 five-section preview from loaded manual input. Backend Report Schema v2 models, backend `report_drafts` persistence, backend manual input API, and frontend draft API helpers exist. AI v2 generation, analysis-agent v2 integration, counselor review/final report workflow, PDF export, and runtime v2 generation integration remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, transient-report note, summary-derived review aids, a visually separate Report Schema v2 manual input panel, and a read-only v2 five-section preview from loaded manual input. Backend Report Schema v2 models, backend `report_drafts` persistence, backend manual input API, backend-only deterministic v2 AI draft generation endpoint, and frontend draft API helpers exist. Real provider/prompt integration for v2, frontend v2 generate button, ReportV2Preview rendering of `ai_generated` fields, counselor review/final report workflow, PDF export, and frontend runtime v2 generation integration remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback, keeps session IDs visible as secondary metadata, supports inline manual title rename/clear, and implements archive-only session lifecycle controls. Hard delete, title search/filter, labels, and richer session metadata remain future work. |
 | Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -522,10 +561,11 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: hard delete/data-retention policy,
-   title search/filter, v2 AI generation UI once backend support exists, PDF
-   export, optional charts/Recharts, editable/final report review workflow,
-   report status, optional HistoryPage crisis-level display, and optional
-   runtime/provider status if needed without leaking secrets.
+   title search/filter, frontend v2 AI generation button and preview rendering
+   of generated fields, PDF export, optional charts/Recharts, editable/final
+   report review workflow, report status, optional HistoryPage crisis-level
+   display, and optional runtime/provider status if needed without leaking
+   secrets.
 4. Keep ReportPage frontend tests current as v2 generation, rendering, and
    final-report workflows are added.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
@@ -592,6 +632,18 @@ Current reality:
   endpoints exist. One current draft is enforced per
   `(case_id, session_id, schema_version)`, manual input is validated through
   `ReportManualInputV2`, and not-yet-generated sections may remain null.
+- Backend-only Report Schema v2 AI draft generation exists through
+  `generate_report_v2_ai_draft(...)` and
+  `POST /api/report-drafts/{draft_id}/generate`. It is deterministic and
+  conservative for now, does not call a live provider, requires at least one
+  persisted summary, persists validated `ReportAIGeneratedV2` to
+  `ai_generated_json`, stores pointer-only source refs / source summary IDs,
+  updates status to `ai_generated`, sets `generated_at` and `updated_at`,
+  preserves `manual_input_json`, and leaves `final_report_json` null.
+- `ReportAIGeneratedV2` and `ReportField` reject unknown fields, so AI output
+  cannot silently include manual-only diagnosis, medication, legal, testing,
+  safety-plan, formal-risk, treatment-decision, trauma/family-history, or
+  similar counselor-owned fields.
 - Frontend conversation, manual report generation, ReportPage counselor review
   workspace, history case/session listing, query-param resume, app navigation,
   SettingsPage static informational guidance, and light/dark theme support are
@@ -658,9 +710,11 @@ Current reality:
   missing manual fields, uses `此欄位待未來 AI 草稿或諮商師補充` for future
   AI/counselor-owned fields, and does not infer facts, risk, or crisis status.
 - v1/v2 report behavior coexists: v2 save does not call `generateReport`, the
-  v1 generate button calls only existing v1 `generateReport`, no v2 AI
-  generation exists yet, no counselor final report workflow exists yet, and no
-  PDF export exists yet. The v2 preview also does not call `generateReport`.
+  v1 generate button calls only existing v1 `generateReport`, backend-only
+  deterministic v2 AI draft generation exists but has no frontend generate
+  button yet, no counselor final report workflow exists yet, and no PDF export
+  exists yet. The v2 preview also does not call `generateReport` and does not
+  render `ai_generated` fields yet.
 - SettingsPage explains system purpose, safety boundaries, browser
   storage/privacy, theme preference behavior, backend-managed model/service
   configuration, and counselor review reminders. It performs no storage writes,
@@ -695,13 +749,14 @@ Future intent:
 - Add title search/filter when prioritized.
 - Report Schema v2 backend Pydantic models now exist under
   `backend/models/report_schema_v2.py`, and a planning artifact exists at
-  `docs/REPORT_SCHEMA_V2_PLAN.md`. Backend manual input API and
-  `report_drafts` persistence now exist, and the first frontend ReportPage v2
-  manual input UI/API helper slice plus read-only template preview are
-  implemented. Remaining report workflow future work includes analysis-agent v2
-  mocked integration, v2 AI-generated field population, counselor
-  review/final report workflow, source/evidence traceability, final PDF export,
-  and optional Recharts/charts.
+  `docs/REPORT_SCHEMA_V2_PLAN.md`. Backend manual input API,
+  `report_drafts` persistence, and backend-only deterministic v2 AI draft
+  generation now exist, and the first frontend ReportPage v2 manual input
+  UI/API helper slice plus read-only template preview are implemented.
+  Remaining report workflow future work includes real provider/prompt
+  integration for v2, frontend v2 generate button, ReportV2Preview rendering of
+  `ai_generated` fields, counselor review/final report workflow, final PDF
+  export, and optional Recharts/charts.
 - Add report status UI and counselor review/final-report workflow when
   prioritized.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
@@ -716,11 +771,11 @@ Future intent:
 - Frontend testing should add coverage for v2 generation, counselor final report
   workflow, and PDF export when those features are implemented, plus optional
   Playwright/E2E later and visual regression later if needed.
-- Report Schema v2 AI generation/runtime integration, `analysis_agent` v2
-  integration, v2 AI-generated field population, PDF export, charts/Recharts,
-  MCP, hard delete, title search/filter, report status UI, counselor
-  review/final-report workflow, latest/peak crisis aggregates, and real provider
-  settings UI remain separate future work.
+- Real provider/prompt integration for Report Schema v2, frontend v2 generate
+  button, ReportV2Preview rendering of `ai_generated` fields, PDF export,
+  charts/Recharts, MCP, hard delete, title search/filter, report status UI,
+  counselor review/final-report workflow, latest/peak crisis aggregates, and
+  real provider settings UI remain separate future work.
 
 ## Related Context Documents
 
