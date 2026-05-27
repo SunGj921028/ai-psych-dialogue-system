@@ -359,4 +359,18 @@ describe('API helper contracts', () => {
       manual_input: payload.manual_input,
     })
   })
+
+  test('generateReportDraftV2 calls POST /api/report-drafts/{draftId}/generate without a payload', async () => {
+    fakeApiClient.post.mockResolvedValue({
+      data: { draft_id: 'draft-1', status: 'ai_generated' },
+    })
+    const { generateReportDraftV2 } = await importClient()
+
+    const result = await generateReportDraftV2('draft-1')
+
+    expect(fakeApiClient.post).toHaveBeenCalledWith(
+      '/api/report-drafts/draft-1/generate',
+    )
+    expect(result).toEqual({ draft_id: 'draft-1', status: 'ai_generated' })
+  })
 })

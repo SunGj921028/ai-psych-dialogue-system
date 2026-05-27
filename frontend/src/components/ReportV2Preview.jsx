@@ -1,5 +1,6 @@
 const MISSING_TEXT = '待評估'
 const FUTURE_PLACEHOLDER = '此欄位待未來 AI 草稿或諮商師補充'
+const AI_DRAFT_BADGE = 'AI 草稿，需諮商師審閱'
 
 function getNestedValue(source, path) {
   return path.reduce((current, key) => current?.[key], source)
@@ -7,6 +8,10 @@ function getNestedValue(source, path) {
 
 function getReportFieldValue(manualInput, path) {
   const field = getNestedValue(manualInput, path)
+  return getFieldDisplayValue(field)
+}
+
+function getFieldDisplayValue(field) {
   const value = field?.value
 
   if (typeof value === 'string') {
@@ -19,6 +24,45 @@ function getReportFieldValue(manualInput, path) {
   }
 
   return MISSING_TEXT
+}
+
+function hasFieldValue(field) {
+  const value = field?.value
+
+  if (typeof value === 'string') {
+    return value.trim().length > 0
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value)
+  }
+
+  if (typeof value === 'boolean') {
+    return true
+  }
+
+  if (Array.isArray(value)) {
+    return value.length > 0
+  }
+
+  return value != null && typeof value === 'object'
+}
+
+function getAiField(aiGenerated, key) {
+  const field = aiGenerated?.[key]
+  return hasFieldValue(field) ? field : null
+}
+
+function formatTurnEvidence(field) {
+  const turnNumbers = [
+    ...new Set(
+      (field?.evidence_refs ?? [])
+        .map((ref) => ref?.turn_number)
+        .filter((turnNumber) => Number.isInteger(turnNumber)),
+    ),
+  ].sort((a, b) => a - b)
+
+  return turnNumbers.map((turnNumber) => `第 ${turnNumber} 輪`)
 }
 
 function formatSessionCountDate(manualInput) {
@@ -43,7 +87,13 @@ function formatSessionCountDate(manualInput) {
   return `${countText}／${sessionDate}`
 }
 
-function PreviewField({ label, value, variant = 'default' }) {
+function PreviewField({
+  label,
+  value,
+  variant = 'default',
+  badges = [],
+  evidence = [],
+}) {
   const valueClassName =
     value === MISSING_TEXT || value === FUTURE_PLACEHOLDER
       ? 'text-muted-foreground'
@@ -62,10 +112,30 @@ function PreviewField({ label, value, variant = 'default' }) {
             未產生
           </span>
         ) : null}
+        {badges.map((badge) => (
+          <span
+            className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-950 dark:border-amber-500/40 dark:bg-amber-950/45 dark:text-amber-100"
+            key={badge}
+          >
+            {badge}
+          </span>
+        ))}
       </dt>
       <dd className={`mt-1 whitespace-pre-wrap leading-6 ${valueClassName}`}>
         {value}
       </dd>
+      {evidence.length ? (
+        <dd className="mt-2 flex flex-wrap gap-1.5 text-xs text-muted-foreground">
+          {evidence.map((item) => (
+            <span
+              className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 dark:border-slate-700 dark:bg-slate-900/75"
+              key={item}
+            >
+              {item}
+            </span>
+          ))}
+        </dd>
+      ) : null}
     </div>
   )
 }
@@ -87,6 +157,19 @@ function FutureField({ label }) {
   )
 }
 
+function AiField({ field, label }) {
+  if (!field) return <FutureField label={label} />
+
+  return (
+    <PreviewField
+      badges={[AI_DRAFT_BADGE]}
+      evidence={formatTurnEvidence(field)}
+      label={label}
+      value={getFieldDisplayValue(field)}
+    />
+  )
+}
+
 function MissingField({ label }) {
   return <PreviewField label={label} value={MISSING_TEXT} />
 }
@@ -94,6 +177,16 @@ function MissingField({ label }) {
 export default function ReportV2Preview({ draft, className = '' }) {
   const hasDraft = Boolean(draft?.draft_id ?? draft?.id)
   const manualInput = draft?.manual_input ?? {}
+  const aiGenerated = draft?.ai_generated ?? {}
+  const manualClientUnderstanding = getNestedValue(manualInput, [
+    'problem_onset_course',
+    'client_understanding',
+  ])
+  const aiClientUnderstanding = getAiField(
+    aiGenerated,
+    'client_understanding_draft',
+  )
+  const hasManualClientUnderstanding = hasFieldValue(manualClientUnderstanding)
 
   return (
     <section
@@ -163,20 +256,49 @@ export default function ReportV2Preview({ draft, className = '' }) {
             />
             <PreviewField
               label="個案對問題的理解／主訴補充"
-              value={getReportFieldValue(manualInput, [
-                'problem_onset_course',
-                'client_understanding',
-              ])}
+              value={
+                hasManualClientUnderstanding || !aiClientUnderstanding
+                  ? getFieldDisplayValue(manualClientUnderstanding)
+                  : getFieldDisplayValue(aiClientUnderstanding)
+              }
+              badges={
+                !hasManualClientUnderstanding && aiClientUnderstanding
+                  ? [AI_DRAFT_BADGE]
+                  : []
+              }
+              evidence={
+                !hasManualClientUnderstanding && aiClientUnderstanding
+                  ? formatTurnEvidence(aiClientUnderstanding)
+                  : []
+              }
             />
-            <FutureField label="主訴摘要" />
-            <FutureField label="問題起始與演變" />
+            {hasManualClientUnderstanding && aiClientUnderstanding ? (
+              <AiField field={aiClientUnderstanding} label="AI 補充草稿" />
+            ) : null}
+            <AiField
+              field={getAiField(aiGenerated, 'chief_complaint_draft')}
+              label="主訴摘要"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'problem_development_draft')}
+              label="問題起始與演變"
+            />
           </PreviewSection>
 
           <PreviewSection title="二、現況評估與觀察">
             <FutureField label="症狀與功能影響" />
-            <FutureField label="情緒模式" />
-            <FutureField label="認知模式" />
-            <FutureField label="行為與因應模式" />
+            <AiField
+              field={getAiField(aiGenerated, 'emotion_pattern')}
+              label="情緒模式"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'cognitive_pattern')}
+              label="認知模式"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'behavior_coping_pattern')}
+              label="行為與因應模式"
+            />
             <FutureField label="晤談觀察" />
           </PreviewSection>
 
@@ -185,19 +307,40 @@ export default function ReportV2Preview({ draft, className = '' }) {
               label="心理測驗／衡鑑資料補充"
               value={getReportFieldValue(manualInput, ['assessment_testing_data'])}
             />
-            <FutureField label="氣質／人格特質" />
+            <AiField
+              field={getAiField(aiGenerated, 'psychological_factors')}
+              label="氣質／人格特質"
+            />
             <FutureField label="防衛機制" />
             <FutureField label="內在衝突" />
           </PreviewSection>
 
           <PreviewSection title="四、理論取向與個案概念化">
             <FutureField label="主要理論取向" />
-            <FutureField label="理論取向理由" />
-            <FutureField label="概念化敘述" />
-            <FutureField label="形成因素" />
-            <FutureField label="誘發因素" />
-            <FutureField label="維持因素" />
-            <FutureField label="保護因素" />
+            <AiField
+              field={getAiField(aiGenerated, 'theoretical_orientation_rationale')}
+              label="理論取向理由"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'conceptualization_narrative')}
+              label="概念化敘述"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'formation_factors')}
+              label="形成因素"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'precipitating_factors')}
+              label="誘發因素"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'maintaining_factors')}
+              label="維持因素"
+            />
+            <AiField
+              field={getAiField(aiGenerated, 'protective_factors')}
+              label="保護因素"
+            />
           </PreviewSection>
 
           <PreviewSection title="五、風險評估">
@@ -208,6 +351,10 @@ export default function ReportV2Preview({ draft, className = '' }) {
             <MissingField label="物質濫用" />
             <MissingField label="精神病性症狀" />
             <MissingField label="整體風險等級" />
+            <AiField
+              field={getAiField(aiGenerated, 'crisis_language_summary')}
+              label="危機語句摘要"
+            />
             <PreviewField
               label="正式風險評估備註"
               value={getReportFieldValue(manualInput, [
