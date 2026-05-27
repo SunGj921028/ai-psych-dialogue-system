@@ -27,15 +27,15 @@ Current deterministic tests live under `backend/tests/`:
 |---|---|---|
 | `backend/tests/conftest.py` | pytest fixtures | Uses a temporary SQLite database through `DATABASE_PATH`. |
 | `backend/tests/helpers.py` | test helpers | Provides fake OpenAI-compatible LLM response objects for agent tests. |
-| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, persisted summary `crisis_level` schema/migration/allowed-value behavior, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, session title normalization/exposure/update behavior, legacy derived compatibility with null titles, legacy/backfilled session rename, archive/unarchive schema and migration behavior, archive/unarchive helper behavior, message/summary preservation, sorting, no-leak metadata, limits, timestamps, cascade behavior, `report_drafts` table creation, create/get current report draft behavior, one-current-draft behavior, UUID-like IDs, default status, fixed schema version, manual input validation, partial/empty manual input, timestamp updates, null generated/final sections, and archived-session draft support. |
+| `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, persisted summary `crisis_level` schema/migration/allowed-value behavior, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, session title normalization/exposure/update behavior, legacy derived compatibility with null titles, legacy/backfilled session rename, archive/unarchive schema and migration behavior, archive/unarchive helper behavior, message/summary preservation, sorting, no-leak metadata, limits, timestamps, cascade behavior, `report_drafts` table creation, create/get current report draft behavior, one-current-draft behavior, UUID-like IDs, default status, fixed schema version, manual input validation, partial/empty manual input, timestamp updates, v2 `ai_generated_json` persistence, status transition to `ai_generated`, `generated_at`, manual input preservation, final report remaining null, safe pointer-only source refs, and archived-session draft support. |
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
-| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, and fallback. |
+| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, and deterministic/conservative v2 AI draft fallback without live provider calls. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
 | `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, archive/unarchive behavior, default archived-session exclusion, `include_archived=true` listing, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and safe session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures and report draft helper failures. |
-| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input endpoints, idempotent create behavior, manual input persistence, missing-resource 404 behavior, and invalid manual input 422 behavior. |
+| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, missing draft 404, no summaries 422, invalid agent output, DB/helper failure, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
 
 These tests are network-free, do not require API keys, and should be treated as the
 current deterministic backend test suite. They use temporary SQLite databases and
@@ -119,8 +119,10 @@ Guidance:
   `schema_version == "report_schema_v2"`, UUID-like IDs, default
   `manual_input_started` status, `manual_input_json` validation through
   `ReportManualInputV2`, partial/empty manual input, invalid manual input,
-  timestamp updates, null `ai_generated_json`/`final_report_json` before future
-  slices, and archived-session draft support.
+  timestamp updates, `update_report_ai_generated(...)`, `ai_generated_json`
+  persistence, status transition to `ai_generated`, `generated_at`, manual
+  input preservation, `final_report_json` remaining null, safe pointer-only
+  source refs / source summary IDs, and archived-session draft support.
 
 Example pattern:
 
@@ -153,6 +155,8 @@ Covered deterministic behaviors include:
 - Summary `crisis_flag` is forced from the external input.
 - Conversation fallback avoids diagnosis and medication advice.
 - Analysis report computes `has_crisis`, `peak_turn`, and fixed disclaimer in code.
+- Report Schema v2 AI draft fallback returns a conservative schema-valid
+  `ReportAIGeneratedV2` without live provider calls.
 - Gemini JSON `response_format` compatibility failures are handled through fallback paths
   or robust parsing where applicable.
 
@@ -202,6 +206,17 @@ Task 09 route tests verify:
   - optional manual input save.
   - idempotent second create returning the same draft ID.
   - manual input update.
+  - deterministic v2 AI draft generation route success.
+  - missing draft 404.
+  - no persisted summaries 422.
+  - invalid agent output.
+  - DB/helper failure.
+  - `ai_generated_json` persistence.
+  - status transition to `ai_generated`.
+  - `generated_at` and `updated_at`.
+  - manual input preservation.
+  - final report remaining null.
+  - safe pointer-only source refs / source summary IDs.
   - missing case/session/draft 404 behavior.
   - invalid manual input 422 behavior.
   - generic non-leaking 500 behavior.

@@ -56,7 +56,9 @@ mismatches.
   - `crisis_agent.py`: crisis detection, Groq provider, fail-safe fallback.
   - `summary_agent.py`: per-turn JSON micro-summary, Groq provider.
   - `conversation_agent.py`: empathic response generation, Gemini provider.
-  - `analysis_agent.py`: report generation from summaries, Gemini provider.
+  - `analysis_agent.py`: v1 report generation from summaries through Gemini,
+    plus backend-only deterministic Report Schema v2 AI draft generation that
+    does not call a live provider yet.
 - HTTP router files in `backend/routers/` implement Task 09 routes and are mounted
   under `/api`.
 - MCP server skeleton exists in `backend/mcp_servers/case_query_server.py`, but it is not implemented.
@@ -112,11 +114,12 @@ mismatches.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, report drafts, manual input, and clinical
   content are not stored in browser storage.
-- Report Schema v2 AI generation, `analysis_agent` v2 integration, v2
-  AI-generated field population, counselor final report workflow, PDF export, hard
-  delete/session data-retention workflow, title search/filter, richer session
-  metadata, optional charts/Recharts, optional secret-safe runtime/provider
-  status, and MCP integration remain future work.
+- Backend-only deterministic Report Schema v2 AI draft generation is
+  implemented. Real v2 provider/prompt integration, frontend v2 generate button,
+  ReportV2Preview rendering of `ai_generated` fields, counselor final report
+  workflow, PDF export, hard delete/session data-retention workflow, title
+  search/filter, richer session metadata, optional charts/Recharts, optional
+  secret-safe runtime/provider status, and MCP integration remain future work.
 - Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired, report
   status, and optional latest/peak session crisis aggregates remain future work.
 
@@ -142,6 +145,7 @@ The current active HTTP API includes:
 - `GET /api/cases/{case_id}/sessions/{session_id}/report-drafts/current`
 - `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`
 - `PATCH /api/report-drafts/{draft_id}/manual-input`
+- `POST /api/report-drafts/{draft_id}/generate`
 
 Remaining frontend workflow completion and focused frontend test gaps are now the
 next major product integration blockers.
@@ -235,6 +239,9 @@ These are current code facts and should not be contradicted in new work:
   - `ConceptualizationReport`, `EmotionPattern`
 - `analysis_agent.py` computes `has_crisis`, `peak_turn`, and the fixed disclaimer
   in code.
+- `analysis_agent.generate_report_v2_ai_draft(...)` exists beside v1
+  `generate_report(...)`; it is deterministic/conservative for now and does not
+  call a live provider.
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
   If provider calls fail around JSON mode, prefer prompt-enforced JSON and robust
   parsing rather than changing the architecture.
