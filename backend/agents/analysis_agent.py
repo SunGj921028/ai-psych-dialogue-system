@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from agents import get_llm_client
 from agents.summary_agent import TurnSummary
-from models.report_schema_v2 import ReportAIGeneratedV2, ReportManualInputV2
+from models.report_schema_v2 import ReportAIGeneratedV2, ReportField, ReportManualInputV2
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +16,46 @@ DISCLAIMER_TEXT = (
     "本報告為 AI 草稿，僅供諮商師參考，非診斷文件。\n"
     "所有判斷與決策須由專業諮商師負責審核。"
 )
+
+REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"
+REPORT_V2_MAX_KEY_STATEMENT_CHARS = 160
+REPORT_V2_ALLOWED_EVIDENCE_NOTES = {
+    "summary metadata",
+    "manual input",
+    "persisted crisis level",
+}
+REPORT_V2_ALLOWED_AI_FIELDS = [
+    "chief_complaint_draft",
+    "problem_development_draft",
+    "client_understanding_draft",
+    "emotion_pattern",
+    "cognitive_pattern",
+    "behavior_coping_pattern",
+    "psychological_factors",
+    "theoretical_orientation_rationale",
+    "conceptualization_narrative",
+    "formation_factors",
+    "precipitating_factors",
+    "maintaining_factors",
+    "protective_factors",
+    "crisis_language_summary",
+]
+REPORT_V2_FORBIDDEN_FIELDS = [
+    "formal_diagnosis_notes",
+    "assessment_testing_data",
+    "medication",
+    "legal_issues",
+    "test_scores",
+    "safety_plan",
+    "overall_risk_level",
+    "treatment_plan",
+    "trauma_history",
+    "family_history",
+    "raw_message_text",
+    "disclaimer",
+    "status",
+    "generated_at",
+]
 
 
 class EmotionPattern(BaseModel):
@@ -80,6 +120,157 @@ def _extract_json_object(text: str) -> dict[str, Any]:
         return json.loads(body[start : end + 1])
 
     raise ValueError("找不到可解析的 JSON 物件")
+
+
+def _get_report_v2_curated_knowledge_excerpts() -> list[str]:
+    """Fixed, allowlisted reference excerpts for future Report v2 prompting."""
+    return [
+        "知識庫僅提供概念化語彙、撰寫風格與安全邊界，不可作為個案事實來源。",
+        "撰寫時需區分事實與推論；推論使用「可能」「推測」「尚待確認」「需由諮商師確認」。",
+        "缺失資料應留空、設為 null，或標示「待評估」，不得臆造症狀、史實、測驗分數或風險細節。",
+        "理論取向可提供初步概念化語言，但不得自動化診斷、用藥建議、正式治療計畫或正式風險等級。",
+    ]
+
+
+def _bounded_report_v2_text(value: Any, max_chars: int = REPORT_V2_MAX_KEY_STATEMENT_CHARS) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if len(text) <= max_chars:
+        return text
+    return f"{text[:max_chars]}..."
+
+
+def _safe_report_v2_summary_payload(row: dict[str, Any]) -> dict[str, Any]:
+    summary = row.get("summary")
+    if isinstance(summary, TurnSummary):
+        summary_data = summary.model_dump(mode="json")
+    elif isinstance(summary, dict):
+        summary_data = summary
+    else:
+        summary_data = {}
+
+    turn_number = row.get("turn_number", summary_data.get("turn_number"))
+    crisis_flag = row.get("crisis_flag", summary_data.get("crisis_flag"))
+
+    shaped: dict[str, Any] = {
+        "summary_id": row.get("id"),
+        "turn_number": turn_number,
+        "emotion": summary_data.get("emotion"),
+        "emotion_dimensions": summary_data.get("emotion_dimensions"),
+        "themes": summary_data.get("themes"),
+        "key_statement": _bounded_report_v2_text(summary_data.get("key_statement")),
+        "crisis_flag": crisis_flag,
+        "crisis_level": row.get("crisis_level"),
+    }
+    return {key: value for key, value in shaped.items() if value is not None}
+
+
+def _build_report_v2_prompt_payload(
+    *,
+    case_id: str,
+    session_id: str,
+    summaries: list[dict[str, Any]],
+    manual_input: ReportManualInputV2,
+    knowledge_excerpts: list[str] | None = None,
+) -> dict[str, Any]:
+    excerpts = knowledge_excerpts if knowledge_excerpts is not None else _get_report_v2_curated_knowledge_excerpts()
+    return {
+        "prompt_version": REPORT_V2_PROMPT_VERSION,
+        "case_id": case_id,
+        "session_id": session_id,
+        "instructions": {
+            "system_role": "你是協助諮商師撰寫個案概念化報告草稿的 AI 文件助理；諮商師是唯一決策者。",
+            "safety_boundaries": [
+                "不得提供心理或精神科診斷。",
+                "不得填寫診斷、用藥、法律、測驗分數、正式風險等級、安全計畫或治療計畫等人工確認欄位。",
+                "不得將知識庫內容當作個案事實。",
+                "所有推論都需使用可能、推測、尚待確認、需由諮商師確認等謹慎語句。",
+            ],
+            "authoritative_template_sections": [
+                "一、基本資料與主訴",
+                "二、現況評估與觀察",
+                "三、心理評估",
+                "四、理論取向與個案概念化",
+                "五、風險評估",
+            ],
+            "allowed_ai_owned_fields": REPORT_V2_ALLOWED_AI_FIELDS,
+            "forbidden_manual_only_or_system_fields": REPORT_V2_FORBIDDEN_FIELDS,
+            "source_data_policy": (
+                "source data 僅包含經驗證的 manual_input 與結構化 session summaries；"
+                "不得使用 raw messages、crisis reason、session title、browser storage、provider debug output 或 DB round。"
+            ),
+            "crisis_level_policy": (
+                "persisted crisis_level 只是後端偵測到的語句中繼資料，"
+                "不是正式風險評估或整體風險等級。"
+            ),
+            "output_schema": "只輸出 JSON object，且必須符合 ReportAIGeneratedV2；未知欄位會被拒絕。",
+            "evidence_ref_policy": {
+                "allowed_notes": sorted(REPORT_V2_ALLOWED_EVIDENCE_NOTES),
+                "rules": [
+                    "evidence_refs 僅能使用 turn_number、summary_id 與短標籤 note。",
+                    "note 不得包含 raw message、summary excerpt、key_statement、crisis reason 或 provider text。",
+                ],
+            },
+            "missing_data_policy": "缺失或未評估資料使用 null、空白或「待評估」，並設定合適 missing_reason；不得臆造。",
+            "curated_knowledge_excerpts": excerpts,
+        },
+        "source_data": {
+            "manual_input": manual_input.model_dump(mode="json"),
+            "summaries": [_safe_report_v2_summary_payload(row) for row in summaries],
+        },
+    }
+
+
+def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
+    system_content = (
+        "你是 Report Schema v2 的個案概念化報告草稿助理。\n"
+        "請遵守安全邊界：不得填寫診斷、不得提供用藥建議、不得產生正式風險等級、"
+        "不得產生治療計畫，且不得將知識庫當作個案事實。\n"
+        "只輸出 JSON，必須符合 ReportAIGeneratedV2。\n"
+        "evidence_refs 的 note 只能使用 summary metadata、manual input、persisted crisis level。"
+    )
+    return [
+        {"role": "system", "content": system_content},
+        {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+    ]
+
+
+async def _call_report_v2_provider(messages_or_payload: Any) -> str:
+    _ = messages_or_payload
+    raise NotImplementedError("Report v2 live provider integration is not enabled")
+
+
+def _parse_report_v2_provider_output(raw_output: str | dict[str, Any]) -> ReportAIGeneratedV2:
+    try:
+        if isinstance(raw_output, str):
+            data = _extract_json_object(raw_output)
+        elif isinstance(raw_output, dict):
+            data = raw_output
+        else:
+            raise ValueError("Report v2 provider output must be a JSON object")
+
+        if not isinstance(data, dict):
+            raise ValueError("Report v2 provider output must be a JSON object")
+
+        ai_generated = ReportAIGeneratedV2.model_validate(data)
+        _validate_report_v2_evidence_refs(ai_generated)
+        return ai_generated
+    except Exception as exc:
+        raise ValueError("Invalid Report v2 provider output") from exc
+
+
+def _validate_report_v2_evidence_refs(ai_generated: ReportAIGeneratedV2) -> None:
+    for field_value in ai_generated.__dict__.values():
+        if not isinstance(field_value, ReportField):
+            continue
+        for ref in field_value.evidence_refs:
+            if ref.note is None:
+                continue
+            if ref.note not in REPORT_V2_ALLOWED_EVIDENCE_NOTES:
+                raise ValueError("Report v2 evidence ref note is not pointer-only")
 
 
 def _calculate_peak_turn(summaries: list[TurnSummary]) -> int:

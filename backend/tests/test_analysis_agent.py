@@ -5,7 +5,7 @@ import anyio
 import backend.agents.analysis_agent as analysis_agent
 from backend.agents.analysis_agent import DISCLAIMER_TEXT, ConceptualizationReport
 from backend.agents.summary_agent import EmotionDetail, EmotionDimensions, TurnSummary
-from models.report_schema_v2 import ReportAIGeneratedV2, ReportManualInputV2
+from models.report_schema_v2 import ReportAIGeneratedV2, ReportManualInputV2, ReportSourceType
 from backend.tests.helpers import FakeLLMClient
 
 
@@ -99,6 +99,152 @@ def test_generate_report_v2_ai_draft_returns_conservative_schema_without_provide
     assert "medication" not in encoded
     assert "safety_plan" not in encoded
     assert "legal" not in encoded
+
+
+def test_report_v2_prompt_payload_includes_safety_policies_and_shaped_sources():
+    long_key_statement = "壓力" * 120
+    manual_input = ReportManualInputV2()
+    manual_input.basic_info.referral_source.value = "學校轉介"
+    manual_input.basic_info.referral_source.source_type = ReportSourceType.MANUAL
+
+    payload = analysis_agent._build_report_v2_prompt_payload(
+        case_id="case-1",
+        session_id="session-1",
+        summaries=[
+            {
+                "id": "summary-1",
+                "turn_number": 2,
+                "round": 999,
+                "session_title": "should not be clinical evidence",
+                "raw_messages": ["raw message should not pass through"],
+                "crisis_reason": "private crisis reason",
+                "summary": {
+                    "turn_number": 2,
+                    "emotion": {"primary": "焦慮", "intensity": 8},
+                    "emotion_dimensions": {"anxiety": 8, "sadness": 3},
+                    "themes": ["工作壓力"],
+                    "key_statement": long_key_statement,
+                    "crisis_flag": True,
+                },
+                "crisis_level": "low",
+            }
+        ],
+        manual_input=manual_input,
+    )
+
+    encoded = str(payload)
+    assert payload["prompt_version"] == analysis_agent.REPORT_V2_PROMPT_VERSION
+    assert "一、基本資料與主訴" in encoded
+    assert "五、風險評估" in encoded
+    assert "chief_complaint_draft" in encoded
+    assert "formal_diagnosis_notes" in encoded
+    assert "source data" in encoded
+    assert "待評估" in encoded
+    assert "學校轉介" in encoded
+    assert payload["source_data"]["summaries"][0]["summary_id"] == "summary-1"
+    assert payload["source_data"]["summaries"][0]["turn_number"] == 2
+    assert payload["source_data"]["summaries"][0]["crisis_level"] == "low"
+    assert len(payload["source_data"]["summaries"][0]["key_statement"]) <= (
+        analysis_agent.REPORT_V2_MAX_KEY_STATEMENT_CHARS + 3
+    )
+    assert "raw message should not pass through" not in encoded
+    assert "private crisis reason" not in encoded
+    assert "should not be clinical evidence" not in encoded
+    assert "'round'" not in encoded
+
+
+def test_report_v2_messages_include_json_only_and_evidence_ref_rules():
+    messages = analysis_agent._build_report_v2_messages(
+        analysis_agent._build_report_v2_prompt_payload(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+    )
+
+    encoded = "\n".join(message["content"] for message in messages)
+    assert messages[0]["role"] == "system"
+    assert messages[1]["role"] == "user"
+    assert "只輸出 JSON" in encoded
+    assert "ReportAIGeneratedV2" in encoded
+    assert "summary metadata" in encoded
+    assert "manual input" in encoded
+    assert "persisted crisis level" in encoded
+    assert "不得填寫診斷" in encoded
+
+
+def test_parse_report_v2_provider_output_accepts_valid_json_with_safe_evidence_refs():
+    raw = {
+        "chief_complaint_draft": {
+            "label_zh": "主訴摘要",
+            "value": "可能與工作壓力相關，尚待確認。",
+            "source_type": "ai",
+            "missing_reason": None,
+            "needs_review": True,
+            "evidence_refs": [
+                {
+                    "turn_number": 1,
+                    "summary_id": "summary-1",
+                    "note": "summary metadata",
+                }
+            ],
+        }
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.value == "可能與工作壓力相關，尚待確認。"
+    assert result.chief_complaint_draft.evidence_refs[0].note == "summary metadata"
+
+
+def test_parse_report_v2_provider_output_rejects_invalid_or_unsafe_output():
+    invalid_cases = [
+        "not json",
+        "[1, 2, 3]",
+        {
+            "formal_diagnosis_notes": {
+                "label_zh": "診斷相關備註",
+                "value": "AI must not fill this",
+                "source_type": "ai",
+            }
+        },
+        {
+            "chief_complaint_draft": {
+                "label_zh": "主訴摘要",
+                "value": "可能與壓力相關。",
+                "source_type": "ai",
+                "evidence_refs": [
+                    {
+                        "turn_number": 1,
+                        "summary_id": "summary-1",
+                        "note": "個案原話或摘要摘錄不應放在 evidence note",
+                    }
+                ],
+            }
+        },
+    ]
+
+    for raw in invalid_cases:
+        try:
+            analysis_agent._parse_report_v2_provider_output(raw)
+        except ValueError:
+            continue
+        raise AssertionError(f"unsafe provider output should fail: {raw!r}")
+
+
+def test_call_report_v2_provider_boundary_does_not_call_live_provider():
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}]
+        )
+
+    try:
+        anyio.run(run_provider_boundary)
+    except NotImplementedError:
+        return
+    raise AssertionError("provider boundary should not be implemented in this slice")
 
 
 def test_generate_report_uses_valid_provider_json_and_code_owned_disclaimer(
