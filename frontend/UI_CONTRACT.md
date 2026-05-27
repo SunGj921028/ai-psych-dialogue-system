@@ -35,6 +35,9 @@ Current reality:
   `createReportDraft(caseId, sessionId, payload = {})`, and
   `updateReportDraftManualInput(draftId, payload)`. These helpers call the
   backend Report v2 draft endpoints.
+- `frontend/src/api/client.js` exposes `generateReportDraftV2(draftId)`, which
+  calls `POST /api/report-drafts/{draft_id}/generate`, sends no payload, and
+  returns the updated `ReportDraftV2`.
 - ReportPage acts as a counselor review workspace integrated with the backend
   API. Report generation remains manual-only.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
@@ -51,12 +54,21 @@ Current reality:
   exists, it shows `尚未建立 v2 手動資料草稿` and requires explicit Create Draft.
 - Drafts are not auto-created on page load.
 - Manual input is saved only through backend `PATCH`.
+- ReportPage includes a separate `v2 AI 草稿產生` action card between the manual
+  input panel and the v2 preview. It is visually and behaviorally separate from
+  v1 transient report generation, blocks generation when manual input has
+  unsaved changes, disables generation while saving or generating, updates local
+  `reportDraft` from the backend response, shows
+  `至少需要一筆會談摘要才能產生 v2 AI 草稿` for insufficient-summary 422 responses, and
+  provides a lightweight link back to the conversation workspace when
+  case/session IDs are available.
 - The first v2 manual input slice supports optional fields for `會談日期`,
   `會談次數`, `轉介來源`, `年齡／性別`, `職業／就學狀態`,
   `婚姻／家庭狀態`, `個案對問題的理解／主訴補充`,
   `心理測驗／衡鑑資料補充`, `正式風險評估備註`, and `安全計畫`.
 - `frontend/src/components/ReportV2Preview.jsx` exists and renders a read-only
-  Report Schema v2 five-section preview from loaded `draft.manual_input`.
+  Report Schema v2 five-section preview from loaded draft state, including
+  inline `draft.ai_generated` fields when present.
 - ReportPage mounts the v2 preview below the manual input panel. If no draft
   exists, the preview shows `需先建立 v2 草稿後才可預覽`. If a draft exists, it
   shows all five authoritative sections: `一、基本資料與主訴`,
@@ -66,10 +78,18 @@ Current reality:
   missing manual fields as `待評估`, displays future AI/counselor-owned fields as
   `此欄位待未來 AI 草稿或諮商師補充`, and never displays missing risk fields as
   `無風險`.
+- AI-generated fields are labeled `AI 草稿，需諮商師審閱`. Manual fields remain
+  counselor-owned and are not overwritten. Manual `client_understanding` takes
+  precedence; when manual text exists, AI client understanding appears as
+  `AI 補充草稿`. Evidence refs, when shown, are turn-number-only. The preview
+  does not render raw summaries, raw messages, key statements, crisis reasons,
+  provider output, AI formal risk level, or AI safety plan.
 - The v2 preview does not call APIs, does not call `generateReport`, and does
   not generate content.
 - v1/v2 report behavior is intentionally separate: v2 save does not call
-  `generateReport`, the v2 preview does not call `generateReport`, and the v1
+  `generateReport`, v2 generate calls only `generateReportDraftV2`, v2 generated
+  data does not populate v1 report state, v1 report generation does not alter
+  `reportDraft`, the v2 preview does not call `generateReport`, and the v1
   generate button still only calls existing v1 `generateReport`.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
@@ -168,16 +188,18 @@ Current reality:
 - ReportPage v2 manual input may contain clinical content and is saved
   backend-side only.
 - ReportPage v2 preview is client-side rendering from already loaded draft state
-  only. It does not write report preview text, manual input, report drafts, or
-  report text to `localStorage` or `sessionStorage`.
+  only. It does not write report preview text, generated report text,
+  `ai_generated` JSON, manual input, report drafts, or clinical content to
+  `localStorage` or `sessionStorage`.
 - PDF export, hard delete/session data-retention workflow, title search/filter, richer
   session metadata, optional charts/Recharts, runtime/provider status endpoint
   if needed, and MCP integration are not implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
-- No v2 AI generation exists yet. No counselor final report workflow,
-  PDF export, editable report fields, LLM prompt changes, or Recharts
-  integration has been implemented.
+- Frontend v2 AI generation integration exists through the separate
+  `v2 AI 草稿產生` action card and `generateReportDraftV2(draftId)`. No counselor
+  final report workflow, PDF export, editable report fields, real v2 LLM prompt
+  integration, or Recharts integration has been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -192,14 +214,13 @@ Remaining future behavior:
   session metadata, optional latest/peak session crisis aggregate display,
   optional HistoryPage crisis-level display, Settings backend integration, and
   MCP-related UI only when the corresponding tasks are prioritized.
-- Complete report workflow future work: Report Schema v2 AI generation,
-  `analysis_agent` v2 integration, v2 AI-generated field population,
-  source/evidence traceability, counselor final report workflow, final PDF
-  export, and optional Recharts/charts.
+- Complete report workflow future work: real Report Schema v2 provider/prompt
+  integration, counselor final report workflow, final PDF export, and optional
+  Recharts/charts.
 - Smarter scroll behavior can be considered later as an optional UX refinement.
-- Add future frontend tests for v2 generation, counselor final report workflow,
-  and PDF export as those features are implemented. Optional Playwright/E2E and
-  visual regression can be added later if needed.
+- Add future frontend tests for counselor final report workflow and PDF export
+  as those features are implemented. Optional Playwright/E2E and visual
+  regression can be added later if needed.
 
 ## Current Frontend Test Coverage
 
@@ -221,14 +242,16 @@ Coverage includes:
   display.
 - ReportPage transient report note.
 - ReportPage v2 current draft load, missing-draft create state, Create Draft
-  flow, editing/saving manual input, save success/error behavior, v1/v2
-  separation, read-only preview prerequisite state, five-section headings,
-  manual field mapping, missing-data placeholders, future placeholder wording,
-  risk missing behavior, save-to-preview updates, missing session behavior, and
-  storage safety.
+  flow, editing/saving manual input, save success/error behavior, v2 action card
+  behavior, unsaved-input blocking, 422/generic generation errors, regeneration
+  label, v1/v2 separation, read-only preview prerequisite state, five-section
+  headings, manual field mapping, preview AI mapping, safe turn-number-only
+  evidence refs, forbidden AI risk/safety fields, missing-data placeholders,
+  future placeholder wording, risk missing behavior, save-to-preview updates,
+  missing session behavior, and storage safety.
 - API helper path and payload contract tests, including `updateSessionTitle`,
   `getCurrentReportDraft`, `createReportDraft`, and
-  `updateReportDraftManualInput`.
+  `updateReportDraftManualInput`, and `generateReportDraftV2`.
 - HistoryPage list, empty, error, lazy session expansion, empty durable session
   rendering, title/fallback rendering, rename controls, save, clear, cancel,
   keyboard behavior, validation, error handling, single-row editing, and
@@ -246,10 +269,10 @@ Test boundaries:
 
 - Tests mock API helpers.
 - Tests do not call the live backend, LLM providers, or network.
-- Storage safety tests confirm clinical message content, summaries, report text,
-  report drafts, manual input, crisis levels, crisis reasons, case notes,
-  session metadata, previews, titles, drafts, and other clinical content are not
-  persisted to browser storage.
+- Storage safety tests confirm clinical message content, summaries, generated
+  report text, `ai_generated` JSON, report drafts, manual input, crisis levels,
+  crisis reasons, case notes, session metadata, previews, titles, drafts, and
+  other clinical content are not persisted to browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content are not
@@ -257,8 +280,8 @@ Test boundaries:
 
 Remaining future testing work:
 
-- Future ReportPage tests for v2 AI generation, read-only rendering,
-  counselor final report workflow, and PDF export as those features are added.
+- Future ReportPage tests for counselor final report workflow and PDF export as
+  those features are added.
 - Optional Playwright/E2E later.
 - Visual regression later if needed.
 
@@ -319,9 +342,10 @@ Responsibilities:
   backend `PATCH` only.
 - Keep the v2 manual input panel visually separate from existing v1 transient
   report generation.
-- Generate or regenerate a report only when the counselor manually requests it.
-- Treat generated report data as transient unless/until a backend persistence
-  feature is implemented.
+- Generate or regenerate v1 and v2 reports only when the counselor manually
+  requests it.
+- Treat v1 generated report data as transient. Treat v2 generated draft data as
+  backend-persisted `ReportDraftV2` state.
 - Display a note that draft reports are temporarily shown on the page and must be
   regenerated after leaving or reloading.
 - Display the backend-supplied fixed report disclaimer prominently.
@@ -337,26 +361,34 @@ Responsibilities:
   measurements.
 - Avoid presenting the report as diagnostic or final.
 - Preserve case/session IDs in the back-to-conversation link.
-- Do not store report text, report drafts, manual input, summaries, crisis
-  reasons, case notes, or clinical content in browser storage.
-- Keep v1/v2 behavior separate: v2 save must not call `generateReport`, and the
-  v1 generate button must only call existing v1 `generateReport`.
-- Render a read-only v2 five-section preview from loaded `draft.manual_input`
-  without calling APIs, calling `generateReport`, generating content, inferring
-  facts from summaries, or inferring risk/crisis status.
+- Do not store generated report text, `ai_generated` JSON, report drafts, manual
+  input, summaries, crisis reasons, case notes, or clinical content in browser
+  storage.
+- Keep v1/v2 behavior separate: v2 save must not call `generateReport`, v2
+  generate must call only `generateReportDraftV2`, v2 generated data must not
+  populate v1 report state, v1 report generation must not alter `reportDraft`,
+  and the v1 generate button must only call existing v1 `generateReport`.
+- Render a read-only v2 five-section preview from loaded draft state without
+  calling APIs, calling `generateReport`, generating content, inferring facts
+  from summaries, or inferring risk/crisis status.
 - Show `需先建立 v2 草稿後才可預覽` when no v2 draft exists.
 - In the v2 preview, show missing manual fields as `待評估`, future
   AI/counselor-owned fields as `此欄位待未來 AI 草稿或諮商師補充`, and missing
   risk fields as `待評估` rather than `無風險`.
 
+- Render `draft.ai_generated` fields inline with `AI 草稿，需諮商師審閱` labels,
+  preserve manual-field ownership, show AI client understanding as
+  `AI 補充草稿` when manual `client_understanding` exists, and show evidence refs
+  only as turn numbers.
+- Never render raw summaries, raw messages, key statements, crisis reasons,
+  provider output, AI formal risk level, or AI safety plan in the v2 preview.
+
 Not currently implemented:
 
-- v2 AI generation.
-- `analysis_agent` v2 integration.
 - Counselor edits/final report workflow.
 - PDF export.
 - Editable report fields.
-- LLM prompt changes.
+- Real v2 LLM prompt/provider integration.
 - Recharts or other chart library integration.
 
 ### HistoryPage
@@ -459,8 +491,11 @@ Expected calls:
 - `PATCH /api/report-drafts/{draft_id}/manual-input` through
   `updateReportDraftManualInput(draftId, payload)` only when saving v2 manual
   input.
+- `POST /api/report-drafts/{draft_id}/generate` through
+  `generateReportDraftV2(draftId)` only when the counselor manually generates
+  the v2 AI draft. It sends no payload and returns the updated `ReportDraftV2`.
 - `POST /api/reports/generate` only when the counselor manually generates or
-  regenerates a report.
+  regenerates a v1 transient report.
 
 `sessionId` is represented as a query parameter on the report route.
 
@@ -662,7 +697,9 @@ Notes:
     formal_risk_assessment_note: 'optional',
     safety_plan: 'optional'
   },
-  ai_generated: null,
+  ai_generated: null | {
+    // AI-owned draft fields only; rendered as review-needed draft text.
+  },
   counselor_edits: null,
   final_report: null,
   created_at: 'ISO-8601 UTC',
@@ -673,9 +710,13 @@ Notes:
 Notes:
 
 - Manual input may contain clinical content and is saved backend-side only.
-- Drafts are loaded or created only through explicit backend API calls.
+- Drafts are loaded, created, updated, or generated only through explicit
+  backend API calls.
 - Drafts must not be stored in browser storage.
 - v2 manual input save does not call v1 report generation.
+- v2 AI generation calls only `generateReportDraftV2(draftId)` and stores the
+  updated draft in React state only.
+- `ai_generated` JSON must not be stored in browser storage.
 
 ## Crisis Banner Behavior
 
@@ -796,8 +837,9 @@ Inherited constraints:
 - Do not expose provider secrets or backend environment values.
 - Avoid storing sensitive text in browser logs.
 - Do not store clinical message content, summaries, session metadata, previews,
-  report text, report drafts, manual input, crisis levels, crisis reasons, case
-  notes, titles, drafts, or other clinical content in browser storage.
+  generated report text, `ai_generated` JSON, report drafts, manual input,
+  crisis levels, crisis reasons, case notes, titles, drafts, or other clinical
+  content in browser storage.
 - Browser `localStorage` is used only for the `ai-psych-theme` preference.
 - Browser `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content must not
@@ -835,12 +877,19 @@ Current implemented state:
   count, referral source, age/gender, occupation/school status,
   marital/family status, client understanding/chief-complaint supplement,
   testing/assessment supplement, formal risk assessment notes, and safety plan.
-- ReportPage includes a read-only v2 five-section preview from loaded
-  `draft.manual_input`. It shows `需先建立 v2 草稿後才可預覽` when no draft exists,
+- ReportPage includes a read-only v2 five-section preview from loaded draft
+  state. It shows `需先建立 v2 草稿後才可預覽` when no draft exists,
   maps current manual input fields into the template, uses `待評估` for missing
-  manual fields, and uses `此欄位待未來 AI 草稿或諮商師補充` for future fields.
-- v2 save and v2 preview do not call `generateReport`; the v1 generate button
-  calls only the existing v1 `generateReport`.
+  manual fields, uses `此欄位待未來 AI 草稿或諮商師補充` for future fields, and renders
+  `draft.ai_generated` fields inline with review-needed AI labels.
+- ReportPage includes a separate `v2 AI 草稿產生` action card between manual input
+  and preview. It blocks unsaved manual input, disables generation while saving
+  or generating, updates local `reportDraft` from the backend response, and
+  shows `至少需要一筆會談摘要才能產生 v2 AI 草稿` for no-summary 422 responses.
+- v2 save and v2 preview do not call `generateReport`; v2 generate calls only
+  `generateReportDraftV2`, the v1 generate button calls only the existing v1
+  `generateReport`, v2 generated data does not populate v1 report state, and v1
+  report generation does not alter `reportDraft`.
 - ReportPage review aids are not objective clinical measurements.
 - HistoryPage lists backend cases and lazily expands cases to show backend
   session metadata.
@@ -867,9 +916,9 @@ Current implemented state:
 - ReportPage back-to-conversation links preserve case/session IDs.
 - Header navigation and light/dark theme toggle are implemented.
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
-- Clinical message content, summaries, report text, crisis levels, crisis
-  reasons, case notes, report drafts, and manual input are not stored in browser
-  storage.
+- Clinical message content, summaries, generated report text, `ai_generated`
+  JSON, crisis levels, crisis reasons, case notes, report drafts, and manual
+  input are not stored in browser storage.
 - Session metadata, preview text, titles, drafts, and clinical content are not
   stored in browser storage.
 - Archive state is not stored in browser storage.
@@ -899,10 +948,9 @@ Future behavior:
   settings UI remains out of scope unless explicitly designed.
 - Optional latest/peak session crisis aggregate display remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
-- Complete future report work after the report template stabilizes: formal Report
-  Schema v2 AI generation, `analysis_agent` v2 integration, v2 AI-generated
-  field population, source/evidence traceability, counselor final report
-  workflow, final PDF export, and optional Recharts/charts.
+- Complete future report work after the report template stabilizes: real Report
+  Schema v2 provider/prompt integration, counselor final report workflow, final
+  PDF export, and optional Recharts/charts.
 - Smarter scroll behavior remains optional future UX work.
 - Add remaining frontend tests for ReportPage error handling.
 - Add optional Playwright/E2E later, and visual regression later if needed.
