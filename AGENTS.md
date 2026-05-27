@@ -76,12 +76,16 @@ mismatches.
   loads existing drafts, requires explicit Create Draft when none exists, does
   not auto-create drafts on page load, and saves manual input only through the
   backend Report v2 draft PATCH endpoint.
-- ReportPage mounts `ReportV2Preview` below the v2 manual input panel. The
-  preview renders all five authoritative v2 sections from loaded
-  `draft.manual_input`, shows `需先建立 v2 草稿後才可預覽` when no draft exists,
-  uses `待評估` for missing manual fields, uses
-  `此欄位待未來 AI 草稿或諮商師補充` for future AI/counselor-owned fields, does not
-  call APIs or `generateReport`, and does not generate content.
+- ReportPage includes a separate `v2 AI 草稿產生` action card between the manual
+  input panel and `ReportV2Preview`. It calls `generateReportDraftV2(draftId)`,
+  blocks generation when manual input has unsaved changes, updates local
+  `reportDraft` from the backend response, and remains separate from v1
+  transient report generation.
+- ReportPage mounts `ReportV2Preview` below the v2 generation card. The preview
+  renders all five authoritative v2 sections from loaded draft state, including
+  `draft.ai_generated` fields labeled `AI 草稿，需諮商師審閱`; manual fields remain
+  counselor-owned, evidence refs are turn-number-only, and the preview does not
+  call APIs or `generateReport`.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
 - HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
@@ -101,7 +105,8 @@ mismatches.
 - Frontend tests mock API helpers and do not call the live backend, providers, or
   network.
 - Browser storage safety tests confirm clinical message content, summaries,
-  report text, crisis levels, crisis reasons, and case notes are not persisted.
+  generated report text, `ai_generated` JSON, report drafts, manual input,
+  crisis levels, crisis reasons, and case notes are not persisted.
 - ConversationPage uses backend durable sessions for create-case and new-session
   flows, while query-param resume takes precedence over stale `sessionStorage`
   and does not create a new session.
@@ -112,14 +117,15 @@ mismatches.
 - Live high-risk turn responses open the high-risk modal, but restored persisted
   high-risk state does not replay the modal.
 - ReportPage preserves case and session IDs when linking back to conversation.
-- Session metadata, previews, titles, report drafts, manual input, and clinical
-  content are not stored in browser storage.
-- Backend-only deterministic Report Schema v2 AI draft generation is
-  implemented. Real v2 provider/prompt integration, frontend v2 generate button,
-  ReportV2Preview rendering of `ai_generated` fields, counselor final report
-  workflow, PDF export, hard delete/session data-retention workflow, title
-  search/filter, richer session metadata, optional charts/Recharts, optional
-  secret-safe runtime/provider status, and MCP integration remain future work.
+- Session metadata, previews, titles, report drafts, manual input,
+  `ai_generated` JSON, generated report text, and clinical content are not
+  stored in browser storage.
+- Backend-only deterministic Report Schema v2 AI draft generation and frontend
+  v2 generate/preview integration are implemented. Real v2 provider/prompt
+  integration, counselor final report workflow, PDF export, hard delete/session
+  data-retention workflow, title search/filter, richer session metadata,
+  optional charts/Recharts, optional secret-safe runtime/provider status, and
+  MCP integration remain future work.
 - Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired, report
   status, and optional latest/peak session crisis aggregates remain future work.
 

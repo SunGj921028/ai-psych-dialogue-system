@@ -751,12 +751,10 @@ Implementation notes:
 
 ## Future Endpoints / Integrations
 
-These are not required for Task 09 or remain frontend integration work:
+These are not required for Task 09 or remain future integration work:
 
 - Latest summaries endpoint for dashboards.
 - Real provider/prompt integration for Report Schema v2 AI generation.
-- Frontend ReportPage v2 generate button.
-- ReportV2Preview rendering of `ai_generated` fields.
 - Report Schema v2 counselor review/finalization endpoint.
 - PDF export endpoint.
 - Session hard-delete endpoint, if a future data-retention/privacy policy
@@ -785,8 +783,12 @@ These are not required for Task 09 or remain frontend integration work:
   `POST /api/cases/{case_id}/sessions/{session_id}/report-drafts`, and
   `updateReportDraftManualInput(draftId, payload)` calls
   `PATCH /api/report-drafts/{draft_id}/manual-input`.
-- No frontend helper or ReportPage button calls
-  `POST /api/report-drafts/{draft_id}/generate` yet.
+- The frontend API helper `generateReportDraftV2(draftId)` calls
+  `POST /api/report-drafts/{draft_id}/generate`, sends no payload, and returns
+  the updated `ReportDraftV2`.
+- ReportPage keeps v1/v2 generation separate: v1 calls only
+  `POST /api/reports/generate`, while v2 calls only
+  `POST /api/report-drafts/{draft_id}/generate`.
 - Frontend resume links use `/?caseId={caseId}&sessionId={sessionId}`.
 - Frontend report links use `/report/{caseId}?sessionId={sessionId}`.
 - Conversation query params take precedence over stale `sessionStorage`
