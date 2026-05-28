@@ -291,6 +291,8 @@ Guidance:
 - Require explicit user intent before running them.
 - Expect provider keys and network access to be necessary.
 - Do not make live provider checks part of CI or default automated verification.
+- Use `docs/REPORT_V2_PROVIDER_SMOKE_TEST.md` for the local-only manual Report
+  v2 provider-mode smoke-test workflow.
 - Treat `backend/manual_checks/check_providers.py` as a connectivity script, not
   a unit test.
 - Keep `backend/manual_checks/check_db_smoke.py` as a legacy/manual smoke script
