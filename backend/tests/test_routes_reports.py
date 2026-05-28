@@ -373,6 +373,159 @@ def test_generate_report_v2_draft_persists_mocked_ai_output(client, monkeypatch)
     assert captured["summaries"][0]["crisis_level"] == "none"
 
 
+def test_generate_report_v2_draft_provider_mode_persists_valid_provider_output(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_MODEL", "report-v2-route-model")
+    case_id = _create_case(client)
+
+    import anyio
+
+    anyio.run(create_session, case_id, "session-v2-provider", None)
+    summary = TurnSummary(
+        turn_number=1,
+        emotion=EmotionDetail(primary="?行", intensity=6),
+        emotion_dimensions=EmotionDimensions(anxiety=6),
+        themes=["work stress"],
+        key_statement="synthetic summary only",
+        crisis_flag=False,
+    )
+    summary_row = anyio.run(
+        add_summary,
+        case_id,
+        "session-v2-provider",
+        1,
+        summary.model_dump_json(),
+        False,
+        "none",
+    )
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/session-v2-provider/report-drafts"
+    ).json()
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        calls["messages"] = messages
+        calls["model"] = model
+        return {
+            "chief_complaint_draft": {
+                "label_zh": "銝餉迄??",
+                "value": "可能與工作壓力相關，需諮商師確認。",
+                "source_type": "ai",
+                "missing_reason": None,
+                "needs_review": True,
+                "evidence_refs": [
+                    {
+                        "turn_number": 1,
+                        "summary_id": summary_row["id"],
+                        "note": "summary metadata",
+                    }
+                ],
+            }
+        }
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ai_generated"
+    assert data["generated_at"]
+    assert data["ai_generated"]["chief_complaint_draft"]["value"] == "可能與工作壓力相關，需諮商師確認。"
+    assert data["source_refs"] == [
+        {
+            "turn_number": 1,
+            "summary_id": summary_row["id"],
+            "note": "summary metadata",
+        }
+    ]
+    assert calls["model"] == "report-v2-route-model"
+    assert calls["messages"][0]["role"] == "system"
+
+
+def test_generate_report_v2_draft_provider_failure_is_generic_and_does_not_overwrite(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    case_id = _create_case(client)
+    sentinel = "PRIVATE_PROVIDER_FAILURE_DO_NOT_LEAK"
+
+    import anyio
+
+    anyio.run(create_session, case_id, "session-v2-provider-failure", None)
+    summary = TurnSummary(
+        turn_number=1,
+        emotion=EmotionDetail(primary="?行", intensity=6),
+        emotion_dimensions=EmotionDimensions(anxiety=6),
+        themes=["work stress"],
+        key_statement="synthetic summary only",
+        crisis_flag=False,
+    )
+    summary_row = anyio.run(
+        add_summary,
+        case_id,
+        "session-v2-provider-failure",
+        1,
+        summary.model_dump_json(),
+        False,
+        "none",
+    )
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/session-v2-provider-failure/report-drafts"
+    ).json()
+
+    async def first_provider_output(messages, *, model):
+        return {
+            "chief_complaint_draft": {
+                "label_zh": "銝餉迄??",
+                "value": "existing safe provider draft",
+                "source_type": "ai",
+                "missing_reason": None,
+                "needs_review": True,
+                "evidence_refs": [
+                    {
+                        "turn_number": 1,
+                        "summary_id": summary_row["id"],
+                        "note": "summary metadata",
+                    }
+                ],
+            }
+        }
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        first_provider_output,
+    )
+    first = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+    assert first.status_code == 200
+    assert first.json()["ai_generated"]["chief_complaint_draft"]["value"] == "existing safe provider draft"
+
+    async def failing_provider(messages, *, model):
+        raise RuntimeError(sentinel)
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        failing_provider,
+    )
+    second = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+    current = client.get(
+        f"/api/cases/{case_id}/sessions/session-v2-provider-failure/report-drafts/current"
+    )
+
+    assert second.status_code == 500
+    assert second.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in second.text
+    assert current.status_code == 200
+    assert current.json()["ai_generated"]["chief_complaint_draft"]["value"] == "existing safe provider draft"
+
+
 def test_generate_report_v2_draft_missing_draft_returns_404(client):
     response = client.post("/api/report-drafts/missing-draft/generate")
 
@@ -380,6 +533,7 @@ def test_generate_report_v2_draft_missing_draft_returns_404(client):
 
 
 def test_generate_report_v2_draft_without_summaries_returns_422(client, monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     case_id = _create_case(client)
 
     import anyio
@@ -389,6 +543,7 @@ def test_generate_report_v2_draft_without_summaries_returns_422(client, monkeypa
         f"/api/cases/{case_id}/sessions/session-v2-no-summaries/report-drafts"
     ).json()
     calls = {"agent": 0}
+    provider_calls = {"provider": 0}
 
     async def fake_generate_report_v2_ai_draft(**kwargs):
         calls["agent"] += 1
@@ -399,10 +554,20 @@ def test_generate_report_v2_draft_without_summaries_returns_422(client, monkeypa
         fake_generate_report_v2_ai_draft,
     )
 
+    async def fake_call_report_v2_provider(*args, **kwargs):
+        provider_calls["provider"] += 1
+        return {}
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
     response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
 
     assert response.status_code == 422
     assert calls["agent"] == 0
+    assert provider_calls["provider"] == 0
 
 
 def test_generate_report_v2_draft_invalid_agent_output_returns_safe_error(

@@ -24,6 +24,12 @@ REPORT_V2_ALLOWED_EVIDENCE_NOTES = {
     "manual input",
     "persisted crisis level",
 }
+REPORT_V2_PROVIDER_MODE_DETERMINISTIC = "deterministic"
+REPORT_V2_PROVIDER_MODE_PROVIDER = "provider"
+REPORT_V2_PROVIDER_MODES = {
+    REPORT_V2_PROVIDER_MODE_DETERMINISTIC,
+    REPORT_V2_PROVIDER_MODE_PROVIDER,
+}
 REPORT_V2_ALLOWED_AI_FIELDS = [
     "chief_complaint_draft",
     "problem_development_draft",
@@ -107,6 +113,23 @@ def _env_int(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+
+def _get_report_v2_provider_mode() -> str:
+    raw = os.getenv("REPORT_V2_PROVIDER_MODE", "").strip().lower()
+    if not raw:
+        return REPORT_V2_PROVIDER_MODE_DETERMINISTIC
+    if raw not in REPORT_V2_PROVIDER_MODES:
+        raise ValueError("Invalid REPORT_V2_PROVIDER_MODE")
+    return raw
+
+
+def _get_report_v2_model() -> str:
+    return (
+        os.getenv("REPORT_V2_MODEL")
+        or os.getenv("ANALYSIS_MODEL")
+        or "gemini-1.5-pro"
+    )
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -238,9 +261,19 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-async def _call_report_v2_provider(messages_or_payload: Any) -> str:
-    _ = messages_or_payload
-    raise NotImplementedError("Report v2 live provider integration is not enabled")
+async def _call_report_v2_provider(
+    messages_or_payload: Any,
+    *,
+    model: str,
+) -> str:
+    client = get_llm_client("gemini")
+    resp = await client.chat.completions.create(
+        model=model,
+        temperature=0.2,
+        response_format={"type": "json_object"},
+        messages=messages_or_payload,
+    )
+    return resp.choices[0].message.content or ""
 
 
 def _parse_report_v2_provider_output(raw_output: str | dict[str, Any]) -> ReportAIGeneratedV2:
@@ -483,14 +516,31 @@ async def generate_report_v2_ai_draft(
     knowledge_excerpts: list[str] | None = None,
 ) -> ReportAIGeneratedV2:
     """
-    Report Schema v2 deterministic placeholder.
+    Report Schema v2 AI draft generation.
 
-    This first backend slice defines the safe contract only. It intentionally
-    avoids live provider calls and returns a conservative schema-valid draft
-    whose fields remain missing/pending for counselor review.
+    Default deterministic mode avoids live provider calls and returns a
+    conservative schema-valid draft. Explicit provider mode builds the safe v2
+    prompt payload, calls the provider boundary, and accepts only validated
+    ReportAIGeneratedV2 output.
     """
-    _ = (case_id, session_id, summaries, manual_input, knowledge_excerpts)
-    return ReportAIGeneratedV2.model_validate({})
+    mode = _get_report_v2_provider_mode()
+    if mode == REPORT_V2_PROVIDER_MODE_DETERMINISTIC:
+        _ = (case_id, session_id, summaries, manual_input, knowledge_excerpts)
+        return ReportAIGeneratedV2.model_validate({})
+
+    payload = _build_report_v2_prompt_payload(
+        case_id=case_id,
+        session_id=session_id,
+        summaries=summaries,
+        manual_input=manual_input,
+        knowledge_excerpts=knowledge_excerpts,
+    )
+    messages = _build_report_v2_messages(payload)
+    raw_output = await _call_report_v2_provider(
+        messages,
+        model=_get_report_v2_model(),
+    )
+    return _parse_report_v2_provider_output(raw_output)
 
 
 class AnalysisAgent:
