@@ -60,10 +60,11 @@ Current implementation status:
   back to `ANALYSIS_MODEL`, then the existing default model.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
-- Manual local provider smoke testing, prompt quality refinement,
+- Manual local provider smoke testing has passed with synthetic data after
+  provider field metadata normalization. Prompt quality refinement,
   prompt/version storage or audit metadata, counselor review workflow,
-  final-report workflow, frontend behavior change, and PDF export remain future
-  work.
+  final-report workflow, frontend behavior change, demo runbook, synthetic demo
+  data, and print-friendly/PDF export remain future work.
 
 ## 2. Source Materials
 
@@ -117,9 +118,11 @@ Current implementation facts:
 - Backend Report v2 provider output parsing accepts JSON string or dict input,
   rejects invalid JSON and non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
-  validation, and rejects unsafe evidence ref notes. Evidence notes are limited
-  to pointer-only labels such as `summary metadata`, `manual input`, and
-  `persisted crisis level`.
+  validation, and rejects unsafe evidence ref notes. Parser normalization handles
+  provider `source_type` and `missing_reason` variants for known
+  `ReportAIGeneratedV2` fields, while unknown/manual-only fields remain
+  rejected. Evidence notes are limited to pointer-only labels such as
+  `summary metadata`, `manual input`, and `persisted crisis level`.
 - `_call_report_v2_provider(...)` exists as a Gemini-style provider boundary
   used only when provider mode is explicitly enabled. Provider mode builds v2
   prompt/messages, calls the boundary, parses provider output, validates it as
@@ -863,6 +866,8 @@ Current provider parser behavior:
 - It rejects invalid JSON and non-object JSON.
 - It validates output with `ReportAIGeneratedV2`.
 - It rejects unknown/manual-only fields through strict schema validation.
+- It normalizes provider `source_type` and `missing_reason` variants for known
+  `ReportAIGeneratedV2` fields.
 - It rejects unsafe evidence ref notes.
 - Evidence notes are limited to pointer-only labels such as `summary metadata`,
   `manual input`, and `persisted crisis level`.
@@ -1183,13 +1188,14 @@ Recommended implementation slices:
 10. Backend Report v2 prompt/input builder and provider parser. Completed.
 11. Disabled-by-default provider mode and environment/config controls.
     Completed.
-12. Manual local provider smoke testing and prompt quality refinement. Future
+12. Manual local provider smoke testing with synthetic data. Completed.
+13. Demo runbook and synthetic demo data. Future work.
+14. Prompt quality refinement. Future work.
+15. Prompt/version storage or audit metadata. Future work.
+16. Frontend behavior changes for provider mode, if explicitly designed. Future
     work.
-13. Prompt/version storage or audit metadata. Future work.
-14. Frontend behavior changes for provider mode, if explicitly designed. Future
-    work.
-15. Counselor edit/review status flow. Future work.
-16. PDF export planning and implementation. Future work.
+17. Counselor edit/review status flow. Future work.
+18. Print-friendly/PDF export planning and implementation. Future work.
 
 Each implementation slice should be small, testable, and reviewable. Safety and
 browser-storage regression tests should accompany behavior changes.
@@ -1200,7 +1206,7 @@ Out of scope for this planning slice:
 
 - immediate PDF implementation
 - live provider calls in automated tests or CI
-- manual local provider smoke testing
+- demo runbook and synthetic demo data
 - prompt quality refinement
 - prompt/version storage or audit metadata
 - frontend behavior changes

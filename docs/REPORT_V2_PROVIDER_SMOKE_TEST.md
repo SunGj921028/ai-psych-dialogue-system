@@ -32,6 +32,27 @@ This runbook does not cover:
 - PDF export.
 - MCP.
 
+## Latest Local Result
+
+A local Report v2 provider smoke test has passed with synthetic data after the
+provider field metadata normalization fix.
+
+Observed successful checks:
+
+- `POST /api/report-drafts/{draft_id}/generate` returned
+  `status = ai_generated`.
+- `generated_at` was set.
+- `ai_generated` contained provider-generated draft fields.
+- SQLite returned `ai_generated|1|1|1` for the status/generated/AI/final-null
+  check.
+- `report_drafts` contained `ai_generated_json`.
+- `final_report_json` remained null after v2 AI draft generation.
+- `report_drafts` had no raw prompt, raw response, provider-response, or
+  prompt-text columns.
+- Frontend/browser rendering displayed Chinese correctly.
+- PowerShell displayed mojibake in some output, which does not by itself mean
+  frontend/browser rendering is broken.
+
 ## Safety Warnings
 
 - Do not use real client or counselor data.
@@ -245,6 +266,9 @@ The generate response should show:
 - `final_report` remains null.
 - Evidence refs are pointer-only.
 - No raw prompt or raw provider response is present.
+- Provider `source_type` and `missing_reason` variants are normalized for known
+  `ReportAIGeneratedV2` fields.
+- Unknown/manual-only fields remain rejected.
 
 Evidence refs should use only safe pointer fields such as:
 
@@ -260,7 +284,8 @@ Confirm in the throwaway DB:
 - `ai_generated_json IS NOT NULL`.
 - `final_report_json IS NULL`.
 - `manual_input_json` remains present.
-- `report_drafts` has no raw prompt or raw response columns.
+- `report_drafts` has no raw prompt, raw response, provider response, or prompt
+  text columns.
 - No API keys or secrets are stored.
 - No raw messages are stored in `report_drafts`.
 - No crisis detector reasons are stored in `report_drafts`.
@@ -369,13 +394,19 @@ if they contain clinical content. Retry only with synthetic data.
 If JSON-mode compatibility fails for the provider/model, record only the generic
 failure category and model name. Do not persist or share raw provider responses.
 
+PowerShell may display Traditional Chinese text as mojibake depending on the
+active code page and font. Confirm user-visible Chinese rendering in the browser
+or frontend before treating console mojibake as an application rendering defect.
+
 ## Future Work
 
 - A manual smoke script may be considered later, but this runbook does not add
   one.
+- A separate demo runbook may be added later.
+- Synthetic demo data may be added later.
 - Prompt quality refinement remains future work.
 - Provider output quality evaluation remains future work.
 - Prompt/version storage or audit metadata remains future work.
 - Counselor final report workflow remains separate future work.
-- PDF export remains separate future work.
+- Print-friendly/PDF export remains separate future work.
 - Charts/Recharts and MCP remain separate future work.
