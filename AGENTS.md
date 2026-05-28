@@ -124,11 +124,12 @@ mismatches.
 - Backend-only deterministic Report Schema v2 AI draft generation, backend v2
   prompt/input builder and provider parser, disabled-by-default provider mode,
   and frontend v2 generate/preview integration are implemented. Manual local
-  provider smoke testing, prompt quality refinement, prompt/version audit
-  metadata, counselor final report workflow, PDF export, hard delete/session
-  data-retention workflow, title search/filter, richer session metadata,
-  optional charts/Recharts, optional secret-safe runtime/provider status, and
-  MCP integration remain future work.
+  provider smoke testing has passed with synthetic data, and a classroom demo
+  runbook exists at `docs/DEMO_RUNBOOK.md`. Synthetic demo data, prompt quality
+  refinement, prompt/version audit metadata, counselor final report workflow,
+  print-friendly/PDF export, hard delete/session data-retention workflow, title
+  search/filter, richer session metadata, optional charts/Recharts, optional
+  secret-safe runtime/provider status, and MCP integration remain future work.
 - Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired, report
   status, and optional latest/peak session crisis aggregates remain future work.
 
@@ -259,7 +260,9 @@ These are current code facts and should not be contradicted in new work:
 - Report v2 provider output parsing exists. It accepts JSON string or dict
   inputs, rejects invalid/non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
-  validation, and rejects unsafe evidence ref notes. `_call_report_v2_provider(...)`
+  validation, normalizes provider `source_type` and `missing_reason` variants
+  for known `ReportAIGeneratedV2` fields, and rejects unsafe evidence ref notes.
+  Unknown/manual-only fields remain rejected. `_call_report_v2_provider(...)`
   exists as a Gemini-style provider boundary used only when
   `REPORT_V2_PROVIDER_MODE=provider`.
 - `REPORT_V2_PROVIDER_MODE` allows `deterministic` or `provider`; invalid
