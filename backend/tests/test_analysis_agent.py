@@ -443,6 +443,115 @@ def test_parse_report_v2_provider_output_accepts_valid_json_with_safe_evidence_r
     assert result.chief_complaint_draft.evidence_refs[0].note == "summary metadata"
 
 
+def test_parse_report_v2_provider_output_normalizes_known_fields_missing_metadata():
+    raw = {
+        field_name: {"value": f"draft for {field_name}"}
+        for field_name in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    for field_name in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS:
+        field = getattr(result, field_name)
+        assert field.label_zh == analysis_agent.REPORT_V2_AI_FIELD_LABELS[field_name]
+        assert field.value == f"draft for {field_name}"
+        assert field.source_type.value == "ai"
+        assert field.missing_reason is None
+        assert field.needs_review is True
+        assert field.evidence_refs == []
+
+
+def test_parse_report_v2_provider_output_normalizes_ai_like_source_type_aliases():
+    aliases = ["AI", "ai_draft", "ai-generated", "ai_generated", "AI 草稿", "provider"]
+
+    for alias in aliases:
+        raw = {
+            "chief_complaint_draft": {
+                "label_zh": "主訴草稿",
+                "value": f"draft from {alias}",
+                "source_type": alias,
+                "missing_reason": None,
+                "needs_review": True,
+                "evidence_refs": [],
+            }
+        }
+
+        result = analysis_agent._parse_report_v2_provider_output(raw)
+
+        assert isinstance(result, ReportAIGeneratedV2)
+        assert result.chief_complaint_draft.value == f"draft from {alias}"
+        assert result.chief_complaint_draft.source_type.value == "ai"
+
+
+def test_parse_report_v2_provider_output_wraps_known_string_values():
+    raw = {
+        "chief_complaint_draft": "possible client concern requiring counselor review",
+        "problem_development_draft": "",
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.label_zh == "主訴草稿"
+    assert result.chief_complaint_draft.value == "possible client concern requiring counselor review"
+    assert result.chief_complaint_draft.source_type.value == "ai"
+    assert result.chief_complaint_draft.missing_reason is None
+    assert result.chief_complaint_draft.needs_review is True
+    assert result.chief_complaint_draft.evidence_refs == []
+    assert result.problem_development_draft.value == ""
+    assert result.problem_development_draft.missing_reason.value == "no_data"
+
+
+def test_parse_report_v2_provider_output_fills_missing_reason_for_empty_values():
+    raw = {
+        "chief_complaint_draft": None,
+        "problem_development_draft": {"value": "   "},
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.value is None
+    assert result.chief_complaint_draft.missing_reason.value == "no_data"
+    assert result.problem_development_draft.missing_reason.value == "no_data"
+
+
+def test_parse_report_v2_provider_output_normalizes_invalid_missing_reasons():
+    raw = {
+        "chief_complaint_draft": {
+            "value": "non-empty draft",
+            "source_type": "ai",
+            "missing_reason": "none",
+        },
+        "problem_development_draft": {
+            "value": "",
+            "source_type": "ai",
+            "missing_reason": "unexpected provider label",
+        },
+        "client_understanding_draft": {
+            "value": None,
+            "source_type": "ai",
+            "missing_reason": "not evaluated",
+        },
+        "emotion_pattern": {
+            "value": "not applicable for this source",
+            "source_type": "ai",
+            "missing_reason": "不適用",
+        },
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.missing_reason is None
+    assert result.problem_development_draft.missing_reason.value == "no_data"
+    assert result.client_understanding_draft.missing_reason.value == "not_assessed"
+    assert result.emotion_pattern.missing_reason.value == "not_applicable"
+    assert result.chief_complaint_draft.needs_review is True
+    assert result.chief_complaint_draft.evidence_refs == []
+
+
 def test_parse_report_v2_provider_output_rejects_invalid_or_unsafe_output():
     invalid_cases = [
         "not json",
