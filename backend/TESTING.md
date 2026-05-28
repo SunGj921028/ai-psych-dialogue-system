@@ -31,11 +31,11 @@ Current deterministic tests live under `backend/tests/`:
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
-| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, message safety instructions, valid provider parser output, invalid/manual-only/unsafe parser rejection, and provider boundary behavior without live provider calls. |
+| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, message safety instructions, provider mode with monkeypatched provider, model fallback behavior, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, and provider boundary behavior without live provider calls. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
 | `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, archive/unarchive behavior, default archived-session exclusion, `include_archived=true` listing, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and safe session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures and report draft helper failures. |
-| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, missing draft 404, no summaries 422, invalid agent output, DB/helper failure, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
+| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, DB/helper failure, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
 
 These tests are network-free, do not require API keys, and should be treated as the
 current deterministic backend test suite. They use temporary SQLite databases and
@@ -157,6 +157,12 @@ Covered deterministic behaviors include:
 - Analysis report computes `has_crisis`, `peak_turn`, and fixed disclaimer in code.
 - Report Schema v2 AI draft fallback returns a conservative schema-valid
   `ReportAIGeneratedV2` without live provider calls.
+- `REPORT_V2_PROVIDER_MODE` defaults unset or blank values to `deterministic`;
+  explicit `deterministic` mode does not call the provider; explicit `provider`
+  mode uses a monkeypatched provider boundary in tests; invalid mode fails
+  closed.
+- `REPORT_V2_MODEL` is used only in provider mode and falls back to
+  `ANALYSIS_MODEL`, then the existing default model.
 - Report Schema v2 prompt/input builder uses
   `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`, fixed curated
   knowledge-base excerpts, safety instructions, safe summary-shaped provider
@@ -167,8 +173,12 @@ Covered deterministic behaviors include:
   ref notes; validates with `ReportAIGeneratedV2`; and limits evidence notes to
   pointer-only labels such as `summary metadata`, `manual input`, and
   `persisted crisis level`.
-- `_call_report_v2_provider(...)` currently raises `NotImplementedError`, and
-  automated tests verify that no live provider is required.
+- `_call_report_v2_provider(...)` uses the existing Gemini-style provider
+  infrastructure in provider mode, but automated tests monkeypatch the boundary
+  and verify that no live provider is required.
+- Provider failures, invalid JSON, forbidden/manual-only fields, unsafe evidence
+  refs, and invalid provider mode fail closed without persisting unsafe output
+  as success.
 - Gemini JSON `response_format` compatibility failures are handled through fallback paths
   or robust parsing where applicable.
 
@@ -219,8 +229,11 @@ Task 09 route tests verify:
   - idempotent second create returning the same draft ID.
   - manual input update.
   - deterministic v2 AI draft generation route success.
+  - provider mode route success with a monkeypatched provider.
+  - provider failure returning a generic non-leaking 500.
+  - provider failure not overwriting existing `ai_generated_json`.
   - missing draft 404.
-  - no persisted summaries 422.
+  - no persisted summaries 422 before any provider call.
   - invalid agent output.
   - DB/helper failure.
   - `ai_generated_json` persistence.
@@ -234,7 +247,7 @@ Task 09 route tests verify:
   - generic non-leaking 500 behavior.
 - Existing v1 `POST /api/reports/generate` behavior remains covered and unchanged.
 - Existing `POST /api/report-drafts/{draft_id}/generate` default behavior remains
-  deterministic/conservative and is not wired to a live provider call.
+  deterministic/conservative and does not call a provider.
 
 For route tests, prefer monkeypatching agent functions instead of mocking provider clients
 deep inside each agent.

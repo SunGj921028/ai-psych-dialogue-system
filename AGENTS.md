@@ -58,8 +58,8 @@ mismatches.
   - `conversation_agent.py`: empathic response generation, Gemini provider.
   - `analysis_agent.py`: v1 report generation from summaries through Gemini,
     plus backend-only deterministic Report Schema v2 AI draft generation,
-    v2 prompt/input builder helpers, provider output parser, and a provider
-    boundary stub that does not call a live provider yet.
+    v2 prompt/input builder helpers, provider output parser, and disabled-by-default
+    Report v2 provider mode.
 - HTTP router files in `backend/routers/` implement Task 09 routes and are mounted
   under `/api`.
 - MCP server skeleton exists in `backend/mcp_servers/case_query_server.py`, but it is not implemented.
@@ -122,10 +122,10 @@ mismatches.
   `ai_generated` JSON, generated report text, and clinical content are not
   stored in browser storage.
 - Backend-only deterministic Report Schema v2 AI draft generation, backend v2
-  prompt/input builder and provider parser, and frontend v2 generate/preview
-  integration are implemented. Disabled-by-default provider mode,
-  environment/config provider control, real v2 provider call integration,
-  counselor final report workflow, PDF export, hard delete/session
+  prompt/input builder and provider parser, disabled-by-default provider mode,
+  and frontend v2 generate/preview integration are implemented. Manual local
+  provider smoke testing, prompt quality refinement, prompt/version audit
+  metadata, counselor final report workflow, PDF export, hard delete/session
   data-retention workflow, title search/filter, richer session metadata,
   optional charts/Recharts, optional secret-safe runtime/provider status, and
   MCP integration remain future work.
@@ -249,8 +249,8 @@ These are current code facts and should not be contradicted in new work:
 - `analysis_agent.py` computes `has_crisis`, `peak_turn`, and the fixed disclaimer
   in code.
 - `analysis_agent.generate_report_v2_ai_draft(...)` exists beside v1
-  `generate_report(...)`; it is deterministic/conservative for now and does not
-  call a live provider.
+  `generate_report(...)`; unset or blank `REPORT_V2_PROVIDER_MODE` defaults to
+  deterministic/conservative behavior and does not call a provider.
 - `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"` and Report v2
   prompt/input builder helpers exist. They use fixed curated knowledge-base
   excerpts and safety instructions, shape summaries into safe provider input,
@@ -260,8 +260,11 @@ These are current code facts and should not be contradicted in new work:
   inputs, rejects invalid/non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
   validation, and rejects unsafe evidence ref notes. `_call_report_v2_provider(...)`
-  exists as a boundary and currently raises `NotImplementedError`; no live
-  provider call is wired in.
+  exists as a Gemini-style provider boundary used only when
+  `REPORT_V2_PROVIDER_MODE=provider`.
+- `REPORT_V2_PROVIDER_MODE` allows `deterministic` or `provider`; invalid
+  explicit values fail closed. `REPORT_V2_MODEL` is used only in provider mode
+  and falls back to `ANALYSIS_MODEL`, then the existing default model.
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
   If provider calls fail around JSON mode, prefer prompt-enforced JSON and robust
   parsing rather than changing the architecture.
