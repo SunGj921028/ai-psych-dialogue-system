@@ -70,6 +70,8 @@ def test_generate_report_with_insufficient_summaries_does_not_call_provider(
 def test_generate_report_v2_ai_draft_returns_conservative_schema_without_provider(
     monkeypatch,
 ):
+    monkeypatch.delenv("REPORT_V2_PROVIDER_MODE", raising=False)
+
     def fail_if_provider_is_requested(provider):
         raise AssertionError(f"provider should not be requested: {provider}")
 
@@ -99,6 +101,248 @@ def test_generate_report_v2_ai_draft_returns_conservative_schema_without_provide
     assert "medication" not in encoded
     assert "safety_plan" not in encoded
     assert "legal" not in encoded
+
+
+def test_generate_report_v2_ai_draft_explicit_deterministic_mode_does_not_call_provider(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "deterministic")
+
+    async def fail_if_provider_is_requested(*args, **kwargs):
+        raise AssertionError("provider boundary should not be called")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fail_if_provider_is_requested,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[
+                {
+                    "id": "summary-1",
+                    "turn_number": 1,
+                    "summary": make_turn_summary(1, 5).model_dump(),
+                    "crisis_level": "none",
+                }
+            ],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.value is None
+
+
+def test_generate_report_v2_ai_draft_provider_mode_calls_boundary_and_parses_json(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_MODEL", "report-v2-test-model")
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        calls["messages"] = messages
+        calls["model"] = model
+        return """
+        {
+          "chief_complaint_draft": {
+            "label_zh": "銝餉迄??",
+            "value": "可能與工作壓力相關，仍需諮商師確認。",
+            "source_type": "ai",
+            "missing_reason": null,
+            "needs_review": true,
+            "evidence_refs": [
+              {
+                "turn_number": 1,
+                "summary_id": "summary-1",
+                "note": "summary metadata"
+              }
+            ]
+          }
+        }
+        """
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[
+                {
+                    "id": "summary-1",
+                    "turn_number": 1,
+                    "summary": make_turn_summary(1, 5).model_dump(),
+                    "crisis_level": "none",
+                }
+            ],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert result.chief_complaint_draft.value == "可能與工作壓力相關，仍需諮商師確認。"
+    assert result.chief_complaint_draft.evidence_refs[0].note == "summary metadata"
+    assert calls["model"] == "report-v2-test-model"
+    assert calls["messages"][0]["role"] == "system"
+    assert calls["messages"][1]["role"] == "user"
+
+
+def test_generate_report_v2_ai_draft_provider_mode_defaults_model_from_analysis_model(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.delenv("REPORT_V2_MODEL", raising=False)
+    monkeypatch.setenv("ANALYSIS_MODEL", "analysis-model-for-v2")
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        calls["model"] = model
+        return {}
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert calls["model"] == "analysis-model-for-v2"
+
+
+def test_generate_report_v2_ai_draft_provider_mode_invalid_output_fails_closed(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        return "not json"
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except ValueError as exc:
+        assert "Invalid Report v2 provider output" in str(exc)
+        return
+    raise AssertionError("invalid provider output should fail closed")
+
+
+def test_generate_report_v2_ai_draft_provider_mode_forbidden_fields_fail_closed(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        return {
+            "formal_diagnosis_notes": {
+                "label_zh": "閮箸?賊??酉",
+                "value": "AI must not fill diagnosis",
+                "source_type": "ai",
+            }
+        }
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except ValueError as exc:
+        assert "Invalid Report v2 provider output" in str(exc)
+        return
+    raise AssertionError("manual-only provider output should fail closed")
+
+
+def test_generate_report_v2_ai_draft_provider_exception_propagates_without_fallback(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "PRIVATE_PROVIDER_FAILURE_DO_NOT_PERSIST"
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        raise RuntimeError(sentinel)
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except RuntimeError as exc:
+        assert sentinel in str(exc)
+        return
+    raise AssertionError("provider exception should fail closed")
+
+
+def test_generate_report_v2_ai_draft_invalid_mode_fails_closed(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "surprise-provider")
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except ValueError as exc:
+        assert "Invalid REPORT_V2_PROVIDER_MODE" in str(exc)
+        return
+    raise AssertionError("invalid provider mode should fail closed")
 
 
 def test_report_v2_prompt_payload_includes_safety_policies_and_shaped_sources():
@@ -199,6 +443,115 @@ def test_parse_report_v2_provider_output_accepts_valid_json_with_safe_evidence_r
     assert result.chief_complaint_draft.evidence_refs[0].note == "summary metadata"
 
 
+def test_parse_report_v2_provider_output_normalizes_known_fields_missing_metadata():
+    raw = {
+        field_name: {"value": f"draft for {field_name}"}
+        for field_name in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    for field_name in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS:
+        field = getattr(result, field_name)
+        assert field.label_zh == analysis_agent.REPORT_V2_AI_FIELD_LABELS[field_name]
+        assert field.value == f"draft for {field_name}"
+        assert field.source_type.value == "ai"
+        assert field.missing_reason is None
+        assert field.needs_review is True
+        assert field.evidence_refs == []
+
+
+def test_parse_report_v2_provider_output_normalizes_ai_like_source_type_aliases():
+    aliases = ["AI", "ai_draft", "ai-generated", "ai_generated", "AI 草稿", "provider"]
+
+    for alias in aliases:
+        raw = {
+            "chief_complaint_draft": {
+                "label_zh": "主訴草稿",
+                "value": f"draft from {alias}",
+                "source_type": alias,
+                "missing_reason": None,
+                "needs_review": True,
+                "evidence_refs": [],
+            }
+        }
+
+        result = analysis_agent._parse_report_v2_provider_output(raw)
+
+        assert isinstance(result, ReportAIGeneratedV2)
+        assert result.chief_complaint_draft.value == f"draft from {alias}"
+        assert result.chief_complaint_draft.source_type.value == "ai"
+
+
+def test_parse_report_v2_provider_output_wraps_known_string_values():
+    raw = {
+        "chief_complaint_draft": "possible client concern requiring counselor review",
+        "problem_development_draft": "",
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.label_zh == "主訴草稿"
+    assert result.chief_complaint_draft.value == "possible client concern requiring counselor review"
+    assert result.chief_complaint_draft.source_type.value == "ai"
+    assert result.chief_complaint_draft.missing_reason is None
+    assert result.chief_complaint_draft.needs_review is True
+    assert result.chief_complaint_draft.evidence_refs == []
+    assert result.problem_development_draft.value == ""
+    assert result.problem_development_draft.missing_reason.value == "no_data"
+
+
+def test_parse_report_v2_provider_output_fills_missing_reason_for_empty_values():
+    raw = {
+        "chief_complaint_draft": None,
+        "problem_development_draft": {"value": "   "},
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.value is None
+    assert result.chief_complaint_draft.missing_reason.value == "no_data"
+    assert result.problem_development_draft.missing_reason.value == "no_data"
+
+
+def test_parse_report_v2_provider_output_normalizes_invalid_missing_reasons():
+    raw = {
+        "chief_complaint_draft": {
+            "value": "non-empty draft",
+            "source_type": "ai",
+            "missing_reason": "none",
+        },
+        "problem_development_draft": {
+            "value": "",
+            "source_type": "ai",
+            "missing_reason": "unexpected provider label",
+        },
+        "client_understanding_draft": {
+            "value": None,
+            "source_type": "ai",
+            "missing_reason": "not evaluated",
+        },
+        "emotion_pattern": {
+            "value": "not applicable for this source",
+            "source_type": "ai",
+            "missing_reason": "不適用",
+        },
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.chief_complaint_draft.missing_reason is None
+    assert result.problem_development_draft.missing_reason.value == "no_data"
+    assert result.client_understanding_draft.missing_reason.value == "not_assessed"
+    assert result.emotion_pattern.missing_reason.value == "not_applicable"
+    assert result.chief_complaint_draft.needs_review is True
+    assert result.chief_complaint_draft.evidence_refs == []
+
+
 def test_parse_report_v2_provider_output_rejects_invalid_or_unsafe_output():
     invalid_cases = [
         "not json",
@@ -234,17 +587,26 @@ def test_parse_report_v2_provider_output_rejects_invalid_or_unsafe_output():
         raise AssertionError(f"unsafe provider output should fail: {raw!r}")
 
 
-def test_call_report_v2_provider_boundary_does_not_call_live_provider():
+def test_call_report_v2_provider_boundary_uses_gemini_client_and_model(monkeypatch):
+    fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
+
     async def run_provider_boundary():
         return await analysis_agent._call_report_v2_provider(
-            [{"role": "system", "content": "unused"}]
+            [{"role": "system", "content": "unused"}],
+            model="report-v2-boundary-model",
         )
 
-    try:
-        anyio.run(run_provider_boundary)
-    except NotImplementedError:
-        return
-    raise AssertionError("provider boundary should not be implemented in this slice")
+    result = anyio.run(run_provider_boundary)
+
+    assert result == '{"chief_complaint_draft": {}}'
+    assert fake_client.calls == [{"provider": "gemini"}]
+    assert fake_client.create_calls[0]["model"] == "report-v2-boundary-model"
+    assert fake_client.create_calls[0]["messages"] == [
+        {"role": "system", "content": "unused"}
+    ]
+    assert fake_client.create_calls[0]["temperature"] == 0.2
+    assert fake_client.create_calls[0]["response_format"] == {"type": "json_object"}
 
 
 def test_generate_report_uses_valid_provider_json_and_code_owned_disclaimer(

@@ -24,6 +24,12 @@ REPORT_V2_ALLOWED_EVIDENCE_NOTES = {
     "manual input",
     "persisted crisis level",
 }
+REPORT_V2_PROVIDER_MODE_DETERMINISTIC = "deterministic"
+REPORT_V2_PROVIDER_MODE_PROVIDER = "provider"
+REPORT_V2_PROVIDER_MODES = {
+    REPORT_V2_PROVIDER_MODE_DETERMINISTIC,
+    REPORT_V2_PROVIDER_MODE_PROVIDER,
+}
 REPORT_V2_ALLOWED_AI_FIELDS = [
     "chief_complaint_draft",
     "problem_development_draft",
@@ -40,6 +46,33 @@ REPORT_V2_ALLOWED_AI_FIELDS = [
     "protective_factors",
     "crisis_language_summary",
 ]
+REPORT_V2_AI_FIELD_LABELS = {
+    "chief_complaint_draft": "主訴草稿",
+    "problem_development_draft": "問題發展草稿",
+    "client_understanding_draft": "個案對問題理解草稿",
+    "emotion_pattern": "情緒模式",
+    "cognitive_pattern": "認知模式",
+    "behavior_coping_pattern": "行為與因應模式",
+    "psychological_factors": "心理因素",
+    "theoretical_orientation_rationale": "理論取向理由",
+    "conceptualization_narrative": "概念化敘述",
+    "formation_factors": "形成因素",
+    "precipitating_factors": "誘發因素",
+    "maintaining_factors": "維持因素",
+    "protective_factors": "保護因素",
+    "crisis_language_summary": "危機語言摘要",
+}
+REPORT_V2_AI_SOURCE_TYPE_ALIASES = {
+    "ai",
+    "ai_draft",
+    "ai-generated",
+    "ai_generated",
+    "generated",
+    "ai 草稿",
+    "llm",
+    "model",
+    "provider",
+}
 REPORT_V2_FORBIDDEN_FIELDS = [
     "formal_diagnosis_notes",
     "assessment_testing_data",
@@ -107,6 +140,23 @@ def _env_int(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+
+def _get_report_v2_provider_mode() -> str:
+    raw = os.getenv("REPORT_V2_PROVIDER_MODE", "").strip().lower()
+    if not raw:
+        return REPORT_V2_PROVIDER_MODE_DETERMINISTIC
+    if raw not in REPORT_V2_PROVIDER_MODES:
+        raise ValueError("Invalid REPORT_V2_PROVIDER_MODE")
+    return raw
+
+
+def _get_report_v2_model() -> str:
+    return (
+        os.getenv("REPORT_V2_MODEL")
+        or os.getenv("ANALYSIS_MODEL")
+        or "gemini-1.5-pro"
+    )
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -207,6 +257,10 @@ def _build_report_v2_prompt_payload(
                 "不是正式風險評估或整體風險等級。"
             ),
             "output_schema": "只輸出 JSON object，且必須符合 ReportAIGeneratedV2；未知欄位會被拒絕。",
+            "output_field_contract": (
+                "每個 AI 欄位都必須是完整 ReportField object，包含 "
+                "label_zh、value、source_type、missing_reason、needs_review、evidence_refs。"
+            ),
             "evidence_ref_policy": {
                 "allowed_notes": sorted(REPORT_V2_ALLOWED_EVIDENCE_NOTES),
                 "rules": [
@@ -230,6 +284,8 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
         "請遵守安全邊界：不得填寫診斷、不得提供用藥建議、不得產生正式風險等級、"
         "不得產生治療計畫，且不得將知識庫當作個案事實。\n"
         "只輸出 JSON，必須符合 ReportAIGeneratedV2。\n"
+        "每個欄位都必須輸出完整 ReportField object，包含 label_zh、value、"
+        "source_type、missing_reason、needs_review、evidence_refs。\n"
         "evidence_refs 的 note 只能使用 summary metadata、manual input、persisted crisis level。"
     )
     return [
@@ -238,9 +294,19 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-async def _call_report_v2_provider(messages_or_payload: Any) -> str:
-    _ = messages_or_payload
-    raise NotImplementedError("Report v2 live provider integration is not enabled")
+async def _call_report_v2_provider(
+    messages_or_payload: Any,
+    *,
+    model: str,
+) -> str:
+    client = get_llm_client("gemini")
+    resp = await client.chat.completions.create(
+        model=model,
+        temperature=0.2,
+        response_format={"type": "json_object"},
+        messages=messages_or_payload,
+    )
+    return resp.choices[0].message.content or ""
 
 
 def _parse_report_v2_provider_output(raw_output: str | dict[str, Any]) -> ReportAIGeneratedV2:
@@ -255,11 +321,108 @@ def _parse_report_v2_provider_output(raw_output: str | dict[str, Any]) -> Report
         if not isinstance(data, dict):
             raise ValueError("Report v2 provider output must be a JSON object")
 
-        ai_generated = ReportAIGeneratedV2.model_validate(data)
+        normalized_data = _normalize_report_v2_ai_generated_payload(data)
+        ai_generated = ReportAIGeneratedV2.model_validate(normalized_data)
         _validate_report_v2_evidence_refs(ai_generated)
         return ai_generated
     except Exception as exc:
         raise ValueError("Invalid Report v2 provider output") from exc
+
+
+def _is_report_v2_empty_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set, dict)):
+        return len(value) == 0
+    return False
+
+
+def _default_report_v2_missing_reason(value: Any) -> str | None:
+    return "no_data" if _is_report_v2_empty_value(value) else None
+
+
+def _normalize_report_v2_ai_source_type(value: Any) -> Any:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in REPORT_V2_AI_SOURCE_TYPE_ALIASES:
+            return "ai"
+    return "ai"
+
+
+def _normalize_report_v2_missing_reason(value: Any, field_value: Any) -> str | None:
+    default = _default_report_v2_missing_reason(field_value)
+    if value is None:
+        return default
+    if not isinstance(value, str):
+        return default
+
+    normalized = value.strip().lower()
+    if normalized in {"", "none"}:
+        return default
+    if normalized in {"missing", "unknown"}:
+        return "no_data"
+    if normalized in {"not evaluated", "not assessed", "待評估"}:
+        return "not_assessed"
+    if normalized == "不適用":
+        return "not_applicable"
+    if normalized in {"no_data", "not_assessed", "not_applicable", "legacy_data"}:
+        return normalized
+    return default
+
+
+def _normalize_report_v2_ai_generated_payload(parsed: dict[str, Any]) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+
+    for field_name, field_value in parsed.items():
+        if field_name not in REPORT_V2_ALLOWED_AI_FIELDS:
+            normalized[field_name] = field_value
+            continue
+
+        label_zh = REPORT_V2_AI_FIELD_LABELS[field_name]
+        if isinstance(field_value, str):
+            normalized[field_name] = {
+                "label_zh": label_zh,
+                "value": field_value,
+                "source_type": "ai",
+                "missing_reason": _default_report_v2_missing_reason(field_value),
+                "needs_review": True,
+                "evidence_refs": [],
+            }
+            continue
+
+        if field_value is None:
+            normalized[field_name] = {
+                "label_zh": label_zh,
+                "value": None,
+                "source_type": "ai",
+                "missing_reason": "no_data",
+                "needs_review": True,
+                "evidence_refs": [],
+            }
+            continue
+
+        if isinstance(field_value, dict):
+            normalized_field = dict(field_value)
+            value = normalized_field.get("value")
+            normalized_field.setdefault("label_zh", label_zh)
+            normalized_field.setdefault("source_type", "ai")
+            normalized_field["source_type"] = _normalize_report_v2_ai_source_type(
+                normalized_field.get("source_type")
+            )
+            normalized_field.setdefault("needs_review", True)
+            normalized_field.setdefault("evidence_refs", [])
+            normalized_field["missing_reason"] = _normalize_report_v2_missing_reason(
+                normalized_field.get("missing_reason"),
+                value,
+            )
+            normalized[field_name] = normalized_field
+            continue
+
+        normalized[field_name] = field_value
+
+    return normalized
 
 
 def _validate_report_v2_evidence_refs(ai_generated: ReportAIGeneratedV2) -> None:
@@ -483,14 +646,31 @@ async def generate_report_v2_ai_draft(
     knowledge_excerpts: list[str] | None = None,
 ) -> ReportAIGeneratedV2:
     """
-    Report Schema v2 deterministic placeholder.
+    Report Schema v2 AI draft generation.
 
-    This first backend slice defines the safe contract only. It intentionally
-    avoids live provider calls and returns a conservative schema-valid draft
-    whose fields remain missing/pending for counselor review.
+    Default deterministic mode avoids live provider calls and returns a
+    conservative schema-valid draft. Explicit provider mode builds the safe v2
+    prompt payload, calls the provider boundary, and accepts only validated
+    ReportAIGeneratedV2 output.
     """
-    _ = (case_id, session_id, summaries, manual_input, knowledge_excerpts)
-    return ReportAIGeneratedV2.model_validate({})
+    mode = _get_report_v2_provider_mode()
+    if mode == REPORT_V2_PROVIDER_MODE_DETERMINISTIC:
+        _ = (case_id, session_id, summaries, manual_input, knowledge_excerpts)
+        return ReportAIGeneratedV2.model_validate({})
+
+    payload = _build_report_v2_prompt_payload(
+        case_id=case_id,
+        session_id=session_id,
+        summaries=summaries,
+        manual_input=manual_input,
+        knowledge_excerpts=knowledge_excerpts,
+    )
+    messages = _build_report_v2_messages(payload)
+    raw_output = await _call_report_v2_provider(
+        messages,
+        model=_get_report_v2_model(),
+    )
+    return _parse_report_v2_provider_output(raw_output)
 
 
 class AnalysisAgent:

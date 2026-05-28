@@ -11,9 +11,9 @@ manual input slice, frontend draft API helpers including
 `generateReportDraftV2(draftId)`, the separate v2 generation action card, and
 read-only five-section preview rendering of manual plus generated draft fields
 also exist. Backend Report v2 prompt/input builder helpers and provider output
-parser now exist, with a provider boundary stub for future integration. Live
-provider calls, counselor review/final report workflow, and PDF export are not
-implemented yet.
+parser now exist, and disabled-by-default provider mode is implemented. Manual
+local provider smoke testing, prompt quality refinement, counselor review/final
+report workflow, and PDF export are not implemented yet.
 
 ## 1. Purpose and Scope
 
@@ -46,19 +46,24 @@ Current implementation status:
   five-section template preview from loaded draft state, including inline
   `draft.ai_generated` fields when present. It does not call APIs, does not
   call `generateReport`, and does not generate content.
-- Backend-only deterministic v2 AI draft generation is implemented. It does not
-  call a live provider, uses `ReportAIGeneratedV2`, persists
-  `ai_generated_json`, and keeps missing/unsupported fields pending for
+- Backend-only deterministic v2 AI draft generation is implemented as the
+  default mode. It does not call a provider, uses `ReportAIGeneratedV2`,
+  persists `ai_generated_json`, and keeps missing/unsupported fields pending for
   counselor review.
 - Backend Report v2 prompt/input builder helpers are implemented with
   `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`.
-- Backend Report v2 provider output parsing is implemented for future provider
-  mode, but no live provider call is wired into a route.
+- Backend Report v2 provider output parsing is implemented for provider mode.
+- Disabled-by-default Report v2 provider mode is implemented. Unset or blank
+  `REPORT_V2_PROVIDER_MODE` defaults to `deterministic`; allowed values are
+  `deterministic` and `provider`; invalid explicit values fail closed.
+- `REPORT_V2_MODEL` is implemented for provider mode only. If unset, it falls
+  back to `ANALYSIS_MODEL`, then the existing default model.
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
-- No live v2 provider integration, disabled-by-default provider mode,
-  environment/config provider control, counselor review workflow, final-report
-  workflow, frontend behavior change, or PDF export has been implemented.
+- Manual local provider smoke testing, prompt quality refinement,
+  prompt/version storage or audit metadata, counselor review workflow,
+  final-report workflow, frontend behavior change, and PDF export remain future
+  work.
 
 ## 2. Source Materials
 
@@ -101,8 +106,9 @@ Current implementation facts:
   They persist counselor manual input and backend-only deterministic v2 AI draft
   content.
 - `analysis_agent.generate_report_v2_ai_draft(...)` exists beside the existing
-  v1 `analysis_agent.generate_report(...)`. The v2 function is conservative and
-  deterministic for now and does not call a live provider.
+  v1 `analysis_agent.generate_report(...)`. The v2 function defaults to
+  conservative deterministic mode and does not call a provider unless
+  `REPORT_V2_PROVIDER_MODE=provider` is explicitly set.
 - `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"` exists.
 - Backend Report v2 prompt/input builder helpers use fixed curated knowledge-base
   excerpts and safety instructions, shape summaries into safe provider input,
@@ -114,9 +120,13 @@ Current implementation facts:
   validation, and rejects unsafe evidence ref notes. Evidence notes are limited
   to pointer-only labels such as `summary metadata`, `manual input`, and
   `persisted crisis level`.
-- `_call_report_v2_provider(...)` exists as a provider boundary and currently
-  raises `NotImplementedError`. No live provider call is wired in, and no route
-  default calls a live provider.
+- `_call_report_v2_provider(...)` exists as a Gemini-style provider boundary
+  used only when provider mode is explicitly enabled. Provider mode builds v2
+  prompt/messages, calls the boundary, parses provider output, validates it as
+  `ReportAIGeneratedV2`, and returns only validated output.
+- Provider failures, invalid provider output, and invalid provider mode fail
+  closed. Provider failures do not persist a conservative empty fallback as
+  successful AI generation and do not overwrite existing `ai_generated_json`.
 - `POST /api/report-drafts/{draft_id}/generate` loads a draft, requires at least
   one persisted session summary, validates/generates `ReportAIGeneratedV2`,
   persists `ai_generated_json`, updates status to `ai_generated`, sets
@@ -531,10 +541,10 @@ manual input draft persistence, API responses, the first frontend ReportPage v2
 manual input slice, a read-only frontend template preview that renders
 `ai_generated` fields, frontend v2 generation controls, and backend-only
 deterministic v2 AI draft generation. Backend prompt/input builder helpers and
-provider output parser now exist for future provider mode. They are not yet
-connected to live provider calls, disabled-by-default provider mode,
-environment/config provider control, counselor review/final report workflow, or
-PDF export.
+provider output parser now exist, and disabled-by-default provider mode is
+implemented. Counselor review/final report workflow, PDF export, manual local
+provider smoke testing, prompt quality refinement, and prompt/version audit
+metadata remain future work.
 
 Implemented model names:
 
@@ -802,6 +812,8 @@ Current prompt/provider-parser slice behavior:
 - crisis detector reasons are not used
 - session titles are not used as provider input
 - knowledge-base excerpts are reference/writing guidance only, not case facts
+- API keys and provider secrets are not exposed in route responses
+- provider-mode failures do not overwrite existing `ai_generated_json`
 
 Report persistence increases privacy responsibility. The future implementation
 should keep generic non-leaking errors, avoid sensitive logs, and preserve the
@@ -813,18 +825,24 @@ Initial strategy:
 
 - Keep the v1 report endpoint unchanged.
 - Add Report Schema v2 beside v1.
-- Keep the current backend-only v2 generation deterministic and conservative
-  until disabled-by-default provider mode and config controls are explicitly
-  designed.
+- Keep v2 generation deterministic and conservative by default.
 - Keep provider prompt/input preparation and provider output parsing behind
-  backend boundaries; do not make route defaults call a live provider.
+  backend boundaries; route defaults do not call a provider.
+- Enable provider behavior only through explicit backend configuration.
 
 Current backend-only `analysis_agent` v2 behavior:
 
 - `generate_report_v2_ai_draft(...)` accepts session summaries and manual input.
 - It returns `ReportAIGeneratedV2`.
-- It does not call a live provider.
-- It returns schema-valid pending/missing fields rather than fabricated content.
+- In unset, blank, or explicit deterministic mode, it does not call a provider
+  and returns schema-valid pending/missing fields rather than fabricated content.
+- In provider mode, it builds v2 prompt/messages, calls the Report v2 provider
+  boundary, parses provider output, validates it as `ReportAIGeneratedV2`, and
+  returns only validated output.
+- `REPORT_V2_PROVIDER_MODE` accepts `deterministic` or `provider`; unset or
+  blank defaults to `deterministic`, and invalid explicit values fail closed.
+- `REPORT_V2_MODEL` is used only in provider mode. If unset, it falls back to
+  `ANALYSIS_MODEL`, then the existing default model.
 
 Current prompt/input builder behavior:
 
@@ -851,11 +869,17 @@ Current provider parser behavior:
 
 Current provider boundary behavior:
 
-- `_call_report_v2_provider(...)` exists and raises `NotImplementedError`.
-- No live provider call is wired in.
-- Automated tests do not call live providers.
+- `_call_report_v2_provider(...)` exists and uses the existing Gemini-style
+  provider infrastructure in explicit provider mode.
+- Automated tests monkeypatch the provider boundary and do not call live
+  providers.
 - `POST /api/report-drafts/{draft_id}/generate` remains
   deterministic/conservative by default.
+- Provider failures, invalid JSON, schema validation failures,
+  forbidden/manual-only fields, unsafe evidence refs, and invalid mode values
+  fail closed. Route responses remain generic and non-leaking.
+- Provider failures do not persist a conservative empty fallback as success and
+  do not overwrite existing `ai_generated_json`.
 
 The LLM should fill only AI-owned fields. Manual-only and system-owned fields
 must remain outside LLM control.
@@ -869,11 +893,11 @@ Code should own:
 - schema validation
 - derived crisis metadata
 
-Invalid, incomplete, or unsafe LLM output must not become fabricated content.
-Parsing and validation failures should produce safe missing-data fields or a
-fallback draft.
+Invalid, incomplete, or unsafe provider output must not become fabricated
+content. Parsing and validation failures fail closed in provider mode.
 
-Future tests should use mocked LLM outputs and should not call live providers.
+Tests use mocked or monkeypatched provider outputs and should not call live
+providers.
 
 ## 12. API Roadmap
 
@@ -907,7 +931,9 @@ Implemented v2 draft endpoints:
   - loads the report draft
   - requires at least one persisted session summary
   - returns 422 if no summaries exist
-  - calls deterministic/conservative `generate_report_v2_ai_draft(...)`
+  - calls `generate_report_v2_ai_draft(...)`
+  - defaults to deterministic/conservative generation with no provider call
+  - can use provider mode only when `REPORT_V2_PROVIDER_MODE=provider`
   - validates/generates `ReportAIGeneratedV2`
   - persists `ai_generated_json`
   - stores pointer-only source refs / source summary IDs
@@ -919,8 +945,9 @@ Implemented v2 draft endpoints:
 
 Each endpoint returns `ReportDraftV2`. Missing case/session/draft states return
 404, invalid manual input or no-summary generation requests return 422, and
-unexpected helper/DB failures or invalid agent output return generic non-leaking
-500 responses.
+unexpected helper/DB failures, invalid agent output, provider failures, invalid
+provider output, or invalid provider mode return generic non-leaking 500
+responses. Provider failures do not overwrite existing `ai_generated_json`.
 
 Future endpoints:
 
@@ -1029,6 +1056,10 @@ Backend tests should cover:
 - manual input validation
 - report draft CRUD
 - deterministic v2 AI draft fallback
+- disabled-by-default provider mode
+- provider mode with monkeypatched provider outputs
+- provider model fallback behavior
+- provider failure and invalid mode fail-closed behavior
 - prompt payload safety and source shaping
 - provider output parsing with mocked payloads
 - missing data behavior
@@ -1063,6 +1094,10 @@ Current backend draft persistence and route tests cover:
 - invalid manual input
 - timestamp updates
 - deterministic v2 agent fallback
+- provider mode success with monkeypatched provider output
+- provider failure returning generic non-leaking errors
+- no overwrite of existing `ai_generated_json` on provider failure
+- no-summary requests returning 422 before provider calls
 - v2 generate route success
 - missing draft 404
 - no summaries 422
@@ -1082,12 +1117,18 @@ Current backend prompt/parser/provider-boundary tests cover:
 
 - prompt payload safety and source shaping
 - message safety instructions
+- unset/default deterministic mode
+- explicit deterministic mode
+- provider mode with monkeypatched provider output
+- `REPORT_V2_MODEL` fallback behavior
 - valid provider parser output
 - invalid JSON rejection
 - non-object JSON rejection
 - unknown/manual-only field rejection through `ReportAIGeneratedV2`
 - unsafe evidence ref note rejection
-- provider boundary behavior with `NotImplementedError`
+- provider exception fail-closed behavior
+- invalid provider mode fail-closed behavior
+- provider boundary behavior through monkeypatched Gemini-style infrastructure
 - v1 `analysis_agent.generate_report()` preservation
 - v1 `POST /api/reports/generate` preservation
 - deterministic v2 preservation without live provider calls
@@ -1140,13 +1181,15 @@ Recommended implementation slices:
 8. Frontend v2 generate action and `generateReportDraftV2` helper. Completed.
 9. ReportV2Preview rendering of `ai_generated` fields. Completed.
 10. Backend Report v2 prompt/input builder and provider parser. Completed.
-11. Disabled-by-default provider mode and environment/config controls. Future
+11. Disabled-by-default provider mode and environment/config controls.
+    Completed.
+12. Manual local provider smoke testing and prompt quality refinement. Future
     work.
-12. Real provider call integration for v2. Future work.
-13. Frontend behavior changes for provider mode, if explicitly designed. Future
+13. Prompt/version storage or audit metadata. Future work.
+14. Frontend behavior changes for provider mode, if explicitly designed. Future
     work.
-14. Counselor edit/review status flow. Future work.
-15. PDF export planning and implementation. Future work.
+15. Counselor edit/review status flow. Future work.
+16. PDF export planning and implementation. Future work.
 
 Each implementation slice should be small, testable, and reviewable. Safety and
 browser-storage regression tests should accompany behavior changes.
@@ -1156,9 +1199,10 @@ browser-storage regression tests should accompany behavior changes.
 Out of scope for this planning slice:
 
 - immediate PDF implementation
-- live provider integration for v2
-- disabled-by-default provider mode
-- environment/config provider control
+- live provider calls in automated tests or CI
+- manual local provider smoke testing
+- prompt quality refinement
+- prompt/version storage or audit metadata
 - frontend behavior changes
 - diagnosis automation
 - medication advice
@@ -1187,6 +1231,9 @@ Human decisions needed before coding:
 - Should any diagnosis-related section remain limited to `診斷性思考` only?
 - Should regeneration preserve counselor edits by default?
 - Should report drafts support archive or lock behavior after export?
-- What environment/config flag should enable disabled-by-default provider mode?
-- What provider/model should be used when real Report v2 provider calls are
-  explicitly enabled?
+- Should prompt version, provider mode, and model metadata be stored later for
+  auditability without storing raw prompts or raw responses?
+- What manual local smoke-test procedure should be used before trusting provider
+  mode in development?
+- What prompt-quality acceptance criteria should be used for provider-backed v2
+  drafts?

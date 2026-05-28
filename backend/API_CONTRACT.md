@@ -30,7 +30,7 @@ source code remains the implementation truth.
 | GET | `/api/cases/{case_id}/sessions/{session_id}/report-drafts/current` | implemented | Returns the current Report Schema v2 draft for a case/session. |
 | POST | `/api/cases/{case_id}/sessions/{session_id}/report-drafts` | implemented | Creates or returns the current Report Schema v2 draft. |
 | PATCH | `/api/report-drafts/{draft_id}/manual-input` | implemented | Updates counselor manual input for an existing Report Schema v2 draft. |
-| POST | `/api/report-drafts/{draft_id}/generate` | implemented | Generates and persists a backend-only deterministic Report Schema v2 AI draft. |
+| POST | `/api/report-drafts/{draft_id}/generate` | implemented | Generates and persists a Report Schema v2 AI draft; defaults to deterministic mode and supports disabled-by-default provider mode. |
 
 Routers are mounted under `/api` in `backend/main.py`.
 
@@ -621,8 +621,9 @@ Implementation notes:
 - Do not let the LLM generate or override the fixed disclaimer.
 - Existing v1 report behavior is unchanged by Report Schema v2 draft endpoints.
 - `generate_report_v2_ai_draft(...)` exists beside the existing v1
-  `generate_report(...)`. It is deterministic/conservative for now and does not
-  call a live provider.
+  `generate_report(...)`. It defaults to deterministic/conservative behavior
+  and does not call a provider unless Report v2 provider mode is explicitly
+  configured.
 
 #### Get Current Report Draft
 
@@ -724,8 +725,17 @@ Implementation notes:
 - Requires at least one persisted session summary.
 - Returns 422 if no summaries exist.
 - Calls `agents.analysis_agent.generate_report_v2_ai_draft(...)`.
-- The current v2 agent function is deterministic and conservative and does not
-  call a live provider.
+- The current v2 agent function defaults to deterministic and conservative mode
+  and does not call a provider unless `REPORT_V2_PROVIDER_MODE=provider` is
+  explicitly configured.
+- `REPORT_V2_PROVIDER_MODE` allows `deterministic` or `provider`; unset or blank
+  defaults to `deterministic`, and invalid explicit values fail closed.
+- `REPORT_V2_MODEL` is used only in provider mode. If unset, it falls back to
+  `ANALYSIS_MODEL`, then the existing default model.
+- Provider mode builds v2 prompt/messages, calls the Report v2 provider
+  boundary using the existing Gemini-style provider infrastructure, parses
+  provider output, validates it as `ReportAIGeneratedV2`, and returns only
+  validated output.
 - Validates the result as `ReportAIGeneratedV2`.
 - `ReportAIGeneratedV2` and nested `ReportField` reject unknown fields.
 - AI output cannot silently include manual-only fields such as diagnosis,
@@ -743,18 +753,23 @@ Implementation notes:
 - Preserves `manual_input_json`.
 - Leaves `final_report_json` null.
 - Returns `ReportDraftV2`.
-- Invalid agent output or helper/DB failure returns a generic non-leaking 500.
+- Invalid agent output, provider failure, invalid provider output, invalid
+  provider mode, or helper/DB failure returns a generic non-leaking 500.
+- Provider failures do not persist a conservative empty fallback as success and
+  do not overwrite existing `ai_generated_json`.
 - Existing v1 `POST /api/reports/generate` behavior remains unchanged.
 - This endpoint does not add diagnosis automation, medication advice, emergency
   workflow automation, treatment plan automation, PDF export, browser storage,
-  live provider calls, or real v2 prompt integration.
+  raw prompt persistence, raw provider response persistence, or frontend
+  behavior changes.
 
 ## Future Endpoints / Integrations
 
 These are not required for Task 09 or remain future integration work:
 
 - Latest summaries endpoint for dashboards.
-- Real provider/prompt integration for Report Schema v2 AI generation.
+- Manual local provider smoke testing and Report v2 prompt quality refinement.
+- Prompt/version storage or audit metadata for Report Schema v2.
 - Report Schema v2 counselor review/finalization endpoint.
 - PDF export endpoint.
 - Session hard-delete endpoint, if a future data-retention/privacy policy
@@ -883,8 +898,9 @@ These are not required for Task 09 or remain future integration work:
 2. Return 404 if the draft is missing.
 3. Load persisted summaries for the draft's case/session.
 4. Return 422 when no summaries exist.
-5. Call deterministic/conservative `generate_report_v2_ai_draft(...)` with
-   summaries and existing manual input.
+5. Call `generate_report_v2_ai_draft(...)` with summaries and existing manual
+   input. The default mode is deterministic/conservative; explicit provider mode
+   builds v2 prompt/messages and validates provider output before persistence.
 6. Validate the output as `ReportAIGeneratedV2`.
 7. Collect pointer-only source refs / source summary IDs from generated evidence
    refs or from persisted summary row IDs.
@@ -892,6 +908,8 @@ These are not required for Task 09 or remain future integration work:
 9. Set status to `ai_generated`, set `generated_at` and `updated_at`, preserve
    `manual_input_json`, and leave `final_report_json` null.
 10. Return `ReportDraftV2`.
+11. If provider mode fails, return a generic non-leaking 500 and leave existing
+    `ai_generated_json` untouched.
 
 ### Session Listing Flow
 
@@ -1000,6 +1018,10 @@ These are not required for Task 09 or remain future integration work:
 - Database write failure: return 500 with a generic message; avoid leaking sensitive content.
 - Report draft helper failure: return 500 with a generic message; avoid leaking
   manual input values, clinical content, or implementation details.
+- Report v2 provider-mode failure, invalid provider output, or invalid
+  `REPORT_V2_PROVIDER_MODE`: return 500 with a generic message; do not leak raw
+  prompts, raw provider responses, provider exception text, model/provider
+  secrets, or clinical content, and do not overwrite existing `ai_generated_json`.
 - Agent failures: preserve current agent fallback behavior rather than failing the whole route
   unless persistence itself fails.
 
