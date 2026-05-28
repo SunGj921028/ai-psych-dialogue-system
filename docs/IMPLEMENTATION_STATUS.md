@@ -165,9 +165,10 @@ Current facts:
   `POST /api/reports/generate` behavior remain unchanged.
 - Frontend ReportPage v2 manual input UI/API helpers, the v2 AI generate action,
   and `ReportV2Preview` rendering of `ai_generated` fields are implemented.
-  Manual local provider smoke testing, prompt quality refinement,
+  Manual local provider smoke testing for Report v2 provider mode has been
+  completed with synthetic/local data. Prompt quality refinement,
   prompt/version audit metadata, counselor review/final report workflow, and PDF
-  export are not implemented yet.
+  export remain future work.
 - Report v2 safety/privacy constraints remain unchanged: no browser storage of
   generated report text or `ai_generated` JSON, no persisted raw prompts or raw
   provider responses, no raw message use, no crisis detector reason use, no API
@@ -455,9 +456,10 @@ Current facts:
   provider settings UI remains out of scope unless explicitly designed.
 - Frontend v2 AI draft generation integration now exists through the separate
   `v2 AI ?阮?Ｙ?` action card and `generateReportDraftV2(draftId)`.
-  Prompt quality refinement, manual local provider smoke testing, editable
-  counselor final report workflow, Recharts integration, and PDF export have not
-  been implemented for the report workspace.
+  Manual local provider smoke testing has been completed for Report v2 provider
+  mode. Prompt quality refinement, editable counselor final report workflow,
+  Recharts integration, and PDF export have not been implemented for the report
+  workspace.
 
 ### Tests
 
@@ -589,7 +591,7 @@ Current facts:
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing and backend-only manual session rename. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, backend-level-only crisis UI behavior, and restored persisted `crisis_level` display from loaded summaries. |
 | Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
-| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, transient-report note, summary-derived review aids, a visually separate Report Schema v2 manual input panel, a separate v2 AI draft generation action card, and a read-only v2 five-section preview that renders manual input plus `ai_generated` fields. Backend Report Schema v2 models, backend `report_drafts` persistence, backend manual input API, backend-only deterministic v2 AI draft generation endpoint, backend v2 prompt/input builder, backend v2 provider parser, disabled-by-default provider mode, and frontend draft API helpers including `generateReportDraftV2` exist. Manual local provider smoke testing, prompt quality refinement, prompt/version audit metadata, counselor review/final report workflow, PDF export, and frontend provider-mode behavior changes remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, transient-report note, summary-derived review aids, a visually separate Report Schema v2 manual input panel, a separate v2 AI draft generation action card, and a read-only v2 five-section preview that renders manual input plus `ai_generated` fields. Backend Report Schema v2 models, backend `report_drafts` persistence, backend manual input API, backend-only deterministic v2 AI draft generation endpoint, backend v2 prompt/input builder, backend v2 provider parser, disabled-by-default provider mode, frontend draft API helpers including `generateReportDraftV2`, and completed manual local provider smoke testing exist. Prompt quality refinement, prompt/version audit metadata, counselor review/final report workflow, PDF export, and frontend provider-mode behavior changes remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback, keeps session IDs visible as secondary metadata, supports inline manual title rename/clear, and implements archive-only session lifecycle controls. Hard delete, title search/filter, labels, and richer session metadata remain future work. |
 | Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -614,7 +616,9 @@ Status categories:
 - Older notes said `get_latest_summaries()` clamps with `max(1, min(limit, 100))`.
   Current code raises `ValueError` for non-positive limits and clamps only the upper bound.
 - Older model defaults mention `gemini-2.0-flash` and `gemini-1.5-pro`.
-  Current `.env.example` uses `gemini-2.5-flash-lite` and `gemini-2.5-flash`.
+  Current `backend/.env.example` uses `gemini-2.5-flash-lite` and
+  `gemini-2.5-flash`, keeps `REPORT_V2_PROVIDER_MODE=deterministic` by default,
+  and documents optional `REPORT_V2_MODEL` fallback behavior for provider mode.
 - README still references the generic default provider path more than the current
   Groq/Gemini split.
 - Deterministic backend tests now exist under `backend/tests/`, and deterministic
@@ -845,9 +849,10 @@ Future intent:
   parser, disabled-by-default provider mode, and a provider boundary also exist.
   The frontend ReportPage v2 manual input,
   `generateReportDraftV2`, separate v2 generation action card, and preview
-  rendering of `ai_generated` fields are implemented and unchanged. Remaining
-  report workflow future work includes manual local provider smoke testing,
-  prompt quality refinement, prompt/version audit metadata, counselor
+  rendering of `ai_generated` fields are implemented and unchanged. Manual local
+  provider smoke testing has been completed with synthetic/local data. Remaining
+  report workflow future work includes prompt quality refinement,
+  prompt/version audit metadata, counselor
   review/final report workflow, final PDF export, and optional Recharts/charts.
 - Add report status UI and counselor review/final-report workflow when
   prioritized.
@@ -863,9 +868,8 @@ Future intent:
 - Frontend testing should add coverage for counselor final report workflow and
   PDF export when those features are implemented, plus optional Playwright/E2E
   later and visual regression later if needed.
-- Manual local provider smoke testing, prompt quality refinement,
-  prompt/version storage or audit metadata, PDF export, charts/Recharts, MCP,
-  hard delete, title search/filter, report status UI, counselor
+- Prompt quality refinement, prompt/version storage or audit metadata, PDF
+  export, charts/Recharts, MCP, hard delete, title search/filter, report status UI, counselor
   review/final-report workflow, latest/peak crisis aggregates, and real provider
   settings UI remain separate future work. Frontend behavior changes are not
   part of the completed backend provider-mode slice.

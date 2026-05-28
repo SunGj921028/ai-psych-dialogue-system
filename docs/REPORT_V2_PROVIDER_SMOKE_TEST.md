@@ -48,6 +48,17 @@ This runbook does not cover:
 
 ## Current Provider Mode Context
 
+The example backend environment template at `backend/.env.example` documents the
+safe default:
+
+```text
+REPORT_V2_PROVIDER_MODE=deterministic
+REPORT_V2_MODEL=
+```
+
+Keep deterministic mode as the default for normal local setup. Provider mode is
+only for explicit local/manual validation and requires `GEMINI_API_KEY`.
+
 Report v2 generation supports:
 
 ```text
@@ -64,8 +75,12 @@ REPORT_V2_PROVIDER_MODE=provider
 Invalid explicit mode values fail closed. They should not silently fall back to
 deterministic mode.
 
-`REPORT_V2_MODEL` is used only in provider mode. If `REPORT_V2_MODEL` is unset,
-provider mode falls back to `ANALYSIS_MODEL`, then the existing default model.
+`REPORT_V2_MODEL` is optional and used only in provider mode. Provider mode model
+selection falls back in this order:
+
+1. `REPORT_V2_MODEL`
+2. `ANALYSIS_MODEL`
+3. system default
 
 Provider mode uses the existing Gemini-style provider infrastructure. Existing
 v1 report generation remains unchanged.

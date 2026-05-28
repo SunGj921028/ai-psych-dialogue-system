@@ -293,6 +293,10 @@ Guidance:
 - Do not make live provider checks part of CI or default automated verification.
 - Use `docs/REPORT_V2_PROVIDER_SMOKE_TEST.md` for the local-only manual Report
   v2 provider-mode smoke-test workflow.
+- Keep `REPORT_V2_PROVIDER_MODE=deterministic` as the default in
+  `backend/.env.example`; explicit provider mode requires `GEMINI_API_KEY`, and
+  optional `REPORT_V2_MODEL` falls back to `ANALYSIS_MODEL`, then the system
+  default.
 - Treat `backend/manual_checks/check_providers.py` as a connectivity script, not
   a unit test.
 - Keep `backend/manual_checks/check_db_smoke.py` as a legacy/manual smoke script
