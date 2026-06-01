@@ -106,6 +106,14 @@ selection falls back in this order:
 Provider mode uses the existing Gemini-style provider infrastructure. Existing
 v1 report generation remains unchanged.
 
+Report v2 generation now classifies failures internally as
+`missing_summaries`, `provider_config`, `provider_api_failure`,
+`invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,
+`db_persistence_failed`, or `unknown_generation_failure`. Public route responses
+remain generic and non-leaking. Logs should contain only the category plus
+case/session/draft identifiers, never raw prompts, raw provider responses,
+secrets, provider exception text, clinical text, or traces.
+
 ## Prerequisites
 
 Prepare:
@@ -306,6 +314,7 @@ Invalid mode:
 - Set `REPORT_V2_PROVIDER_MODE` to an invalid value.
 - Call the generate endpoint.
 - Expect a generic failure response.
+- Expect only an internal diagnostic category such as `provider_config`.
 - Confirm existing `ai_generated_json` is not overwritten.
 
 Missing or invalid provider key:
@@ -314,6 +323,8 @@ Missing or invalid provider key:
 - Omit or invalidate `GEMINI_API_KEY`.
 - Call the generate endpoint.
 - Expect fail-closed behavior with a generic failure response.
+- Expect only an internal diagnostic category such as `provider_config` or
+  `provider_api_failure`; do not expose provider exception text.
 
 Provider failure after a successful generation:
 
@@ -327,6 +338,7 @@ No-summary draft:
 - Create a draft for a synthetic session with no persisted summaries.
 - Call generate.
 - Expect 422 before provider generation.
+- Expect the internal category `missing_summaries`.
 
 Deterministic mode:
 
@@ -381,12 +393,13 @@ session has no persisted summaries.
 
 `500` may indicate:
 
-- invalid `REPORT_V2_PROVIDER_MODE`.
-- missing or invalid provider key.
-- provider outage or timeout.
-- invalid provider output.
-- parser rejection.
-- schema validation failure.
+- `provider_config` for invalid provider mode or missing configuration.
+- `provider_api_failure` for provider outage, timeout, or API failure.
+- `invalid_provider_json` for non-parseable provider JSON.
+- `schema_validation_failed` for schema-invalid provider output.
+- `unsafe_evidence_refs` for unsafe evidence reference notes.
+- `db_persistence_failed` for draft persistence failure.
+- `unknown_generation_failure` for an unexpected generation failure.
 
 Do not paste raw provider responses into issues, logs, commits, or chat messages
 if they contain clinical content. Retry only with synthetic data.
@@ -404,9 +417,11 @@ or frontend before treating console mojibake as an application rendering defect.
   one.
 - A separate demo runbook may be added later.
 - Synthetic demo data may be added later.
-- Prompt quality refinement remains future work.
-- Provider output quality evaluation remains future work.
-- Prompt/version storage or audit metadata remains future work.
-- Counselor final report workflow remains separate future work.
+- The post-demo prompt refinement batch is complete; future prompt work should
+  be documented as a new slice.
+- Counselor final report workflow and reviewed status remain separate future
+  work.
 - Print-friendly/PDF export remains separate future work.
-- Charts/Recharts and MCP remain separate future work.
+- Production deployment/testing remains separate future work.
+- Charts/Recharts planning, MCP, and docs after future slices remain separate
+  future work.

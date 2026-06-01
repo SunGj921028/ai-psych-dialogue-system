@@ -755,6 +755,11 @@ Implementation notes:
 - Returns `ReportDraftV2`.
 - Invalid agent output, provider failure, invalid provider output, invalid
   provider mode, or helper/DB failure returns a generic non-leaking 500.
+- Internal generation failure categories are `missing_summaries`,
+  `provider_config`, `provider_api_failure`, `invalid_provider_json`,
+  `schema_validation_failed`, `unsafe_evidence_refs`, `db_persistence_failed`,
+  and `unknown_generation_failure`. These categories are diagnostic only and
+  must not change the public non-leaking response shape.
 - Provider failures do not persist a conservative empty fallback as success and
   do not overwrite existing `ai_generated_json`.
 - Existing v1 `POST /api/reports/generate` behavior remains unchanged.
@@ -768,10 +773,11 @@ Implementation notes:
 These are not required for Task 09 or remain future integration work:
 
 - Latest summaries endpoint for dashboards.
-- Manual local provider smoke testing and Report v2 prompt quality refinement.
-- Prompt/version storage or audit metadata for Report Schema v2.
-- Report Schema v2 counselor review/finalization endpoint.
+- Charts/Recharts planning.
+- Report Schema v2 reviewed status and counselor review/finalization endpoint.
 - PDF export endpoint.
+- Production deployment/testing.
+- Documentation refreshes after future slices.
 - Session hard-delete endpoint, if a future data-retention/privacy policy
   explicitly defines it.
 - Prompt/settings management endpoints.
@@ -908,8 +914,11 @@ These are not required for Task 09 or remain future integration work:
 9. Set status to `ai_generated`, set `generated_at` and `updated_at`, preserve
    `manual_input_json`, and leave `final_report_json` null.
 10. Return `ReportDraftV2`.
-11. If provider mode fails, return a generic non-leaking 500 and leave existing
-    `ai_generated_json` untouched.
+11. If generation fails after validation starts, classify the internal failure
+    using the Report v2 generation categories and log only the category plus
+    case/session/draft identifiers.
+12. Return a generic non-leaking error and leave existing `ai_generated_json`
+    untouched.
 
 ### Session Listing Flow
 
@@ -1022,6 +1031,12 @@ These are not required for Task 09 or remain future integration work:
   `REPORT_V2_PROVIDER_MODE`: return 500 with a generic message; do not leak raw
   prompts, raw provider responses, provider exception text, model/provider
   secrets, or clinical content, and do not overwrite existing `ai_generated_json`.
+- Report v2 route diagnostics may use internal categories:
+  `missing_summaries`, `provider_config`, `provider_api_failure`,
+  `invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,
+  `db_persistence_failed`, and `unknown_generation_failure`. Public responses
+  must remain generic and must not expose raw prompts, raw provider responses,
+  secrets, provider exception text, clinical text, or traces.
 - Agent failures: preserve current agent fallback behavior rather than failing the whole route
   unless persistence itself fails.
 

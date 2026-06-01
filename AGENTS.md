@@ -53,7 +53,8 @@ mismatches.
 - Dedicated `sessions` table stores safe operational metadata only and supports
   durable empty sessions and archive-only lifecycle metadata.
 - Four implemented async agent modules in `backend/agents/`:
-  - `crisis_agent.py`: crisis detection, Groq provider, fail-safe fallback.
+  - `crisis_agent.py`: crisis detection, Groq provider, fail-safe fallback,
+    and post-demo speaker-attribution refinement.
   - `summary_agent.py`: per-turn JSON micro-summary, Groq provider.
   - `conversation_agent.py`: empathic response generation, Gemini provider.
   - `analysis_agent.py`: v1 report generation from summaries through Gemini,
@@ -72,21 +73,22 @@ mismatches.
 - ReportPage is integrated with backend manual report generation and now acts as
   a counselor review workspace with a prominent backend disclaimer and
   summary-derived review aids.
-- ReportPage also includes a visually separate Report Schema v2 manual input
-  panel above the existing v1 transient report generation section. The v2 panel
-  loads existing drafts, requires explicit Create Draft when none exists, does
-  not auto-create drafts on page load, and saves manual input only through the
-  backend Report v2 draft PATCH endpoint.
+- ReportPage places `會談整理輔助` before the v2 workflow, groups v2 manual
+  input/generate/preview under `v2 報告草稿`, and moves v1 lower as
+  `舊版 v1 暫存報告`. The v2 panel loads existing drafts, requires explicit
+  Create Draft when none exists, does not auto-create drafts on page load, and
+  saves manual input only through the backend Report v2 draft PATCH endpoint.
 - ReportPage includes a separate `v2 AI 草稿產生` action card between the manual
   input panel and `ReportV2Preview`. It calls `generateReportDraftV2(draftId)`,
   blocks generation when manual input has unsaved changes, updates local
   `reportDraft` from the backend response, and remains separate from v1
   transient report generation.
 - ReportPage mounts `ReportV2Preview` below the v2 generation card. The preview
-  renders all five authoritative v2 sections from loaded draft state, including
+  is simplified for demo-useful fields from loaded draft state, including
   `draft.ai_generated` fields labeled `AI 草稿，需諮商師審閱`; manual fields remain
-  counselor-owned, evidence refs are turn-number-only, and the preview does not
-  call APIs or `generateReport`.
+  counselor-owned, `crisis_language_summary` remains visible, manual
+  `safety_plan` renders only when provided, evidence refs are turn-number-only,
+  and the preview does not call APIs or `generateReport`.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
 - HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
@@ -115,8 +117,9 @@ mismatches.
   loaded summary rows' top-level nullable `crisis_level`, with precedence
   `high > low > none`; legacy `crisis_flag` without persisted `crisis_level`
   remains safe fallback metadata and is not reinterpreted as low/high.
-- Live high-risk turn responses open the high-risk modal, but restored persisted
-  high-risk state does not replay the modal.
+- Live high-risk turn responses open the high-risk modal without showing backend
+  reason/detail inline; restored persisted high-risk state shows only a short
+  page-level banner and does not replay the modal.
 - ReportPage preserves case and session IDs when linking back to conversation.
 - Session metadata, previews, titles, report drafts, manual input,
   `ai_generated` JSON, generated report text, and clinical content are not
@@ -125,13 +128,14 @@ mismatches.
   prompt/input builder and provider parser, disabled-by-default provider mode,
   and frontend v2 generate/preview integration are implemented. Manual local
   provider smoke testing has passed with synthetic data, and a classroom demo
-  runbook exists at `docs/DEMO_RUNBOOK.md`. Synthetic demo data, prompt quality
-  refinement, prompt/version audit metadata, counselor final report workflow,
-  print-friendly/PDF export, hard delete/session data-retention workflow, title
-  search/filter, richer session metadata, optional charts/Recharts, optional
-  secret-safe runtime/provider status, and MCP integration remain future work.
-- Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired, report
-  status, and optional latest/peak session crisis aggregates remain future work.
+  runbook exists at `docs/DEMO_RUNBOOK.md`. The post-demo prompt/preview
+  refinement batch is complete. Counselor final report workflow, reviewed
+  status, print-friendly/PDF export, production deployment/testing,
+  charts/Recharts planning, hard delete/session data-retention workflow, title
+  search/filter, richer session metadata, optional secret-safe runtime/provider
+  status, and MCP integration remain future work.
+- Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired,
+  and optional latest/peak session crisis aggregates remain future work.
 
 ### Active API Reality
 
@@ -256,7 +260,10 @@ These are current code facts and should not be contradicted in new work:
   prompt/input builder helpers exist. They use fixed curated knowledge-base
   excerpts and safety instructions, shape summaries into safe provider input,
   bound/truncate `key_statement`, and exclude raw messages, crisis detector
-  reasons, DB-internal `round`, and session title.
+  reasons, DB-internal `round`, and session title. Post-demo refinements cover
+  dialogue-based `crisis_language_summary`, supplemental
+  `client_understanding_draft`, and `theoretical_orientation_rationale` starting
+  with `初步建議取向：...`.
 - Report v2 provider output parsing exists. It accepts JSON string or dict
   inputs, rejects invalid/non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
@@ -268,6 +275,8 @@ These are current code facts and should not be contradicted in new work:
 - `REPORT_V2_PROVIDER_MODE` allows `deterministic` or `provider`; invalid
   explicit values fail closed. `REPORT_V2_MODEL` is used only in provider mode
   and falls back to `ANALYSIS_MODEL`, then the existing default model.
+- Report v2 generation failures are classified internally for diagnostics while
+  public route responses remain generic and non-leaking.
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
   If provider calls fail around JSON mode, prefer prompt-enforced JSON and robust
   parsing rather than changing the architecture.

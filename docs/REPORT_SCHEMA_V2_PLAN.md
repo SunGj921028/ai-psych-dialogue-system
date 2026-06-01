@@ -9,11 +9,12 @@ exist. Backend-only deterministic AI draft generation also exists through
 `POST /api/report-drafts/{draft_id}/generate`. The first frontend ReportPage v2
 manual input slice, frontend draft API helpers including
 `generateReportDraftV2(draftId)`, the separate v2 generation action card, and
-read-only five-section preview rendering of manual plus generated draft fields
-also exist. Backend Report v2 prompt/input builder helpers and provider output
-parser now exist, and disabled-by-default provider mode is implemented. Manual
-local provider smoke testing, prompt quality refinement, counselor review/final
-report workflow, and PDF export are not implemented yet.
+read-only simplified preview rendering of demo-useful manual plus generated
+draft fields also exist. Backend Report v2 prompt/input builder helpers and
+provider output parser now exist, disabled-by-default provider mode is
+implemented, and the post-demo prompt/preview refinement batch is complete.
+Counselor review/final report workflow, reviewed status, charts/Recharts
+planning, production deployment/testing, and PDF export are not implemented yet.
 
 ## 1. Purpose and Scope
 
@@ -42,10 +43,10 @@ Current implementation status:
   `POST /api/report-drafts/{draft_id}/generate`, sends no payload, and returns
   the updated `ReportDraftV2`.
 - ReportPage includes a v2 manual input panel for the first manual-input slice.
-- `frontend/src/components/ReportV2Preview.jsx` renders a read-only v2
-  five-section template preview from loaded draft state, including inline
-  `draft.ai_generated` fields when present. It does not call APIs, does not
-  call `generateReport`, and does not generate content.
+- `frontend/src/components/ReportV2Preview.jsx` renders a read-only simplified
+  v2 preview from loaded draft state, including inline `draft.ai_generated`
+  fields when present. It does not call APIs, does not call `generateReport`,
+  and does not generate content.
 - Backend-only deterministic v2 AI draft generation is implemented as the
   default mode. It does not call a provider, uses `ReportAIGeneratedV2`,
   persists `ai_generated_json`, and keeps missing/unsupported fields pending for
@@ -61,10 +62,13 @@ Current implementation status:
 - Existing v1 `ConceptualizationReport`, `analysis_agent.generate_report()`, and
   `POST /api/reports/generate` behavior remain unchanged.
 - Manual local provider smoke testing has passed with synthetic data after
-  provider field metadata normalization. Prompt quality refinement,
-  prompt/version storage or audit metadata, counselor review workflow,
-  final-report workflow, frontend behavior change, demo runbook, synthetic demo
-  data, and print-friendly/PDF export remain future work.
+  provider field metadata normalization. Post-demo refinements are implemented:
+  risk-language screening prompt guidance, client-understanding draft guidance,
+  theoretical-orientation rationale wording, preview simplification, and
+  ReportPage layout order. Counselor review workflow, final-report workflow,
+  reviewed status, charts/Recharts planning, production deployment/testing,
+  documentation after future slices, and print-friendly/PDF export remain future
+  work.
 
 ## 2. Source Materials
 
@@ -115,6 +119,18 @@ Current implementation facts:
   excerpts and safety instructions, shape summaries into safe provider input,
   bound/truncate `key_statement`, and exclude raw messages, crisis detector
   reasons, DB-internal `round`, and session title.
+- Post-demo Report v2 prompt refinements are implemented. The
+  `crisis_language_summary` prompt instructs dialogue-based risk-language
+  screening from structured summaries and persisted `crisis_level` metadata
+  only. It covers suicide ideation, plan/intent, self-harm, harm-to-others,
+  substance use, psychotic symptoms, and overall screening impression;
+  distinguishes explicit denial from absent data; and remains non-formal and
+  counselor-review-only.
+- `client_understanding_draft` guidance is clarified: manual client
+  understanding remains counselor-owned and primary, and AI client
+  understanding is only supplemental draft text requiring review.
+- `theoretical_orientation_rationale` guidance now requires the generated text
+  to begin with `初步建議取向：...`. No schema field was added.
 - Backend Report v2 provider output parsing accepts JSON string or dict input,
   rejects invalid JSON and non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
@@ -130,6 +146,13 @@ Current implementation facts:
 - Provider failures, invalid provider output, and invalid provider mode fail
   closed. Provider failures do not persist a conservative empty fallback as
   successful AI generation and do not overwrite existing `ai_generated_json`.
+- Report v2 provider/generation errors are classified internally as
+  `missing_summaries`, `provider_config`, `provider_api_failure`,
+  `invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,
+  `db_persistence_failed`, or `unknown_generation_failure`. Public route
+  responses remain generic and non-leaking. Route diagnostics log only the
+  category plus IDs and do not expose raw prompts, raw provider responses,
+  secrets, provider exception text, clinical text, or traces.
 - `POST /api/report-drafts/{draft_id}/generate` loads a draft, requires at least
   one persisted session summary, validates/generates `ReportAIGeneratedV2`,
   persists `ai_generated_json`, updates status to `ai_generated`, sets
@@ -420,6 +443,10 @@ Examples:
 - trauma history
 - family history
 
+Manual `safety_plan` is counselor/manual content only. The preview may render it
+only when the counselor has provided it, and it must be labeled as manual rather
+than AI-generated.
+
 ### `ai_draft`
 
 Fields that the AI may draft from provided summaries, persisted metadata, and
@@ -432,7 +459,10 @@ Examples:
 - cognitive hypotheses
 - behavioral hypotheses
 - conceptualization factors based on summaries
-- crisis-language summary from persisted backend data
+- crisis-language summary from structured summaries and persisted backend
+  `crisis_level` metadata only
+- supplemental client-understanding draft, clearly secondary to counselor-owned
+  manual client understanding
 
 ### `mixed_ai_plus_counselor_review`
 
@@ -447,6 +477,10 @@ Examples:
 - coping and interpersonal style
 - theoretical orientation
 - conceptualization narrative
+
+`theoretical_orientation_rationale` may include a cautious AI suggestion, but it
+must begin with `初步建議取向：...` and remain a draft rationale for counselor
+review.
 
 ### `system_owned`
 
@@ -545,9 +579,10 @@ manual input slice, a read-only frontend template preview that renders
 `ai_generated` fields, frontend v2 generation controls, and backend-only
 deterministic v2 AI draft generation. Backend prompt/input builder helpers and
 provider output parser now exist, and disabled-by-default provider mode is
-implemented. Counselor review/final report workflow, PDF export, manual local
-provider smoke testing, prompt quality refinement, and prompt/version audit
-metadata remain future work.
+implemented. Manual local provider smoke testing and the post-demo prompt and
+preview refinement batch are complete. Counselor review/final report workflow,
+reviewed status, PDF export, charts/Recharts planning, production
+deployment/testing, and docs after future slices remain future work.
 
 Implemented model names:
 
@@ -859,6 +894,16 @@ Current prompt/input builder behavior:
   are excluded.
 - Knowledge-base excerpts are writing/reference guidance only and are not case
   facts.
+- `crisis_language_summary` is instructed as dialogue-based risk-language
+  screening, not a formal risk assessment. It uses only structured summaries and
+  persisted `crisis_level` metadata, covers suicide ideation, plan/intent,
+  self-harm, harm-to-others, substance use, psychotic symptoms, and overall
+  screening impression, and must distinguish explicit denial from absent data.
+- `client_understanding_draft` is AI supplemental draft text requiring
+  counselor review; the manual client-understanding field remains primary and
+  counselor-owned.
+- `theoretical_orientation_rationale` should begin with
+  `初步建議取向：...`.
 
 Current provider parser behavior:
 
@@ -885,6 +930,12 @@ Current provider boundary behavior:
   fail closed. Route responses remain generic and non-leaking.
 - Provider failures do not persist a conservative empty fallback as success and
   do not overwrite existing `ai_generated_json`.
+- Internal generation error categories are `missing_summaries`,
+  `provider_config`, `provider_api_failure`, `invalid_provider_json`,
+  `schema_validation_failed`, `unsafe_evidence_refs`, `db_persistence_failed`,
+  and `unknown_generation_failure`. They support diagnostics without exposing
+  raw prompts, raw provider responses, secrets, provider exception text,
+  clinical text, or traces in public responses.
 
 The LLM should fill only AI-owned fields. Manual-only and system-owned fields
 must remain outside LLM control.
@@ -953,6 +1004,11 @@ Each endpoint returns `ReportDraftV2`. Missing case/session/draft states return
 unexpected helper/DB failures, invalid agent output, provider failures, invalid
 provider output, or invalid provider mode return generic non-leaking 500
 responses. Provider failures do not overwrite existing `ai_generated_json`.
+Internally, generation failures are classified as `missing_summaries`,
+`provider_config`, `provider_api_failure`, `invalid_provider_json`,
+`schema_validation_failed`, `unsafe_evidence_refs`, `db_persistence_failed`, or
+`unknown_generation_failure`; this classification is for logs/diagnostics only
+and public responses must remain generic.
 
 Future endpoints:
 
@@ -976,6 +1032,11 @@ Future endpoint behavior should include:
 ReportPage v2 has added the manual-input, v2 generation action, and read-only
 preview slices:
 
+- `會談整理輔助` appears before the v2 workflow, with guidance text:
+  `建議先檢視本區整理，再建立或產生 v2 報告草稿。`
+- v2 manual input, generation, and preview are grouped under `v2 報告草稿`
+- v1 transient report generation is lower on the page and labeled
+  `舊版 v1 暫存報告`
 - manual input form/panel
 - current draft load
 - missing-draft Create Draft state
@@ -990,8 +1051,8 @@ preview slices:
 - lightweight link back to the conversation workspace when case/session IDs are
   available
 - `ReportV2Preview` component at `frontend/src/components/ReportV2Preview.jsx`
-- read-only five-section preview from loaded draft state, including
-  `draft.manual_input` and `draft.ai_generated`
+- read-only simplified preview from loaded draft state, including
+  demo-useful `draft.manual_input` and `draft.ai_generated` fields
 - missing-draft preview prerequisite state: `需先建立 v2 草稿後才可預覽`
 - template sections: `一、基本資料與主訴`, `二、現況評估與觀察`, `三、心理評估`,
   `四、理論取向與個案概念化`, and `五、風險評估`
@@ -1006,6 +1067,11 @@ preview slices:
 - AI-generated fields labeled `AI 草稿，需諮商師審閱`
 - manual `client_understanding` takes precedence, with AI client understanding
   shown as `AI 補充草稿` when manual text exists
+- `crisis_language_summary` remains visible
+- hidden from the main preview: `正式風險評估備註`, `晤談觀察`,
+  `症狀與功能影響`, `防衛機制`, and `內在衝突`
+- manual `safety_plan` renders only when provided and is labeled as
+  counselor/manual content
 - evidence refs shown as turn-number-only pointers
 - raw summaries, raw messages, key statements, crisis reasons, provider output,
   AI formal risk level, and AI safety plan are not rendered
@@ -1122,6 +1188,11 @@ Current backend prompt/parser/provider-boundary tests cover:
 
 - prompt payload safety and source shaping
 - message safety instructions
+- dialogue-based `crisis_language_summary` risk screening guidance from
+  summaries and persisted `crisis_level` only
+- explicit-denial versus absent-data risk-language handling
+- AI `client_understanding_draft` as supplemental review-needed text
+- `theoretical_orientation_rationale` beginning with `初步建議取向：...`
 - unset/default deterministic mode
 - explicit deterministic mode
 - provider mode with monkeypatched provider output
@@ -1133,6 +1204,8 @@ Current backend prompt/parser/provider-boundary tests cover:
 - unsafe evidence ref note rejection
 - provider exception fail-closed behavior
 - invalid provider mode fail-closed behavior
+- internal provider/generation error classification with generic non-leaking
+  public responses
 - provider boundary behavior through monkeypatched Gemini-style infrastructure
 - v1 `analysis_agent.generate_report()` preservation
 - v1 `POST /api/reports/generate` preservation
@@ -1161,12 +1234,13 @@ Current frontend tests cover the implemented slices: API helper contracts
 including `generateReportDraftV2`, current draft load, missing-draft create
 state, Create Draft flow, editing/saving manual input, save success/error
 behavior, v2 action card behavior, unsaved-input blocking, 422/generic
-generation errors, regeneration label, read-only preview prerequisite state,
-five-section headings, manual field mapping, preview AI mapping, safe
-turn-number-only evidence refs, forbidden AI risk/safety fields, missing-data
-placeholders, future placeholder wording, risk missing behavior,
-save-to-preview updates, v1/v2 separation, missing session behavior, and
-storage safety.
+generation errors, regeneration label, ReportPage layout order, read-only
+preview prerequisite state, simplified preview field visibility, manual field
+mapping, preview AI mapping, visible `crisis_language_summary`, manual-only
+conditional safety-plan rendering, safe turn-number-only evidence refs,
+forbidden AI risk/safety fields, missing-data placeholders, future placeholder
+wording, risk missing behavior, save-to-preview updates, v1/v2 separation,
+missing session behavior, and storage safety.
 
 All tests should remain deterministic and should not call live LLM providers.
 
@@ -1189,13 +1263,12 @@ Recommended implementation slices:
 11. Disabled-by-default provider mode and environment/config controls.
     Completed.
 12. Manual local provider smoke testing with synthetic data. Completed.
-13. Demo runbook and synthetic demo data. Future work.
-14. Prompt quality refinement. Future work.
-15. Prompt/version storage or audit metadata. Future work.
-16. Frontend behavior changes for provider mode, if explicitly designed. Future
-    work.
-17. Counselor edit/review status flow. Future work.
-18. Print-friendly/PDF export planning and implementation. Future work.
+13. Classroom demo runbook. Completed.
+14. Post-demo prompt and preview refinement batch. Completed.
+15. Charts/Recharts planning. Future work.
+16. Reviewed status and counselor edit/final report flow. Future work.
+17. Print-friendly/PDF export planning and implementation. Future work.
+18. Production deployment/testing and docs after future slices. Future work.
 
 Each implementation slice should be small, testable, and reviewable. Safety and
 browser-storage regression tests should accompany behavior changes.
@@ -1206,10 +1279,9 @@ Out of scope for this planning slice:
 
 - immediate PDF implementation
 - live provider calls in automated tests or CI
-- demo runbook and synthetic demo data
-- prompt quality refinement
-- prompt/version storage or audit metadata
-- frontend behavior changes
+- reviewed status or counselor final report workflow
+- production deployment/testing
+- docs updates for future slices before those slices exist
 - diagnosis automation
 - medication advice
 - formal risk-level automation
