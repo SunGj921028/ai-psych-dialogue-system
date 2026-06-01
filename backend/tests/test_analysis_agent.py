@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import anyio
+import json
 
 import backend.agents.analysis_agent as analysis_agent
 from backend.agents.analysis_agent import DISCLAIMER_TEXT, ConceptualizationReport
@@ -418,6 +419,72 @@ def test_report_v2_messages_include_json_only_and_evidence_ref_rules():
     assert "不得填寫診斷" in encoded
 
 
+def test_report_v2_prompt_payload_instructs_dialogue_based_risk_language_screening():
+    payload = analysis_agent._build_report_v2_prompt_payload(
+        case_id="case-1",
+        session_id="session-1",
+        summaries=[
+            {
+                "id": "summary-1",
+                "turn_number": 1,
+                "summary": {
+                    "turn_number": 1,
+                    "emotion": {"primary": "anxious", "intensity": 7},
+                    "themes": ["safety concern"],
+                    "key_statement": "synthetic summary cue",
+                    "crisis_flag": True,
+                },
+                "crisis_level": "high",
+                "crisis_reason": "private detector reason must not pass through",
+            }
+        ],
+        manual_input=ReportManualInputV2(),
+    )
+
+    instructions = payload["instructions"]
+    encoded = json.dumps(payload, ensure_ascii=False)
+
+    assert "risk_language_screening" in instructions
+    assert "language-cue screening summary" in encoded
+    assert "not a formal risk assessment" in encoded
+    assert "requires counselor review" in encoded
+    assert "suicide ideation language" in encoded
+    assert "suicide plan/intent language" in encoded
+    assert "self-harm language" in encoded
+    assert "harm-to-others language" in encoded
+    assert "substance-use language" in encoded
+    assert "psychotic-symptom language" in encoded
+    assert "overall risk-language screening impression" in encoded
+    assert "explicitly denied" in encoded
+    assert "simply absent" in encoded
+    assert "crisis_level" in encoded
+    assert "crisis detector reasons" in encoded
+    assert "private detector reason must not pass through" not in encoded
+
+
+def test_report_v2_messages_repeat_risk_screening_boundaries():
+    messages = analysis_agent._build_report_v2_messages(
+        analysis_agent._build_report_v2_prompt_payload(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+    )
+
+    encoded = "\n".join(message["content"] for message in messages)
+
+    assert "dialogue-based risk-language screening" in encoded
+    assert "crisis_language_summary" in encoded
+    assert "not a formal risk assessment" in encoded
+    assert "formal diagnosis" in encoded
+    assert "formal risk assessment" in encoded
+    assert "safety plan generation" in encoded
+    assert "treatment decisions" in encoded
+    assert "persisted crisis_level" in encoded
+    assert "crisis detector reasons" in encoded
+
+
 def test_parse_report_v2_provider_output_accepts_valid_json_with_safe_evidence_refs():
     raw = {
         "chief_complaint_draft": {
@@ -577,6 +644,20 @@ def test_parse_report_v2_provider_output_rejects_invalid_or_unsafe_output():
                 ],
             }
         },
+        {
+            "overall_risk_level": {
+                "label_zh": "overall risk level",
+                "value": "high",
+                "source_type": "ai",
+            }
+        },
+        {
+            "safety_plan": {
+                "label_zh": "safety plan",
+                "value": "AI must not generate a safety plan",
+                "source_type": "ai",
+            }
+        },
     ]
 
     for raw in invalid_cases:
@@ -585,6 +666,13 @@ def test_parse_report_v2_provider_output_rejects_invalid_or_unsafe_output():
         except ValueError:
             continue
         raise AssertionError(f"unsafe provider output should fail: {raw!r}")
+
+
+def test_report_v2_ai_generated_fields_do_not_include_manual_only_risk_fields():
+    assert "crisis_language_summary" in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
+    assert "overall_risk_level" not in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
+    assert "safety_plan" not in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
+    assert "formal_risk_assessment" not in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
 
 
 def test_call_report_v2_provider_boundary_uses_gemini_client_and_model(monkeypatch):

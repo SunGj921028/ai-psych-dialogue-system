@@ -254,8 +254,33 @@ def _build_report_v2_prompt_payload(
             ),
             "crisis_level_policy": (
                 "persisted crisis_level 只是後端偵測到的語句中繼資料，"
-                "不是正式風險評估或整體風險等級。"
+                "不是正式風險評估或整體風險等級；可作為 crisis_language_summary 的語言線索背景，"
+                "但不得使用或推測 crisis detector reasons。"
             ),
+            "risk_language_screening": {
+                "target_field": "crisis_language_summary",
+                "purpose": (
+                    "Write a language-cue screening summary based only on available conversation "
+                    "summaries and persisted crisis_level metadata; this is not a formal risk "
+                    "assessment and requires counselor review."
+                ),
+                "subareas_to_cover_when_possible": [
+                    "suicide ideation language",
+                    "suicide plan/intent language",
+                    "self-harm language",
+                    "harm-to-others language",
+                    "substance-use language",
+                    "psychotic-symptom language",
+                    "overall risk-language screening impression",
+                ],
+                "writing_rules": [
+                    "Use Traditional Chinese in the ReportField value.",
+                    "If a topic is explicitly denied in the summaries, state that the dialogue contains denial of that cue.",
+                    "If a topic is simply absent, state that no related language cue is shown in the available summaries instead of treating it as confirmed absent.",
+                    "For overall risk-language screening impression, reference persisted crisis_level only as system metadata / screening impression, not as a formal clinical risk level.",
+                    "Do not add formal diagnosis, formal risk assessment, safety plan generation, treatment decisions, or manual-only risk fields.",
+                ],
+            },
             "output_schema": "只輸出 JSON object，且必須符合 ReportAIGeneratedV2；未知欄位會被拒絕。",
             "output_field_contract": (
                 "每個 AI 欄位都必須是完整 ReportField object，包含 "
@@ -283,6 +308,14 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
         "你是 Report Schema v2 的個案概念化報告草稿助理。\n"
         "請遵守安全邊界：不得填寫診斷、不得提供用藥建議、不得產生正式風險等級、"
         "不得產生治療計畫，且不得將知識庫當作個案事實。\n"
+        "For crisis_language_summary, write a dialogue-based risk-language screening only: "
+        "it is not a formal risk assessment, uses summaries plus persisted crisis_level as metadata, "
+        "requires counselor review, and must not use crisis detector reasons.\n"
+        "Cover suicide ideation language, suicide plan/intent language, self-harm language, "
+        "harm-to-others language, substance-use language, psychotic-symptom language, "
+        "and an overall risk-language screening impression when evidence allows.\n"
+        "Do not provide formal diagnosis, formal risk assessment, safety plan generation, "
+        "or treatment decisions.\n"
         "只輸出 JSON，必須符合 ReportAIGeneratedV2。\n"
         "每個欄位都必須輸出完整 ReportField object，包含 label_zh、value、"
         "source_type、missing_reason、needs_review、evidence_refs。\n"
