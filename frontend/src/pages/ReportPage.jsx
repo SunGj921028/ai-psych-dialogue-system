@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   BarChart3,
-  ClipboardList,
   FileText,
   Loader2,
   PlusCircle,
@@ -1001,33 +1000,13 @@ export default function ReportPage() {
           </div>
         </div>
 
-        <div className="space-y-2">
-          <div className="flex flex-wrap gap-2">
-            <Link
-              className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
-              to={conversationUrl}
-            >
-              <ArrowLeft className="h-4 w-4" />
-              回工作台
-            </Link>
-            <button
-              className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
-              disabled={isGenerating || !caseId || !sessionId}
-              onClick={handleGenerateReport}
-              type="button"
-            >
-              {isGenerating ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <RefreshCcw className="h-4 w-4" />
-              )}
-              {report ? '重新產生 v1 AI 草稿' : '產生 v1 AI 草稿'}
-            </button>
-          </div>
-          <p className="max-w-sm text-xs leading-5 text-muted-foreground">
-            v1 AI 草稿僅在本頁暫時顯示，離開或重新整理後需重新產生。
-          </p>
-        </div>
+        <Link
+          className="inline-flex items-center justify-center gap-2 rounded-md border bg-white/80 px-4 py-2 text-sm font-medium transition hover:bg-slate-100 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+          to={conversationUrl}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          回工作台
+        </Link>
       </section>
 
       {error ? (
@@ -1036,66 +1015,40 @@ export default function ReportPage() {
         </div>
       ) : null}
 
-      <ReportDraftManualInputPanel
-        draft={reportDraft}
-        draftError={draftError}
-        draftState={draftState}
-        formManualInput={formManualInput}
-        hasUnsavedChanges={hasUnsavedChanges}
-        isCreatingDraft={isCreatingDraft}
-        isSavingDraft={isSavingDraft}
-        onCreateDraft={handleCreateDraft}
-        onFieldChange={handleManualInputFieldChange}
-        onSaveDraft={handleSaveDraft}
-        saveStatus={saveStatus}
-      />
-
-      <ReportDraftGeneratePanel
-        conversationUrl={conversationUrl}
-        draft={reportDraft}
-        generateStatus={draftGenerateStatus}
-        hasUnsavedChanges={hasUnsavedChanges}
-        isGeneratingDraft={isGeneratingDraftV2}
-        isSavingDraft={isSavingDraft}
-        onGenerateDraft={handleGenerateDraftV2}
-        showConversationLink={showDraftGenerateConversationLink}
-      />
-
-      <ReportV2Preview draft={reportDraft} />
-
-      <section className="grid gap-3 md:grid-cols-4">
-        <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-4 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
-          <p className="text-xs text-muted-foreground">個案代碼</p>
-          <p className="mt-1 font-semibold">
-            {isLoading ? '載入中...' : caseInfo?.code_name ?? '未提供'}
+      <section className="space-y-5" aria-labelledby="session-review-heading">
+        <div className="border-b border-slate-200 pb-3 dark:border-slate-800">
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800 dark:text-indigo-300">
+            Session Review
+          </p>
+          <h2
+            className="mt-1 text-xl font-semibold tracking-tight text-slate-950 dark:text-slate-50"
+            id="session-review-heading"
+          >
+            會談整理輔助
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            建議先檢視本區整理，再建立或產生 v2 報告草稿。
           </p>
         </div>
-        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 md:col-span-2">
-          <p className="text-xs text-muted-foreground">會談識別碼</p>
-          <p className="mt-1 truncate font-mono text-xs">{sessionId}</p>
-        </div>
-        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
-          <p className="text-xs text-muted-foreground">可用微摘要</p>
-          <p className="mt-1 font-semibold">{summaries.length} 筆</p>
-        </div>
-        <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 md:col-span-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-xs text-muted-foreground">草稿狀態</p>
-              <p className="mt-1 font-semibold">
-                {report ? `已產生於 ${formatDate(report.generated_at)}` : '尚未產生，需由諮商師手動觸發'}
-              </p>
-            </div>
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <ClipboardList className="h-4 w-4" />
-              <span>預覽 / 審閱用途</span>
-            </div>
-          </div>
-        </div>
-      </section>
 
-      <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="space-y-5">
+        <section className="grid gap-3 md:grid-cols-4">
+          <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-4 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
+            <p className="text-xs text-muted-foreground">個案代碼</p>
+            <p className="mt-1 font-semibold">
+              {isLoading ? '載入中...' : caseInfo?.code_name ?? '未提供'}
+            </p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 md:col-span-2">
+            <p className="text-xs text-muted-foreground">會談識別碼</p>
+            <p className="mt-1 truncate font-mono text-xs">{sessionId}</p>
+          </div>
+          <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
+            <p className="text-xs text-muted-foreground">可用微摘要</p>
+            <p className="mt-1 font-semibold">{summaries.length} 筆</p>
+          </div>
+        </section>
+
+        <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
           {isLoading ? (
             <SectionCard
               title="正在載入微摘要"
@@ -1129,13 +1082,71 @@ export default function ReportPage() {
             )}
           </SectionCard>
         </div>
+      </section>
 
-        <section className="space-y-4">
+      <section className="space-y-5" aria-labelledby="v2-draft-heading">
+        <div className="border-b border-slate-200 pb-3 dark:border-slate-800">
+          <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800 dark:text-indigo-300">
+            Report v2 Draft
+          </p>
+          <h2
+            className="mt-1 text-xl font-semibold tracking-tight text-slate-950 dark:text-slate-50"
+            id="v2-draft-heading"
+          >
+            v2 報告草稿
+          </h2>
+        </div>
+
+        <ReportDraftManualInputPanel
+          draft={reportDraft}
+          draftError={draftError}
+          draftState={draftState}
+          formManualInput={formManualInput}
+          hasUnsavedChanges={hasUnsavedChanges}
+          isCreatingDraft={isCreatingDraft}
+          isSavingDraft={isSavingDraft}
+          onCreateDraft={handleCreateDraft}
+          onFieldChange={handleManualInputFieldChange}
+          onSaveDraft={handleSaveDraft}
+          saveStatus={saveStatus}
+        />
+
+        <ReportDraftGeneratePanel
+          conversationUrl={conversationUrl}
+          draft={reportDraft}
+          generateStatus={draftGenerateStatus}
+          hasUnsavedChanges={hasUnsavedChanges}
+          isGeneratingDraft={isGeneratingDraftV2}
+          isSavingDraft={isSavingDraft}
+          onGenerateDraft={handleGenerateDraftV2}
+          showConversationLink={showDraftGenerateConversationLink}
+        />
+
+        <ReportV2Preview draft={reportDraft} />
+      </section>
+
+      <section className="space-y-4 border-t border-slate-200 pt-5 dark:border-slate-800" aria-labelledby="legacy-v1-heading">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Legacy v1 transient report
+          </p>
+          <h2
+            className="mt-1 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-100"
+            id="legacy-v1-heading"
+          >
+            舊版 v1 暫存報告
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-muted-foreground">
+            保留既有 v1 產生流程；此區內容只在本頁暫時顯示，離開或重新整理後需重新產生。
+          </p>
+        </div>
+
+        <div className="rounded-md border border-slate-200/75 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/45">
           {!report ? (
-            <SectionCard
-              title="目前 v1 AI 草稿產生"
-              description="v1 草稿不會自動產生，也不會讀寫 v2 手動資料草稿。請由諮商師確認摘要脈絡後手動觸發。"
-            >
+            <div>
+              <p className="mb-3 text-sm leading-6 text-muted-foreground">
+                v1 草稿不會自動產生，也不會讀寫 v2 手動資料草稿。請由諮商師確認摘要脈絡後手動觸發。
+              </p>
               <button
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
                 disabled={isGenerating || !caseId || !sessionId}
@@ -1147,9 +1158,9 @@ export default function ReportPage() {
                 ) : (
                   <FileText className="h-4 w-4" />
                 )}
-                {isGenerating ? '產生中' : '開始產生 v1 AI 草稿'}
+                {isGenerating ? '產生中' : '產生 v1 AI 草稿'}
               </button>
-            </SectionCard>
+            </div>
           ) : (
             <>
               <section className="rounded-md border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 shadow-[0_10px_26px_rgba(146,64,14,0.08)] dark:border-amber-500/35 dark:bg-amber-950/55 dark:text-amber-100 dark:shadow-[0_10px_26px_rgba(0,0,0,0.24)]">
@@ -1165,7 +1176,7 @@ export default function ReportPage() {
               </section>
 
               <SectionCard
-                title="目前 v1 AI 草稿內容"
+                title="舊版 v1 暫存報告內容"
                 description={`產生時間：${formatDate(report.generated_at)}。以下內容需由諮商師審閱後才可使用，不作診斷文件。`}
               >
                 <div className="grid gap-3">
@@ -1241,8 +1252,8 @@ export default function ReportPage() {
               </SectionCard>
             </>
           )}
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
   )
 }
