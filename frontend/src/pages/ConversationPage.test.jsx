@@ -16,7 +16,8 @@ vi.mock('../api/client.js', () => ({
 
 const activeCaseId = 'case-1'
 const activeSessionId = 'session-1'
-const restoredHighText = '此會談曾有高風險危機偵測結果，請諮商師重新檢視。'
+const restoredHighText =
+  '此會談曾出現高風險標記，請諮商師審閱相關內容並依專業流程處理。'
 const restoredLowText = '此會談曾有低度危機註記，請諮商師留意。'
 const legacyFallbackText = '最新摘要有危機註記，請諮商師重新檢視'
 
@@ -185,7 +186,7 @@ describe('ConversationPage crisis behavior', () => {
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
 
-  test('mocked high crisis response shows red alert', async () => {
+  test('live high crisis response opens modal without page-level detail block or backend reason', async () => {
     const user = userEvent.setup()
     api.sendConversationTurn.mockResolvedValue(
       makeCrisisResponse({
@@ -198,16 +199,43 @@ describe('ConversationPage crisis behavior', () => {
     await renderReadyConversationPage()
     await submitSyntheticTurn()
 
-    expect(await screen.findByRole('alert')).toBeInTheDocument()
-    expect(screen.getByText('SYNTHETIC_HIGH_REASON')).toBeInTheDocument()
     const dialog = await screen.findByRole('dialog', { name: '高風險提醒' })
     expect(dialog).toBeInTheDocument()
     expect(within(dialog).getByRole('button', { name: '我已了解' })).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        '後端回傳 crisis_level 為 high。請諮商師立即審閱本輪內容，並依專業流程處理。',
+      ),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('SYNTHETIC_HIGH_REASON')).not.toBeInTheDocument()
 
     await user.click(within(dialog).getByRole('button', { name: '我已了解' }))
 
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
-    expect(screen.getByText('SYNTHETIC_HIGH_REASON')).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.queryByText('SYNTHETIC_HIGH_REASON')).not.toBeInTheDocument()
+  })
+
+  test('restored persisted high crisis level does not show backend reason text inline', async () => {
+    mockSessionData({
+      summaries: [
+        {
+          ...makeLoadedSummaryRow({
+            id: 'summary-restored-high-no-reason',
+            crisisFlag: true,
+            crisisLevel: 'high',
+          }),
+          reason: 'SYNTHETIC_RESTORED_HIGH_REASON',
+        },
+      ],
+    })
+
+    await renderReadyConversationPage()
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(restoredHighText)
+    expect(screen.queryByText('SYNTHETIC_RESTORED_HIGH_REASON')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
 
   test('mocked low crisis response does not show red alert', async () => {

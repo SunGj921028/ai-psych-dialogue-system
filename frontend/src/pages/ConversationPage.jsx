@@ -126,9 +126,11 @@ function getRestoredCrisisDisplay(summaries) {
     return {
       level: 'high',
       label: getCrisisLabel('high'),
-      description: '此會談曾有高風險危機偵測結果，請諮商師重新檢視。',
-      alertTitle: '曾有高風險危機偵測結果',
-      alertDescription: '此會談曾有高風險危機偵測結果，請諮商師重新檢視。',
+      description:
+        '此會談曾出現高風險標記，請諮商師審閱相關內容並依專業流程處理。',
+      alertTitle: '曾出現高風險標記',
+      alertDescription:
+        '此會談曾出現高風險標記，請諮商師審閱相關內容並依專業流程處理。',
     }
   }
 
@@ -304,10 +306,8 @@ export default function ConversationPage() {
       return {
         level: 'high',
         label: getCrisisLabel('high'),
-        description: crisisStatus.reason || '後端未提供額外說明。',
-        alertTitle: '偵測到高風險語句',
-        alertDescription:
-          '後端回傳 crisis_level 為 high。請諮商師立即審閱本輪內容，並依專業流程處理。',
+        description:
+          '已觸發高風險提醒，請諮商師審閱本輪內容並依專業流程處理。',
       }
     }
 
@@ -337,6 +337,8 @@ export default function ConversationPage() {
 
     return restoredCrisisDisplay
   }, [crisisStatus, restoredCrisisDisplay])
+  const shouldShowHighCrisisPageAlert =
+    crisisDisplay.level === 'high' && crisisStatus?.crisis_level !== 'high'
 
   const loadCases = useCallback(async () => {
     setIsLoadingCases(true)
@@ -619,7 +621,7 @@ export default function ConversationPage() {
         </div>
       ) : null}
 
-      {crisisDisplay.level === 'high' ? (
+      {shouldShowHighCrisisPageAlert ? (
         <section
           className="rounded-md border border-red-300 bg-red-50/95 p-4 text-red-950 shadow-[0_12px_30px_rgba(185,28,28,0.10)] dark:border-red-500/70 dark:bg-red-950/82 dark:text-red-100 dark:shadow-[0_12px_30px_rgba(127,29,29,0.28)]"
           role="alert"
@@ -631,9 +633,6 @@ export default function ConversationPage() {
               <p className="mt-1 text-sm leading-6">
                 {crisisDisplay.alertDescription}
               </p>
-              {crisisStatus?.crisis_level === 'high' && crisisStatus.reason ? (
-                <p className="mt-2 text-sm">後端說明：{crisisStatus.reason}</p>
-              ) : null}
             </div>
           </div>
         </section>
@@ -656,7 +655,7 @@ export default function ConversationPage() {
                   高風險提醒
                 </h2>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  後端危機偵測回傳高風險等級。請諮商師先審閱本輪內容，並依專業流程處理。
+                  系統偵測到高風險語句。請諮商師先審閱本輪內容，並依專業流程處理。
                 </p>
               </div>
             </div>
