@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import agents.analysis_agent as analysis_agent
 from agents.analysis_agent import DISCLAIMER_TEXT, ConceptualizationReport, EmotionPattern
 from agents.summary_agent import EmotionDetail, EmotionDimensions, TurnSummary
@@ -16,6 +18,39 @@ def _create_case(client) -> str:
     response = client.post("/api/cases", json={"code_name": "A001"})
     assert response.status_code == 200
     return response.json()["id"]
+
+
+def _create_report_v2_draft_with_summary(
+    client,
+    *,
+    session_id: str,
+) -> tuple[str, dict, dict]:
+    case_id = _create_case(client)
+
+    import anyio
+
+    anyio.run(create_session, case_id, session_id, None)
+    summary = TurnSummary(
+        turn_number=1,
+        emotion=EmotionDetail(primary="anxiety", intensity=6),
+        emotion_dimensions=EmotionDimensions(anxiety=6),
+        themes=["work stress"],
+        key_statement="synthetic summary only",
+        crisis_flag=False,
+    )
+    summary_row = anyio.run(
+        add_summary,
+        case_id,
+        session_id,
+        1,
+        summary.model_dump_json(),
+        False,
+        "none",
+    )
+    created = client.post(
+        f"/api/cases/{case_id}/sessions/{session_id}/report-drafts"
+    ).json()
+    return case_id, created, summary_row
 
 
 def test_generate_report_converts_db_summaries_to_turn_summary(client, monkeypatch):
@@ -452,7 +487,9 @@ def test_generate_report_v2_draft_provider_mode_persists_valid_provider_output(
 def test_generate_report_v2_draft_provider_failure_is_generic_and_does_not_overwrite(
     client,
     monkeypatch,
+    caplog,
 ):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     case_id = _create_case(client)
     sentinel = "PRIVATE_PROVIDER_FAILURE_DO_NOT_LEAK"
@@ -522,8 +559,169 @@ def test_generate_report_v2_draft_provider_failure_is_generic_and_does_not_overw
     assert second.status_code == 500
     assert second.json() == {"detail": "Failed to generate report draft"}
     assert sentinel not in second.text
+    assert "category=provider_api_failure" in caplog.text
+    assert sentinel not in caplog.text
     assert current.status_code == 200
     assert current.json()["ai_generated"]["chief_complaint_draft"]["value"] == "existing safe provider draft"
+
+
+def test_generate_report_v2_draft_provider_config_failure_is_generic_and_classified(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "surprise-provider")
+    _, created, _ = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-provider-config-failure",
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert "surprise-provider" not in response.text
+    assert "category=provider_config" in caplog.text
+    assert "surprise-provider" not in caplog.text
+
+
+def test_generate_report_v2_draft_provider_api_exception_is_generic_and_classified(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "PRIVATE_PROVIDER_API_EXCEPTION_DO_NOT_LEAK"
+    _, created, _ = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-provider-api-failure",
+    )
+
+    async def failing_provider(messages, *, model):
+        raise RuntimeError(sentinel)
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        failing_provider,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in response.text
+    assert "category=provider_api_failure" in caplog.text
+    assert sentinel not in caplog.text
+
+
+def test_generate_report_v2_draft_invalid_provider_json_is_generic_and_non_leaking(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "RAW_PROVIDER_RESPONSE_DO_NOT_LEAK"
+    _, created, _ = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-invalid-provider-json",
+    )
+
+    async def invalid_json_provider(messages, *, model):
+        return f"{sentinel}: not json"
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        invalid_json_provider,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in response.text
+    assert "category=invalid_provider_json" in caplog.text
+    assert sentinel not in caplog.text
+
+
+def test_generate_report_v2_draft_schema_validation_failure_is_generic_and_classified(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "SCHEMA_PROVIDER_PAYLOAD_DO_NOT_LEAK"
+    _, created, _ = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-schema-validation-failure",
+    )
+
+    async def manual_only_provider_output(messages, *, model):
+        return {
+            "formal_diagnosis_notes": {
+                "label_zh": "manual-only",
+                "value": sentinel,
+                "source_type": "ai",
+            }
+        }
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        manual_only_provider_output,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in response.text
+    assert "category=schema_validation_failed" in caplog.text
+    assert sentinel not in caplog.text
+
+
+def test_generate_report_v2_draft_unsafe_evidence_refs_are_generic_and_classified(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "RAW_EVIDENCE_NOTE_DO_NOT_LEAK"
+    _, created, summary_row = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-unsafe-evidence-ref",
+    )
+
+    async def unsafe_evidence_provider_output(messages, *, model):
+        return {
+            "chief_complaint_draft": {
+                "value": "safe draft value",
+                "source_type": "ai",
+                "evidence_refs": [
+                    {
+                        "turn_number": 1,
+                        "summary_id": summary_row["id"],
+                        "note": sentinel,
+                    }
+                ],
+            }
+        }
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        unsafe_evidence_provider_output,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in response.text
+    assert "category=unsafe_evidence_refs" in caplog.text
+    assert sentinel not in caplog.text
 
 
 def test_generate_report_v2_draft_missing_draft_returns_404(client):
@@ -532,7 +730,12 @@ def test_generate_report_v2_draft_missing_draft_returns_404(client):
     assert response.status_code == 404
 
 
-def test_generate_report_v2_draft_without_summaries_returns_422(client, monkeypatch):
+def test_generate_report_v2_draft_without_summaries_returns_422(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     case_id = _create_case(client)
 
@@ -568,6 +771,7 @@ def test_generate_report_v2_draft_without_summaries_returns_422(client, monkeypa
     assert response.status_code == 422
     assert calls["agent"] == 0
     assert provider_calls["provider"] == 0
+    assert "category=missing_summaries" in caplog.text
 
 
 def test_generate_report_v2_draft_invalid_agent_output_returns_safe_error(
@@ -626,7 +830,9 @@ def test_generate_report_v2_draft_invalid_agent_output_returns_safe_error(
 def test_generate_report_v2_draft_update_failure_returns_safe_error(
     client,
     monkeypatch,
+    caplog,
 ):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
     case_id = _create_case(client)
     exception_text = "PRIVATE_AI_GENERATED_DB_ERROR_DO_NOT_LEAK"
 
@@ -674,3 +880,5 @@ def test_generate_report_v2_draft_update_failure_returns_safe_error(
     assert response.status_code == 500
     assert response.json() == {"detail": "Failed to generate report draft"}
     assert exception_text not in response.text
+    assert "category=db_persistence_failed" in caplog.text
+    assert exception_text not in caplog.text

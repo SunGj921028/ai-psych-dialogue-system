@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+from typing import NoReturn
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from agents.analysis_agent import (
     ConceptualizationReport,
+    ReportV2GenerationError,
     generate_report,
     generate_report_v2_ai_draft,
 )
@@ -28,6 +32,7 @@ from models.report_schema_v2 import (
 )
 
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -38,6 +43,26 @@ class GenerateReportRequest(BaseModel):
 
 class ReportDraftManualInputRequest(BaseModel):
     manual_input: ReportManualInputV2 | None = None
+
+
+def _raise_report_v2_generation_http_error(
+    error: ReportV2GenerationError,
+    *,
+    draft_id: str,
+    case_id: str,
+    session_id: str,
+) -> NoReturn:
+    logger.warning(
+        "report_v2_generation_failed category=%s draft_id=%s case_id=%s session_id=%s",
+        error.category,
+        draft_id,
+        case_id,
+        session_id,
+    )
+    raise HTTPException(
+        status_code=500,
+        detail="Failed to generate report draft",
+    ) from error
 
 
 def _collect_ai_evidence_refs(
@@ -221,6 +246,13 @@ async def generate_report_draft_v2_route(draft_id: str) -> ReportDraftV2:
         raise HTTPException(status_code=500, detail="Failed to generate report draft") from exc
 
     if len(summary_rows) < 1:
+        logger.warning(
+            "report_v2_generation_failed category=%s draft_id=%s case_id=%s session_id=%s",
+            "missing_summaries",
+            draft_id,
+            existing.case_id,
+            existing.session_id,
+        )
         raise HTTPException(
             status_code=422,
             detail="At least one persisted summary is required",
@@ -233,18 +265,61 @@ async def generate_report_draft_v2_route(draft_id: str) -> ReportDraftV2:
             summaries=summary_rows,
             manual_input=existing.manual_input,
         )
+    except ReportV2GenerationError as exc:
+        _raise_report_v2_generation_http_error(
+            exc,
+            draft_id=draft_id,
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+        )
+    except Exception as exc:
+        _raise_report_v2_generation_http_error(
+            ReportV2GenerationError("unknown_generation_failure", cause=exc),
+            draft_id=draft_id,
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+        )
+
+    try:
         ai_generated = ReportAIGeneratedV2.model_validate(raw_ai_generated)
+    except Exception as exc:
+        _raise_report_v2_generation_http_error(
+            ReportV2GenerationError("schema_validation_failed", cause=exc),
+            draft_id=draft_id,
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+        )
+
+    try:
         source_refs = _collect_ai_evidence_refs(ai_generated, summary_rows)
+    except ReportV2GenerationError as exc:
+        _raise_report_v2_generation_http_error(
+            exc,
+            draft_id=draft_id,
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+        )
+    except Exception as exc:
+        _raise_report_v2_generation_http_error(
+            ReportV2GenerationError("unknown_generation_failure", cause=exc),
+            draft_id=draft_id,
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+        )
+
+    try:
         updated = await update_report_ai_generated(
             draft_id,
             ai_generated,
             source_refs,
         )
     except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to generate report draft",
-        ) from exc
+        _raise_report_v2_generation_http_error(
+            ReportV2GenerationError("db_persistence_failed", cause=exc),
+            draft_id=draft_id,
+            case_id=existing.case_id,
+            session_id=existing.session_id,
+        )
 
     if updated is None:
         raise HTTPException(status_code=404, detail="Report draft not found")
