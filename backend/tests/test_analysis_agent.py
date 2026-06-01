@@ -254,10 +254,164 @@ def test_generate_report_v2_ai_draft_provider_mode_invalid_output_fails_closed(
 
     try:
         anyio.run(run_v2_draft)
-    except ValueError as exc:
-        assert "Invalid Report v2 provider output" in str(exc)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "invalid_provider_json"
         return
     raise AssertionError("invalid provider output should fail closed")
+
+
+def test_generate_report_v2_ai_draft_provider_config_failure_is_classified(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "surprise-provider")
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_config"
+        assert "surprise-provider" not in str(exc)
+        return
+    raise AssertionError("invalid provider mode should be classified")
+
+
+def test_generate_report_v2_ai_draft_provider_api_failure_is_classified(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "PRIVATE_PROVIDER_EXCEPTION_DO_NOT_LEAK"
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        raise RuntimeError(sentinel)
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_api_failure"
+        assert sentinel not in str(exc)
+        return
+    raise AssertionError("provider API failure should be classified")
+
+
+def test_generate_report_v2_ai_draft_invalid_provider_json_is_classified(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    sentinel = "RAW_PROVIDER_RESPONSE_DO_NOT_LEAK"
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        return f"{sentinel}: not json"
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "invalid_provider_json"
+        assert sentinel not in str(exc)
+        return
+    raise AssertionError("invalid provider JSON should be classified")
+
+
+def test_generate_report_v2_ai_draft_schema_validation_failure_is_classified(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        return {
+            "formal_diagnosis_notes": {
+                "label_zh": "manual-only",
+                "value": "AI must not fill this",
+                "source_type": "ai",
+            }
+        }
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "schema_validation_failed"
+        return
+    raise AssertionError("schema validation failure should be classified")
+
+
+def test_generate_report_v2_ai_draft_unsafe_evidence_refs_are_classified(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+
+    async def fake_call_report_v2_provider(messages, *, model):
+        return {
+            "chief_complaint_draft": {
+                "value": "safe draft value",
+                "source_type": "ai",
+                "evidence_refs": [
+                    {
+                        "turn_number": 1,
+                        "summary_id": "summary-1",
+                        "note": "unsafe raw note",
+                    }
+                ],
+            }
+        }
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "unsafe_evidence_refs"
+        return
+    raise AssertionError("unsafe evidence refs should be classified")
 
 
 def test_generate_report_v2_ai_draft_provider_mode_forbidden_fields_fail_closed(
@@ -290,8 +444,8 @@ def test_generate_report_v2_ai_draft_provider_mode_forbidden_fields_fail_closed(
 
     try:
         anyio.run(run_v2_draft)
-    except ValueError as exc:
-        assert "Invalid Report v2 provider output" in str(exc)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "schema_validation_failed"
         return
     raise AssertionError("manual-only provider output should fail closed")
 
@@ -321,8 +475,9 @@ def test_generate_report_v2_ai_draft_provider_exception_propagates_without_fallb
 
     try:
         anyio.run(run_v2_draft)
-    except RuntimeError as exc:
-        assert sentinel in str(exc)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_api_failure"
+        assert sentinel not in str(exc)
         return
     raise AssertionError("provider exception should fail closed")
 
@@ -340,8 +495,8 @@ def test_generate_report_v2_ai_draft_invalid_mode_fails_closed(monkeypatch):
 
     try:
         anyio.run(run_v2_draft)
-    except ValueError as exc:
-        assert "Invalid REPORT_V2_PROVIDER_MODE" in str(exc)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_config"
         return
     raise AssertionError("invalid provider mode should fail closed")
 

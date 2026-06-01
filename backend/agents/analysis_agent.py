@@ -4,7 +4,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agents import get_llm_client
 from agents.summary_agent import TurnSummary
@@ -30,6 +30,16 @@ REPORT_V2_PROVIDER_MODES = {
     REPORT_V2_PROVIDER_MODE_DETERMINISTIC,
     REPORT_V2_PROVIDER_MODE_PROVIDER,
 }
+ReportV2GenerationErrorCategory = Literal[
+    "missing_summaries",
+    "provider_config",
+    "provider_api_failure",
+    "invalid_provider_json",
+    "schema_validation_failed",
+    "unsafe_evidence_refs",
+    "db_persistence_failed",
+    "unknown_generation_failure",
+]
 REPORT_V2_ALLOWED_AI_FIELDS = [
     "chief_complaint_draft",
     "problem_development_draft",
@@ -91,6 +101,21 @@ REPORT_V2_FORBIDDEN_FIELDS = [
 ]
 
 
+class ReportV2GenerationError(ValueError):
+    """Safe internal Report v2 generation failure classification."""
+
+    def __init__(
+        self,
+        category: ReportV2GenerationErrorCategory,
+        *,
+        cause: Exception | None = None,
+    ) -> None:
+        self.category = category
+        super().__init__(f"Report v2 generation failed ({category})")
+        if cause is not None:
+            self.__cause__ = cause
+
+
 class EmotionPattern(BaseModel):
     description: str
     dominant_emotions: list[str] = Field(default_factory=list)
@@ -147,7 +172,7 @@ def _get_report_v2_provider_mode() -> str:
     if not raw:
         return REPORT_V2_PROVIDER_MODE_DETERMINISTIC
     if raw not in REPORT_V2_PROVIDER_MODES:
-        raise ValueError("Invalid REPORT_V2_PROVIDER_MODE")
+        raise ReportV2GenerationError("provider_config")
     return raw
 
 
@@ -391,17 +416,33 @@ def _parse_report_v2_provider_output(raw_output: str | dict[str, Any]) -> Report
         elif isinstance(raw_output, dict):
             data = raw_output
         else:
-            raise ValueError("Report v2 provider output must be a JSON object")
+            raise ReportV2GenerationError("invalid_provider_json")
 
         if not isinstance(data, dict):
-            raise ValueError("Report v2 provider output must be a JSON object")
+            raise ReportV2GenerationError("invalid_provider_json")
+    except ReportV2GenerationError:
+        raise
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ReportV2GenerationError("invalid_provider_json", cause=exc) from exc
+    except Exception as exc:
+        raise ReportV2GenerationError("unknown_generation_failure", cause=exc) from exc
 
+    try:
         normalized_data = _normalize_report_v2_ai_generated_payload(data)
         ai_generated = ReportAIGeneratedV2.model_validate(normalized_data)
-        _validate_report_v2_evidence_refs(ai_generated)
-        return ai_generated
+    except ValidationError as exc:
+        raise ReportV2GenerationError("schema_validation_failed", cause=exc) from exc
     except Exception as exc:
-        raise ValueError("Invalid Report v2 provider output") from exc
+        raise ReportV2GenerationError("schema_validation_failed", cause=exc) from exc
+
+    try:
+        _validate_report_v2_evidence_refs(ai_generated)
+    except ReportV2GenerationError:
+        raise
+    except Exception as exc:
+        raise ReportV2GenerationError("unsafe_evidence_refs", cause=exc) from exc
+
+    return ai_generated
 
 
 def _is_report_v2_empty_value(value: Any) -> bool:
@@ -508,7 +549,7 @@ def _validate_report_v2_evidence_refs(ai_generated: ReportAIGeneratedV2) -> None
             if ref.note is None:
                 continue
             if ref.note not in REPORT_V2_ALLOWED_EVIDENCE_NOTES:
-                raise ValueError("Report v2 evidence ref note is not pointer-only")
+                raise ReportV2GenerationError("unsafe_evidence_refs")
 
 
 def _calculate_peak_turn(summaries: list[TurnSummary]) -> int:
@@ -741,10 +782,15 @@ async def generate_report_v2_ai_draft(
         knowledge_excerpts=knowledge_excerpts,
     )
     messages = _build_report_v2_messages(payload)
-    raw_output = await _call_report_v2_provider(
-        messages,
-        model=_get_report_v2_model(),
-    )
+    try:
+        raw_output = await _call_report_v2_provider(
+            messages,
+            model=_get_report_v2_model(),
+        )
+    except ReportV2GenerationError:
+        raise
+    except Exception as exc:
+        raise ReportV2GenerationError("provider_api_failure", cause=exc) from exc
     return _parse_report_v2_provider_output(raw_output)
 
 
