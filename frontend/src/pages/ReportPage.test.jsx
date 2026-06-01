@@ -293,7 +293,7 @@ describe('ReportPage behavior', () => {
       expect(api.getCurrentReportDraft).toHaveBeenCalledWith(caseId, sessionId)
     })
     expect(await screen.findByText('SYNTHETIC_SUMMARY_KEY')).toBeInTheDocument()
-    expect(screen.getByText('目前 v1 AI 草稿產生')).toBeInTheDocument()
+    expect(screen.getByText('舊版 v1 暫存報告')).toBeInTheDocument()
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 
@@ -369,6 +369,47 @@ describe('ReportPage behavior', () => {
     expect(screen.getByText('第 2 輪')).toBeInTheDocument()
     expect(screen.getByText('摘要危機標記：是')).toBeInTheDocument()
     expect(screen.getByText('僅為 AI 微摘要整理，非客觀臨床量表。')).toBeInTheDocument()
+  })
+
+  test('places session review aids before the v2 draft section', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    const reviewSectionHeading = await screen.findByText('會談整理輔助')
+    const v2SectionHeading = screen.getByText('v2 報告草稿')
+
+    expect(
+      screen.getByText('建議先檢視本區整理，再建立或產生 v2 報告草稿。'),
+    ).toBeInTheDocument()
+    expect(screen.getByText('微摘要整理輔助')).toBeInTheDocument()
+    expect(screen.getByText('危機標記彙整')).toBeInTheDocument()
+    expect(screen.getByText('情緒強度趨勢')).toBeInTheDocument()
+    expect(screen.getByText('情緒面向平均')).toBeInTheDocument()
+    expect(screen.getByText('主題頻率')).toBeInTheDocument()
+    expect(screen.getByText('會談微摘要時間軸')).toBeInTheDocument()
+    expect(
+      reviewSectionHeading.compareDocumentPosition(v2SectionHeading) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
+  test('labels the v1 report area as legacy transient while keeping v1 generation isolated', async () => {
+    const user = userEvent.setup()
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('舊版 v1 暫存報告')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '產生 v1 AI 草稿' }))
+
+    await waitFor(() => {
+      expect(api.generateReport).toHaveBeenCalledWith({
+        case_id: caseId,
+        session_id: sessionId,
+      })
+    })
+    expect(api.generateReportDraftV2).not.toHaveBeenCalled()
   })
 
   test('does not write clinical report or summary content to browser storage', async () => {
