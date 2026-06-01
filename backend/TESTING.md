@@ -28,19 +28,23 @@ Current deterministic tests live under `backend/tests/`:
 | `backend/tests/conftest.py` | pytest fixtures | Uses a temporary SQLite database through `DATABASE_PATH`. |
 | `backend/tests/helpers.py` | test helpers | Provides fake OpenAI-compatible LLM response objects for agent tests. |
 | `backend/tests/test_db.py` | automated DB tests | Covers schema initialization, WAL mode, CRUD helpers, public field mapping, summary parsing, persisted summary `crisis_level` schema/migration/allowed-value behavior, crisis/session helpers, sessions table creation, idempotent backfill, create/get/ensure/touch helpers, explicit empty sessions, session title normalization/exposure/update behavior, legacy derived compatibility with null titles, legacy/backfilled session rename, archive/unarchive schema and migration behavior, archive/unarchive helper behavior, message/summary preservation, sorting, no-leak metadata, limits, timestamps, cascade behavior, `report_drafts` table creation, create/get current report draft behavior, one-current-draft behavior, UUID-like IDs, default status, fixed schema version, manual input validation, partial/empty manual input, timestamp updates, v2 `ai_generated_json` persistence, status transition to `ai_generated`, `generated_at`, manual input preservation, final report remaining null, safe pointer-only source refs, and archived-session draft support. |
-| `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, and heuristic crisis levels. |
+| `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, crisis speaker-attribution refinement, third-person/caregiver and quoted-content handling, passive hopelessness as low, inability to guarantee short-term safety as high, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
-| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, message safety instructions, provider mode with monkeypatched provider, model fallback behavior, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, and provider boundary behavior without live provider calls. |
+| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, post-demo Report v2 risk-language/client-understanding/theoretical-orientation prompt guidance, message safety instructions, provider mode with monkeypatched provider, model fallback behavior, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, provider error classification, and provider boundary behavior without live provider calls. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
 | `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, archive/unarchive behavior, default archived-session exclusion, `include_archived=true` listing, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and safe session-listing metadata behavior. |
-| `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures and report draft helper failures. |
-| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, DB/helper failure, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
+| `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures, report draft helper failures, and Report v2 generation diagnostics that do not leak clinical/provider details. |
+| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, categorized provider/config/parser/schema/evidence/DB failures with generic public responses, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
 
 These tests are network-free, do not require API keys, and should be treated as the
 current deterministic backend test suite. They use temporary SQLite databases and
 mocked or monkeypatched LLM clients/functions where provider calls would otherwise
 occur.
+
+Reported post-demo verification status: backend deterministic tests for the
+crisis speaker-attribution refinement passed. No live provider checks are part
+of that automated verification status.
 
 ## Existing Test / Script Inventory
 
@@ -151,6 +155,11 @@ Preferred approaches:
 Covered deterministic behaviors include:
 
 - Crisis fallback heuristic returns conservative results.
+- Crisis speaker-attribution tests distinguish current-speaker self-report,
+  third-person/caregiver reports, quoted content, and ambiguous attribution;
+  third-party crying/red eyes does not automatically raise the current speaker's
+  crisis level, passive hopelessness remains low, and inability to guarantee
+  short-term safety remains high.
 - Summary values are clamped to `0..10`.
 - Summary `crisis_flag` is forced from the external input.
 - Conversation fallback avoids diagnosis and medication advice.
@@ -168,6 +177,11 @@ Covered deterministic behaviors include:
   knowledge-base excerpts, safety instructions, safe summary-shaped provider
   input, bounded/truncated `key_statement`, and excludes raw messages, crisis
   detector reasons, DB-internal `round`, and session title.
+- Report Schema v2 prompt tests cover dialogue-based
+  `crisis_language_summary` screening from summaries and persisted
+  `crisis_level` only, explicit-denial versus absent-data handling,
+  supplemental `client_understanding_draft`, and
+  `theoretical_orientation_rationale` beginning with `初步建議取向：...`.
 - Report Schema v2 provider output parser accepts JSON strings or dicts; rejects
   invalid JSON, non-object JSON, unknown/manual-only fields, and unsafe evidence
   ref notes; validates with `ReportAIGeneratedV2`; and limits evidence notes to
@@ -179,6 +193,11 @@ Covered deterministic behaviors include:
 - Provider failures, invalid JSON, forbidden/manual-only fields, unsafe evidence
   refs, and invalid provider mode fail closed without persisting unsafe output
   as success.
+- Report v2 generation failures are classified internally as
+  `missing_summaries`, `provider_config`, `provider_api_failure`,
+  `invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,
+  `db_persistence_failed`, or `unknown_generation_failure`, while public route
+  responses remain generic and non-leaking.
 - Gemini JSON `response_format` compatibility failures are handled through fallback paths
   or robust parsing where applicable.
 
@@ -232,6 +251,9 @@ Task 09 route tests verify:
   - provider mode route success with a monkeypatched provider.
   - provider failure returning a generic non-leaking 500.
   - provider failure not overwriting existing `ai_generated_json`.
+  - provider/config/parser/schema/evidence/DB error classification without
+    exposing raw prompts, raw provider responses, secrets, provider exception
+    text, clinical text, or traces.
   - missing draft 404.
   - no persisted summaries 422 before any provider call.
   - invalid agent output.
