@@ -181,6 +181,10 @@ export default function ReportV2Preview({ draft, className = '' }) {
   const hasDraft = Boolean(draft?.draft_id ?? draft?.id)
   const manualInput = draft?.manual_input ?? {}
   const aiGenerated = draft?.ai_generated ?? {}
+  const manualSafetyPlan = getNestedValue(manualInput, [
+    'risk_assessment',
+    'safety_plan',
+  ])
   const manualClientUnderstanding = getNestedValue(manualInput, [
     'problem_onset_course',
     'client_understanding',
@@ -296,7 +300,6 @@ export default function ReportV2Preview({ draft, className = '' }) {
           </PreviewSection>
 
           <PreviewSection title="二、現況評估與觀察">
-            <FutureField label="症狀與功能影響" />
             <AiField
               field={getAiField(aiGenerated, 'emotion_pattern')}
               label="情緒模式"
@@ -309,7 +312,6 @@ export default function ReportV2Preview({ draft, className = '' }) {
               field={getAiField(aiGenerated, 'behavior_coping_pattern')}
               label="行為與因應模式"
             />
-            <FutureField label="晤談觀察" />
           </PreviewSection>
 
           <PreviewSection title="三、心理評估">
@@ -321,8 +323,6 @@ export default function ReportV2Preview({ draft, className = '' }) {
               field={getAiField(aiGenerated, 'psychological_factors')}
               label="氣質／人格特質"
             />
-            <FutureField label="防衛機制" />
-            <FutureField label="內在衝突" />
           </PreviewSection>
 
           <PreviewSection title="四、理論取向與個案概念化">
@@ -365,20 +365,12 @@ export default function ReportV2Preview({ draft, className = '' }) {
               field={getAiField(aiGenerated, 'crisis_language_summary')}
               label="危機語句摘要"
             />
-            <PreviewField
-              label="正式風險評估備註"
-              value={getReportFieldValue(manualInput, [
-                'risk_assessment',
-                'overall_risk_notes',
-              ])}
-            />
-            <PreviewField
-              label="安全計畫／危機處置"
-              value={getReportFieldValue(manualInput, [
-                'risk_assessment',
-                'safety_plan',
-              ])}
-            />
+            {hasFieldValue(manualSafetyPlan) ? (
+              <PreviewField
+                label="安全計畫（諮商師手動提供）"
+                value={getFieldDisplayValue(manualSafetyPlan)}
+              />
+            ) : null}
           </PreviewSection>
         </div>
       )}

@@ -563,7 +563,9 @@ describe('ReportPage behavior', () => {
     expect(psychologicalSection).toHaveTextContent('SYNTHETIC_ASSESSMENT_DATA')
 
     const riskSection = getSectionByHeading('五、風險評估')
-    expect(riskSection).toHaveTextContent('SYNTHETIC_RISK_NOTES')
+    expect(riskSection).not.toHaveTextContent('SYNTHETIC_RISK_NOTES')
+    expect(riskSection).not.toHaveTextContent('正式風險評估備註')
+    expect(riskSection).toHaveTextContent('安全計畫（諮商師手動提供）')
     expect(riskSection).toHaveTextContent('SYNTHETIC_SAFETY_PLAN')
   })
 
@@ -590,7 +592,9 @@ describe('ReportPage behavior', () => {
     expect(
       screen.getAllByText('此欄位待未來 AI 草稿或諮商師補充').length,
     ).toBeGreaterThan(3)
-    expect(getSectionByHeading('五、風險評估')).not.toHaveTextContent('無風險')
+    const riskSection = getSectionByHeading('五、風險評估')
+    expect(riskSection).not.toHaveTextContent('無風險')
+    expect(riskSection).not.toHaveTextContent('安全計畫（諮商師手動提供）')
   })
 
   test('preview renders ai_generated fields with review badges and safe turn refs', async () => {
@@ -629,11 +633,47 @@ describe('ReportPage behavior', () => {
 
     const riskSection = getSectionByHeading('五、風險評估')
     expect(riskSection).toHaveTextContent('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')
-    expect(riskSection).toHaveTextContent('SYNTHETIC_RISK_NOTES')
+    expect(riskSection).not.toHaveTextContent('SYNTHETIC_RISK_NOTES')
+    expect(riskSection).not.toHaveTextContent('正式風險評估備註')
+    expect(riskSection).toHaveTextContent('安全計畫（諮商師手動提供）')
     expect(riskSection).toHaveTextContent('SYNTHETIC_SAFETY_PLAN')
     expect(riskSection).not.toHaveTextContent('SYNTHETIC_FORBIDDEN_RISK_LEVEL')
     expect(riskSection).not.toHaveTextContent('SYNTHETIC_FORBIDDEN_AI_SAFETY_PLAN')
     expect(screen.getAllByText('AI 草稿，需諮商師審閱').length).toBeGreaterThan(5)
+  })
+
+  test('preview hides low-value demo placeholders while keeping core report fields visible', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
+
+    const currentSection = getSectionByHeading('二、現況評估與觀察')
+    expect(currentSection).toHaveTextContent('SYNTHETIC_V2_EMOTION_AI')
+    expect(currentSection).toHaveTextContent('SYNTHETIC_V2_COGNITIVE_AI')
+    expect(currentSection).toHaveTextContent('SYNTHETIC_V2_BEHAVIOR_AI')
+    expect(currentSection).not.toHaveTextContent('晤談觀察')
+    expect(currentSection).not.toHaveTextContent('症狀與功能影響')
+
+    const psychologicalSection = getSectionByHeading('三、心理評估')
+    expect(psychologicalSection).toHaveTextContent('SYNTHETIC_V2_PSYCHOLOGICAL_AI')
+    expect(psychologicalSection).not.toHaveTextContent('防衛機制')
+    expect(psychologicalSection).not.toHaveTextContent('內在衝突')
+
+    const formulationSection = getSectionByHeading('四、理論取向與個案概念化')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_THEORY_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_CONCEPTUALIZATION_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_FORMATION_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_PRECIPITATING_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_MAINTAINING_AI')
+    expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_PROTECTIVE_AI')
+
+    const riskSection = getSectionByHeading('五、風險評估')
+    expect(riskSection).toHaveTextContent('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')
+    expect(riskSection).not.toHaveTextContent('正式風險評估備註')
   })
 
   test('manual client understanding remains primary when both manual and ai draft exist', async () => {
