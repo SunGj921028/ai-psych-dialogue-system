@@ -602,8 +602,11 @@ describe('ReportPage behavior', () => {
 
     expect(await screen.findByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
+    expect(basicSection).toHaveTextContent('諮商師確認：個案對問題的理解')
     expect(basicSection).toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
-    expect(basicSection).toHaveTextContent('AI 補充草稿')
+    expect(basicSection).toHaveTextContent(
+      'AI 補充草稿：個案對問題理解的可能表述，需審閱',
+    )
     expect(basicSection).toHaveTextContent('SYNTHETIC_V2_CLIENT_AI')
     expect(basicSection).toHaveTextContent('第 2 輪')
     expect(basicSection).not.toHaveTextContent('summary-secret-2')
@@ -633,7 +636,27 @@ describe('ReportPage behavior', () => {
     expect(screen.getAllByText('AI 草稿，需諮商師審閱').length).toBeGreaterThan(5)
   })
 
-  test('manual client understanding can be empty so ai draft fills the main field', async () => {
+  test('manual client understanding remains primary when both manual and ai draft exist', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({
+        aiGenerated: makeAiGenerated({ clientUnderstanding: 'SYNTHETIC_AI_SUPPLEMENT' }),
+        clientUnderstanding: 'SYNTHETIC_COUNSELOR_CONFIRMED_CLIENT',
+      }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    const basicSection = getSectionByHeading('一、基本資料與主訴')
+    expect(basicSection).toHaveTextContent('諮商師確認：個案對問題的理解')
+    expect(basicSection).toHaveTextContent('SYNTHETIC_COUNSELOR_CONFIRMED_CLIENT')
+    expect(basicSection).toHaveTextContent(
+      'AI 補充草稿：個案對問題理解的可能表述，需審閱',
+    )
+    expect(basicSection).toHaveTextContent('SYNTHETIC_AI_SUPPLEMENT')
+  })
+
+  test('manual client understanding can be empty so ai draft fills the main field with draft label', async () => {
     api.getCurrentReportDraft.mockResolvedValue(
       makeReportDraft({
         aiGenerated: makeAiGenerated({ clientUnderstanding: 'SYNTHETIC_AI_MAIN_CLIENT' }),
@@ -645,7 +668,30 @@ describe('ReportPage behavior', () => {
 
     expect(await screen.findByText('SYNTHETIC_AI_MAIN_CLIENT')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
-    expect(basicSection).not.toHaveTextContent('AI 補充草稿')
+    expect(basicSection).toHaveTextContent(
+      'AI 補充草稿：個案對問題理解的可能表述，需審閱',
+    )
+    expect(basicSection).toHaveTextContent('AI 草稿，需諮商師審閱')
+    expect(basicSection).not.toHaveTextContent('諮商師確認：個案對問題的理解')
+  })
+
+  test('client understanding shows pending assessment when manual and ai draft are absent', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({
+        aiGenerated: makeAiGenerated({ clientUnderstanding: '' }),
+        clientUnderstanding: '',
+      }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    const basicSection = getSectionByHeading('一、基本資料與主訴')
+    expect(basicSection).toHaveTextContent('諮商師確認：個案對問題的理解')
+    expect(basicSection).toHaveTextContent('待評估')
+    expect(basicSection).not.toHaveTextContent(
+      'AI 補充草稿：個案對問題理解的可能表述，需審閱',
+    )
   })
 
   test('Create Draft calls API and renders returned form', async () => {

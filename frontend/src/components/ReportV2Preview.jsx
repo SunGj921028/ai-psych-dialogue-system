@@ -1,6 +1,9 @@
 const MISSING_TEXT = '待評估'
 const FUTURE_PLACEHOLDER = '此欄位待未來 AI 草稿或諮商師補充'
 const AI_DRAFT_BADGE = 'AI 草稿，需諮商師審閱'
+const CLIENT_UNDERSTANDING_MANUAL_LABEL = '諮商師確認：個案對問題的理解'
+const CLIENT_UNDERSTANDING_AI_LABEL =
+  'AI 補充草稿：個案對問題理解的可能表述，需審閱'
 
 function getNestedValue(source, path) {
   return path.reduce((current, key) => current?.[key], source)
@@ -255,7 +258,11 @@ export default function ReportV2Preview({ draft, className = '' }) {
               value={formatSessionCountDate(manualInput)}
             />
             <PreviewField
-              label="個案對問題的理解／主訴補充"
+              label={
+                hasManualClientUnderstanding || !aiClientUnderstanding
+                  ? CLIENT_UNDERSTANDING_MANUAL_LABEL
+                  : CLIENT_UNDERSTANDING_AI_LABEL
+              }
               value={
                 hasManualClientUnderstanding || !aiClientUnderstanding
                   ? getFieldDisplayValue(manualClientUnderstanding)
@@ -273,7 +280,10 @@ export default function ReportV2Preview({ draft, className = '' }) {
               }
             />
             {hasManualClientUnderstanding && aiClientUnderstanding ? (
-              <AiField field={aiClientUnderstanding} label="AI 補充草稿" />
+              <AiField
+                field={aiClientUnderstanding}
+                label={CLIENT_UNDERSTANDING_AI_LABEL}
+              />
             ) : null}
             <AiField
               field={getAiField(aiGenerated, 'chief_complaint_draft')}
@@ -319,7 +329,7 @@ export default function ReportV2Preview({ draft, className = '' }) {
             <FutureField label="主要理論取向" />
             <AiField
               field={getAiField(aiGenerated, 'theoretical_orientation_rationale')}
-              label="理論取向理由"
+              label="初步取向建議與理由"
             />
             <AiField
               field={getAiField(aiGenerated, 'conceptualization_narrative')}
