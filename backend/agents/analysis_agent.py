@@ -281,6 +281,39 @@ def _build_report_v2_prompt_payload(
                     "Do not add formal diagnosis, formal risk assessment, safety plan generation, treatment decisions, or manual-only risk fields.",
                 ],
             },
+            "client_understanding_draft_guidance": {
+                "target_field": "client_understanding_draft",
+                "purpose": (
+                    "When summaries provide enough evidence, draft the client's own understanding, "
+                    "attribution, or meaning-making about the problem. The manual input remains "
+                    "counselor-confirmed and primary; AI output is only a review-needed supplement."
+                ),
+                "writing_rules": [
+                    "Use Traditional Chinese in the ReportField value.",
+                    "Describe the client's own wording-level understanding, attribution, or meaning-making when it is supported by summaries.",
+                    "Do not infer this field from general symptoms alone.",
+                    "If evidence is insufficient, leave the field empty/null/待評估 and set missing_reason to no_data or not_assessed.",
+                    "不得臆造個案觀點、歸因、意義建構或主訴補充。",
+                ],
+            },
+            "theoretical_orientation_rationale_guidance": {
+                "target_field": "theoretical_orientation_rationale",
+                "purpose": (
+                    "Provide a cautious initial orientation recommendation only when evidence supports it, "
+                    "then explain why it may fit. This is draft wording for counselor review, not a formal clinical decision."
+                ),
+                "required_opening": [
+                    "初步建議取向：認知行為治療（CBT）。",
+                    "初步建議取向：待與督導確認。",
+                ],
+                "writing_rules": [
+                    "theoretical_orientation_rationale 的 value 必須以「初步建議取向：」開頭。",
+                    "If cognitive, behavioral, emotion-regulation, avoidance, or coping-pattern evidence supports CBT, explicitly name 認知行為治療（CBT） as the initial recommended orientation.",
+                    "If evidence does not support a specific orientation, begin with 初步建議取向：待與督導確認。",
+                    "Use cautious wording such as 初步建議取向、可能適合、需諮商師審閱、待與督導確認.",
+                    "不得宣稱最終治療模式、正式治療決策、診斷或處遇計畫。",
+                ],
+            },
             "output_schema": "只輸出 JSON object，且必須符合 ReportAIGeneratedV2；未知欄位會被拒絕。",
             "output_field_contract": (
                 "每個 AI 欄位都必須是完整 ReportField object，包含 "
@@ -311,6 +344,15 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
         "For crisis_language_summary, write a dialogue-based risk-language screening only: "
         "it is not a formal risk assessment, uses summaries plus persisted crisis_level as metadata, "
         "requires counselor review, and must not use crisis detector reasons.\n"
+        "For client_understanding_draft, write the client's own understanding, attribution, "
+        "or meaning-making only when supported by summaries. If evidence is insufficient, "
+        "leave it empty/null/待評估 with missing_reason no_data or not_assessed; manual input remains "
+        "counselor-confirmed and primary.\n"
+        "For theoretical_orientation_rationale, the value must begin with 初步建議取向：. "
+        "When evidence supports CBT, begin with 初步建議取向：認知行為治療（CBT）。; "
+        "otherwise begin with 初步建議取向：待與督導確認。. Use cautious wording such as "
+        "可能適合、需諮商師審閱、待與督導確認. Do not claim a final treatment model "
+        "or formal clinical decision.\n"
         "Cover suicide ideation language, suicide plan/intent language, self-harm language, "
         "harm-to-others language, substance-use language, psychotic-symptom language, "
         "and an overall risk-language screening impression when evidence allows.\n"

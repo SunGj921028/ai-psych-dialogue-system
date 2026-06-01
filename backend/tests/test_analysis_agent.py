@@ -419,6 +419,84 @@ def test_report_v2_messages_include_json_only_and_evidence_ref_rules():
     assert "不得填寫診斷" in encoded
 
 
+def test_report_v2_prompt_payload_instructs_client_understanding_draft_when_evidenced():
+    payload = analysis_agent._build_report_v2_prompt_payload(
+        case_id="case-1",
+        session_id="session-1",
+        summaries=[
+            {
+                "id": "summary-1",
+                "turn_number": 1,
+                "summary": {
+                    "turn_number": 1,
+                    "emotion": {"primary": "anxious", "intensity": 6},
+                    "themes": ["work stress"],
+                    "key_statement": "client links distress to workload and self-expectation",
+                    "crisis_flag": False,
+                },
+                "crisis_level": "none",
+            }
+        ],
+        manual_input=ReportManualInputV2(),
+    )
+
+    instructions = payload["instructions"]
+    encoded = json.dumps(payload, ensure_ascii=False)
+
+    assert "client_understanding_draft_guidance" in instructions
+    assert "client_understanding_draft" in encoded
+    assert "client's own understanding, attribution, or meaning-making" in encoded
+    assert "manual input remains counselor-confirmed" in encoded
+    assert "If evidence is insufficient" in encoded
+    assert "missing_reason" in encoded
+    assert "no_data" in encoded
+    assert "不得臆造" in encoded
+
+
+def test_report_v2_prompt_payload_requires_explicit_initial_orientation_in_rationale():
+    payload = analysis_agent._build_report_v2_prompt_payload(
+        case_id="case-1",
+        session_id="session-1",
+        summaries=[],
+        manual_input=ReportManualInputV2(),
+    )
+
+    instructions = payload["instructions"]
+    encoded = json.dumps(payload, ensure_ascii=False)
+
+    assert "theoretical_orientation_rationale_guidance" in instructions
+    assert "theoretical_orientation_rationale" in encoded
+    assert "初步建議取向：" in encoded
+    assert "初步建議取向：認知行為治療（CBT）。" in encoded
+    assert "初步建議取向：待與督導確認。" in encoded
+    assert "可能適合" in encoded
+    assert "需諮商師審閱" in encoded
+    assert "不得宣稱最終治療模式" in encoded
+    assert "formal clinical decision" in encoded
+
+
+def test_report_v2_messages_repeat_client_understanding_and_orientation_boundaries():
+    messages = analysis_agent._build_report_v2_messages(
+        analysis_agent._build_report_v2_prompt_payload(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+    )
+
+    encoded = "\n".join(message["content"] for message in messages)
+
+    assert "client_understanding_draft" in encoded
+    assert "client's own understanding, attribution, or meaning-making" in encoded
+    assert "If evidence is insufficient" in encoded
+    assert "初步建議取向：" in encoded
+    assert "可能適合" in encoded
+    assert "需諮商師審閱" in encoded
+    assert "待與督導確認" in encoded
+    assert "Do not claim a final treatment model" in encoded
+
+
 def test_report_v2_prompt_payload_instructs_dialogue_based_risk_language_screening():
     payload = analysis_agent._build_report_v2_prompt_payload(
         case_id="case-1",
