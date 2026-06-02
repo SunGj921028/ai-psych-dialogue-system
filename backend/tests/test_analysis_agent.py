@@ -1435,6 +1435,7 @@ def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(
     assert result == '{"chief_complaint_draft": {}}'
     assert captured["provider"] == "gemini"
     assert captured["api_key_override"] is None
+    assert fake_client.calls == []
     assert fake_client.create_calls[0]["model"] == "report-v2-boundary-model"
     assert fake_client.create_calls[0]["messages"] == [
         {"role": "system", "content": "unused"}
@@ -1470,6 +1471,7 @@ def test_call_report_v2_provider_boundary_uses_selected_groq_client_and_model(mo
     assert result == '{"chief_complaint_draft": {}}'
     assert captured["provider"] == "groq"
     assert captured["api_key_override"] is None
+    assert fake_client.calls == []
     assert fake_client.create_calls[0]["model"] == "llama-3.3-70b-versatile"
     assert fake_client.create_calls[0]["messages"] == [
         {"role": "system", "content": "unused"}
