@@ -238,6 +238,13 @@ Open ReportPage for the same case/session.
 
 Point out the v1/v2 separation:
 
+- In `會談整理輔助`, the emotion dimension average area now includes a compact
+  Recharts radar chart derived from structured summary averages on a fixed
+  `0-10` scale.
+- Explain that the radar chart is a visual aid for counselor review only, not a
+  formal scale, diagnosis, or risk evaluation.
+- Point out that the existing text/bar emotion dimension overview remains
+  visible as fallback.
 - `會談整理輔助` appears before the v2 report draft workflow
 - v2 manual input, generation, and preview are grouped under `v2 報告草稿`
 - v1 appears lower as `舊版 v1 暫存報告`
@@ -353,6 +360,9 @@ counselor review, not a clinical conclusion.
   crisis reasons, case notes, titles, or other clinical content in browser
   storage. `localStorage` is reserved for theme preference, and
   `sessionStorage` may store only active case/session identifiers.
+- ReportPage visualizations use structured summary metadata already shown in the
+  UI. The Recharts emotion dimension radar chart must not expose raw messages,
+  raw summaries, key statements, report text, or clinical free text.
 - Crisis output is assistive and conservative. It is not a diagnosis, formal
   risk assessment, or replacement for professional judgment.
 - Manual counselor-owned fields include demographics, referral details, formal
@@ -415,6 +425,9 @@ After class:
 - reviewed status
 - print-friendly report view
 - PDF export
-- charts/Recharts planning
+- optional emotion intensity line chart, theme frequency chart, and additional
+  chart polish
+- any crisis visualization should remain cautious and must not imply formal risk
+  assessment
 - production deployment/testing
 - docs after future slices

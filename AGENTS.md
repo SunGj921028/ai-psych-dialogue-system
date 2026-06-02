@@ -89,6 +89,10 @@ mismatches.
   counselor-owned, `crisis_language_summary` remains visible, manual
   `safety_plan` renders only when provided, evidence refs are turn-number-only,
   and the preview does not call APIs or `generateReport`.
+- ReportPage includes the first Recharts demo visualization slice in
+  `會談整理輔助`: an emotion dimension radar chart derived from structured summary
+  averages on a fixed `0-10` scale, with the existing text/bar fallback and
+  browser storage safety unchanged.
 - HistoryPage lists cases from the backend and can lazily expand multiple cases
   to show backend session metadata.
 - HistoryPage displays session titles when present, uses 「未命名會談」 for untitled
@@ -130,10 +134,10 @@ mismatches.
   provider smoke testing has passed with synthetic data, and a classroom demo
   runbook exists at `docs/DEMO_RUNBOOK.md`. The post-demo prompt/preview
   refinement batch is complete. Counselor final report workflow, reviewed
-  status, print-friendly/PDF export, production deployment/testing,
-  charts/Recharts planning, hard delete/session data-retention workflow, title
-  search/filter, richer session metadata, optional secret-safe runtime/provider
-  status, and MCP integration remain future work.
+  status, print-friendly/PDF export, production deployment/testing, additional
+  chart polish/visualizations, hard delete/session data-retention workflow,
+  title search/filter, richer session metadata, optional secret-safe
+  runtime/provider status, and MCP integration remain future work.
 - Hard delete, bulk archive/delete, HistoryPage crisis-level display if desired,
   and optional latest/peak session crisis aggregates remain future work.
 

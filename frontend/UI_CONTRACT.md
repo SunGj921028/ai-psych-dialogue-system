@@ -47,8 +47,16 @@ Current reality:
   intensity trend, emotion dimension average/latest snapshot, theme frequency
   chips, micro-summary timeline, and crisis occurrence indicator from existing
   backend data.
+- The emotion dimension average review aid includes a compact Recharts radar
+  chart. It uses the existing `getEmotionDimensionAverages(sortedSummaries)`
+  derived data, renders average emotion dimension scores on a fixed `0-10`
+  scale, and keeps the existing text/bar overview visible as fallback.
+- The radar chart copy states
+  `視覺化僅供諮商師審閱微摘要趨勢，非正式量表或診斷。`, and its accessible region
+  label is `情緒面向雷達圖，顯示本會談微摘要的平均分布`.
 - ReportPage review aids are counselor-facing context only and are not objective
-  clinical measurements.
+  clinical measurements. The radar chart is a visual aid only and is not a
+  formal assessment, scale, diagnosis, or risk evaluation.
 - ReportPage groups the Report Schema v2 manual input panel, v2 generation
   action, and v2 preview under `v2 報告草稿`.
 - The existing v1 transient report generation section appears lower on the page
@@ -201,14 +209,16 @@ Current reality:
   `localStorage` or `sessionStorage`.
 - PDF export, hard delete/session data-retention workflow, title search/filter,
   richer session metadata, reviewed status/counselor final report workflow,
-  optional charts/Recharts, production deployment/testing, runtime/provider
-  status endpoint if needed, and MCP integration are not implemented yet.
+  optional additional visualization work, production deployment/testing,
+  runtime/provider status endpoint if needed, and MCP integration are not
+  implemented yet.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
 - Frontend v2 AI generation integration exists through the separate
   `v2 AI 草稿產生` action card and `generateReportDraftV2(draftId)`. No counselor
   final report workflow, reviewed status, PDF export, editable report fields,
-  or Recharts integration has been implemented.
+  emotion intensity line chart, theme frequency chart, or additional chart
+  polish has been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
 - Task 09 backend routes are implemented under `/api`; frontend work should
   continue to follow `backend/API_CONTRACT.md`.
@@ -224,13 +234,13 @@ Remaining future behavior:
   optional HistoryPage crisis-level display, Settings backend integration, and
   MCP-related UI only when the corresponding tasks are prioritized.
 - Complete report workflow future work: counselor final report workflow,
-  reviewed status, final PDF export, optional Recharts/charts, production
-  deployment/testing, and docs after future slices.
+  reviewed status, final PDF export, optional additional visualizations and
+  chart polish, production deployment/testing, and docs after future slices.
 - Smarter scroll behavior can be considered later as an optional UX refinement.
 - Add future frontend tests for counselor final report workflow, reviewed
-  status, PDF export, charts/Recharts, and production deployment-specific
-  behavior as those features are implemented. Optional Playwright/E2E and visual
-  regression can be added later if needed.
+  status, PDF export, additional visualizations, and production
+  deployment-specific behavior as those features are implemented. Optional
+  Playwright/E2E and visual regression can be added later if needed.
 
 ## Current Frontend Test Coverage
 
@@ -294,8 +304,8 @@ Remaining future testing work:
 
 - Future ReportPage tests for counselor final report workflow and PDF export as
   those features are added.
-- Future ReportPage tests for reviewed status, charts/Recharts, and production
-  deployment-specific behavior as those features are added.
+- Future ReportPage tests for reviewed status, additional visualizations, and
+  production deployment-specific behavior as those features are added.
 - Optional Playwright/E2E later.
 - Visual regression later if needed.
 
@@ -414,7 +424,8 @@ Not currently implemented:
 - Reviewed status.
 - PDF export.
 - Editable report fields.
-- Recharts or other chart library integration.
+- Emotion intensity line chart, theme frequency chart, and additional chart
+  polish beyond the first Recharts emotion dimension radar chart.
 - Production deployment/testing.
 
 ### HistoryPage
@@ -813,9 +824,11 @@ Expected average/latest snapshot data shape:
 ]
 ```
 
-When multiple summaries exist, the current review workspace may show both average
-and latest values as contextual review aids. Formal charting and alternate
-aggregation choices remain future work.
+When multiple summaries exist, the current review workspace shows average and
+latest values as contextual review aids. The first Recharts chart slice renders
+the average values as a compact radar chart on a fixed `0-10` scale while
+preserving the text/bar fallback. It must not visualize raw messages, raw
+summaries, key statements, report text, or clinical free text.
 
 ### Themes
 
@@ -982,17 +995,20 @@ Future behavior:
 - HistoryPage crisis-level display remains future work, if desired.
 - Complete future report work after the report template stabilizes: Report
   Schema v2 counselor final report workflow, reviewed status, final PDF export,
-  optional Recharts/charts, production deployment/testing, and docs after future
-  slices.
+  optional additional visualizations and chart polish, production
+  deployment/testing, and docs after future slices.
 - Smarter scroll behavior remains optional future UX work.
 - Add future frontend tests for counselor final report workflow, reviewed
-  status, PDF export, charts/Recharts, and production deployment-specific
-  behavior as those features are implemented.
+  status, PDF export, additional visualizations, and production
+  deployment-specific behavior as those features are implemented.
 - Add optional Playwright/E2E later, and visual regression later if needed.
 
 ## Open Decisions
 
-- Whether future report visuals should add Recharts or another charting library.
+- Which future report visualizations, if any, should follow the first Recharts
+  radar chart slice; possible candidates include emotion intensity line chart,
+  theme frequency chart, and additional chart polish. Crisis charting should
+  remain cautious and must not imply formal risk assessment.
 - How a future formal report schema should support source/evidence traceability
   and editable counselor review.
 - How future v2 AI generation should combine summaries with backend-persisted
