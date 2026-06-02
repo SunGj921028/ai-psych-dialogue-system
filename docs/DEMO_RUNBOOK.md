@@ -314,19 +314,26 @@ Use either unset/blank provider mode or:
 REPORT_V2_PROVIDER_MODE=deterministic
 ```
 
-### Option B: Provider Mode With `GEMINI_API_KEY`
+### Option B: Provider Mode With Gemini Or Groq
 
 Use provider mode only if the classroom demo explicitly includes live provider
 behavior.
 
 Requirements:
 
-- set `GEMINI_API_KEY` in the local shell only
 - set `REPORT_V2_PROVIDER_MODE=provider`
+- set `REPORT_V2_PROVIDER=gemini` or `REPORT_V2_PROVIDER=groq`
+- set the corresponding provider key in the local shell only:
+  `GEMINI_API_KEY` for Gemini, `GROQ_API_KEY` for Groq, or
+  `REPORT_V2_API_KEY` as a Report-v2-specific override
 - optionally set `REPORT_V2_MODEL`
 - use synthetic/de-identified data only
 - keep keys and `.env` hidden from screen sharing
 - do not commit `.env`, logs, provider outputs, screenshots, or smoke DB files
+
+Groq can be used as a dedicated Report v2 provider to reduce Gemini rate-limit
+friction during longer structured report generation. `REPORT_V2_API_KEY` can
+separate report-generation quota from the crisis/summary keys.
 
 Provider mode has been smoke-tested locally with synthetic data, but it still
 depends on provider availability, model behavior, local environment, and network

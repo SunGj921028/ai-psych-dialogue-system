@@ -4,6 +4,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Literal
 
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from agents import get_llm_client
@@ -30,6 +31,18 @@ REPORT_V2_PROVIDER_MODES = {
     REPORT_V2_PROVIDER_MODE_DETERMINISTIC,
     REPORT_V2_PROVIDER_MODE_PROVIDER,
 }
+REPORT_V2_PROVIDER_GEMINI = "gemini"
+REPORT_V2_PROVIDER_GROQ = "groq"
+REPORT_V2_PROVIDERS = {
+    REPORT_V2_PROVIDER_GEMINI,
+    REPORT_V2_PROVIDER_GROQ,
+}
+REPORT_V2_PROVIDER_BASE_URLS = {
+    REPORT_V2_PROVIDER_GEMINI: "https://generativelanguage.googleapis.com/v1beta/openai/",
+    REPORT_V2_PROVIDER_GROQ: "https://api.groq.com/openai/v1",
+}
+REPORT_V2_DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+REPORT_V2_DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
 ReportV2GenerationErrorCategory = Literal[
     "missing_summaries",
     "provider_config",
@@ -176,12 +189,53 @@ def _get_report_v2_provider_mode() -> str:
     return raw
 
 
-def _get_report_v2_model() -> str:
-    return (
-        os.getenv("REPORT_V2_MODEL")
-        or os.getenv("ANALYSIS_MODEL")
-        or "gemini-1.5-pro"
-    )
+def _get_report_v2_provider() -> str:
+    raw = os.getenv("REPORT_V2_PROVIDER", "").strip().lower()
+    if not raw:
+        return REPORT_V2_PROVIDER_GEMINI
+    if raw not in REPORT_V2_PROVIDERS:
+        raise ReportV2GenerationError("provider_config")
+    return raw
+
+
+def _get_report_v2_model(provider: str) -> str:
+    configured_model = (os.getenv("REPORT_V2_MODEL") or "").strip()
+    if configured_model:
+        return configured_model
+
+    if provider == REPORT_V2_PROVIDER_GEMINI:
+        return os.getenv("ANALYSIS_MODEL") or REPORT_V2_DEFAULT_GEMINI_MODEL
+
+    if provider == REPORT_V2_PROVIDER_GROQ:
+        return REPORT_V2_DEFAULT_GROQ_MODEL
+
+    raise ReportV2GenerationError("provider_config")
+
+
+def _get_report_v2_provider_client(provider: str) -> AsyncOpenAI:
+    if provider not in REPORT_V2_PROVIDERS:
+        raise ReportV2GenerationError("provider_config")
+
+    report_api_key = (os.getenv("REPORT_V2_API_KEY") or "").strip()
+    if not report_api_key:
+        try:
+            return get_llm_client(provider)
+        except ReportV2GenerationError:
+            raise
+        except Exception as exc:
+            raise ReportV2GenerationError("provider_config", cause=exc) from exc
+
+    base_url = REPORT_V2_PROVIDER_BASE_URLS.get(provider)
+    if not base_url:
+        raise ReportV2GenerationError("provider_config")
+
+    try:
+        return AsyncOpenAI(
+            api_key=report_api_key,
+            base_url=base_url,
+        )
+    except Exception as exc:
+        raise ReportV2GenerationError("provider_config", cause=exc) from exc
 
 
 def _extract_json_object(text: str) -> dict[str, Any]:
@@ -397,9 +451,13 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
 async def _call_report_v2_provider(
     messages_or_payload: Any,
     *,
+    provider: str,
     model: str,
 ) -> str:
-    client = get_llm_client("gemini")
+    if provider not in REPORT_V2_PROVIDERS:
+        raise ReportV2GenerationError("provider_config")
+
+    client = _get_report_v2_provider_client(provider)
     resp = await client.chat.completions.create(
         model=model,
         temperature=0.2,
@@ -783,9 +841,11 @@ async def generate_report_v2_ai_draft(
     )
     messages = _build_report_v2_messages(payload)
     try:
+        provider = _get_report_v2_provider()
         raw_output = await _call_report_v2_provider(
             messages,
-            model=_get_report_v2_model(),
+            provider=provider,
+            model=_get_report_v2_model(provider),
         )
     except ReportV2GenerationError:
         raise

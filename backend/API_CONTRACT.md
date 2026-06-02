@@ -730,12 +730,22 @@ Implementation notes:
   explicitly configured.
 - `REPORT_V2_PROVIDER_MODE` allows `deterministic` or `provider`; unset or blank
   defaults to `deterministic`, and invalid explicit values fail closed.
-- `REPORT_V2_MODEL` is used only in provider mode. If unset, it falls back to
-  `ANALYSIS_MODEL`, then the existing default model.
+- Provider mode reads `REPORT_V2_PROVIDER`; blank or unset values default to
+  `gemini`. Allowed providers are `gemini` and `groq`; invalid providers fail
+  closed as `provider_config`.
+- Provider selection is explicit. A model name alone does not determine which
+  provider endpoint/client is used.
+- `REPORT_V2_MODEL` is used only in provider mode. For `gemini`, model fallback
+  is `REPORT_V2_MODEL`, then `ANALYSIS_MODEL`, then `gemini-2.5-flash`. For
+  `groq`, model fallback is `REPORT_V2_MODEL`, then
+  `llama-3.3-70b-versatile`; Groq does not fall back to `ANALYSIS_MODEL`.
+- `REPORT_V2_API_KEY` is an optional Report-v2-specific provider key override.
+  If set, Report v2 provider calls use it for the selected provider. If unset,
+  `gemini` uses `GEMINI_API_KEY` and `groq` uses `GROQ_API_KEY`. Crisis and
+  summary agents do not use `REPORT_V2_API_KEY`.
 - Provider mode builds v2 prompt/messages, calls the Report v2 provider
-  boundary using the existing Gemini-style provider infrastructure, parses
-  provider output, validates it as `ReportAIGeneratedV2`, and returns only
-  validated output.
+  boundary for the selected provider, parses provider output, validates it as
+  `ReportAIGeneratedV2`, and returns only validated output.
 - Validates the result as `ReportAIGeneratedV2`.
 - `ReportAIGeneratedV2` and nested `ReportField` reject unknown fields.
 - AI output cannot silently include manual-only fields such as diagnosis,
@@ -1027,10 +1037,12 @@ These are not required for Task 09 or remain future integration work:
 - Database write failure: return 500 with a generic message; avoid leaking sensitive content.
 - Report draft helper failure: return 500 with a generic message; avoid leaking
   manual input values, clinical content, or implementation details.
-- Report v2 provider-mode failure, invalid provider output, or invalid
-  `REPORT_V2_PROVIDER_MODE`: return 500 with a generic message; do not leak raw
-  prompts, raw provider responses, provider exception text, model/provider
-  secrets, or clinical content, and do not overwrite existing `ai_generated_json`.
+- Report v2 provider-mode failure, invalid provider output, invalid
+  `REPORT_V2_PROVIDER_MODE`, invalid `REPORT_V2_PROVIDER`, or missing selected
+  provider key: return 500 with a generic message; do not leak raw prompts, raw
+  provider responses, provider exception text, model/provider secrets, key
+  values, or clinical content, and do not overwrite existing
+  `ai_generated_json`.
 - Report v2 route diagnostics may use internal categories:
   `missing_summaries`, `provider_config`, `provider_api_failure`,
   `invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,
