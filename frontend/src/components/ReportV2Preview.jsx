@@ -1,7 +1,6 @@
 const MISSING_TEXT = '待評估'
 const FUTURE_PLACEHOLDER = '此欄位待未來 AI 草稿或諮商師補充'
 const AI_DRAFT_BADGE = 'AI 草稿，需諮商師審閱'
-const CLIENT_UNDERSTANDING_MANUAL_LABEL = '諮商師確認：個案對問題的理解'
 const CLIENT_UNDERSTANDING_AI_LABEL =
   'AI 補充草稿：個案對問題理解的可能表述，需審閱'
 
@@ -173,10 +172,6 @@ function AiField({ field, label }) {
   )
 }
 
-function MissingField({ label }) {
-  return <PreviewField label={label} value={MISSING_TEXT} />
-}
-
 export default function ReportV2Preview({ draft, className = '' }) {
   const hasDraft = Boolean(draft?.draft_id ?? draft?.id)
   const manualInput = draft?.manual_input ?? {}
@@ -185,15 +180,10 @@ export default function ReportV2Preview({ draft, className = '' }) {
     'risk_assessment',
     'safety_plan',
   ])
-  const manualClientUnderstanding = getNestedValue(manualInput, [
-    'problem_onset_course',
-    'client_understanding',
-  ])
   const aiClientUnderstanding = getAiField(
     aiGenerated,
     'client_understanding_draft',
   )
-  const hasManualClientUnderstanding = hasFieldValue(manualClientUnderstanding)
 
   return (
     <section
@@ -261,29 +251,7 @@ export default function ReportV2Preview({ draft, className = '' }) {
               label="會談次數／日期"
               value={formatSessionCountDate(manualInput)}
             />
-            <PreviewField
-              label={
-                hasManualClientUnderstanding || !aiClientUnderstanding
-                  ? CLIENT_UNDERSTANDING_MANUAL_LABEL
-                  : CLIENT_UNDERSTANDING_AI_LABEL
-              }
-              value={
-                hasManualClientUnderstanding || !aiClientUnderstanding
-                  ? getFieldDisplayValue(manualClientUnderstanding)
-                  : getFieldDisplayValue(aiClientUnderstanding)
-              }
-              badges={
-                !hasManualClientUnderstanding && aiClientUnderstanding
-                  ? [AI_DRAFT_BADGE]
-                  : []
-              }
-              evidence={
-                !hasManualClientUnderstanding && aiClientUnderstanding
-                  ? formatTurnEvidence(aiClientUnderstanding)
-                  : []
-              }
-            />
-            {hasManualClientUnderstanding && aiClientUnderstanding ? (
+            {aiClientUnderstanding ? (
               <AiField
                 field={aiClientUnderstanding}
                 label={CLIENT_UNDERSTANDING_AI_LABEL}
@@ -326,7 +294,6 @@ export default function ReportV2Preview({ draft, className = '' }) {
           </PreviewSection>
 
           <PreviewSection title="四、理論取向與個案概念化">
-            <FutureField label="主要理論取向" />
             <AiField
               field={getAiField(aiGenerated, 'theoretical_orientation_rationale')}
               label="初步取向建議與理由"
@@ -354,13 +321,6 @@ export default function ReportV2Preview({ draft, className = '' }) {
           </PreviewSection>
 
           <PreviewSection title="五、風險評估">
-            <MissingField label="自殺意念" />
-            <MissingField label="自殺計畫／意圖" />
-            <MissingField label="自傷行為" />
-            <MissingField label="他傷風險" />
-            <MissingField label="物質濫用" />
-            <MissingField label="精神病性症狀" />
-            <MissingField label="整體風險等級" />
             <AiField
               field={getAiField(aiGenerated, 'crisis_language_summary')}
               label="危機語句摘要"
