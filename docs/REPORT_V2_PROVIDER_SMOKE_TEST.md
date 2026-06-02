@@ -17,6 +17,8 @@ This runbook covers:
 
 - Local backend execution.
 - Explicit `REPORT_V2_PROVIDER_MODE=provider`.
+- Explicit `REPORT_V2_PROVIDER=gemini|groq`.
+- Optional `REPORT_V2_API_KEY` for a Report-v2-specific provider key override.
 - A throwaway local SQLite database.
 - Synthetic case/session/draft data.
 - Manual success and failure checks.
@@ -74,16 +76,20 @@ safe default:
 
 ```text
 REPORT_V2_PROVIDER_MODE=deterministic
+REPORT_V2_PROVIDER=gemini
 REPORT_V2_MODEL=
+REPORT_V2_API_KEY=
 ```
 
 Keep deterministic mode as the default for normal local setup. Provider mode is
-only for explicit local/manual validation and requires `GEMINI_API_KEY`.
+only for explicit local/manual validation and requires a selected provider plus
+the corresponding provider API key.
 
 Report v2 generation supports:
 
 ```text
 REPORT_V2_PROVIDER_MODE=deterministic|provider
+REPORT_V2_PROVIDER=gemini|groq
 ```
 
 Unset or blank `REPORT_V2_PROVIDER_MODE` defaults to `deterministic`.
@@ -96,15 +102,28 @@ REPORT_V2_PROVIDER_MODE=provider
 Invalid explicit mode values fail closed. They should not silently fall back to
 deterministic mode.
 
+Unset or blank `REPORT_V2_PROVIDER` defaults to `gemini`. Invalid explicit
+provider values fail closed as `provider_config`. Provider selection is explicit:
+a model name alone does not determine which provider endpoint/client is used.
+
 `REPORT_V2_MODEL` is optional and used only in provider mode. Provider mode model
-selection falls back in this order:
+selection is provider-specific:
 
-1. `REPORT_V2_MODEL`
-2. `ANALYSIS_MODEL`
-3. system default
+- Gemini fallback: `REPORT_V2_MODEL`, then `ANALYSIS_MODEL`, then
+  `gemini-2.5-flash`.
+- Groq fallback: `REPORT_V2_MODEL`, then `llama-3.3-70b-versatile`. Groq does
+  not fall back to `ANALYSIS_MODEL`.
 
-Provider mode uses the existing Gemini-style provider infrastructure. Existing
-v1 report generation remains unchanged.
+`REPORT_V2_API_KEY` is optional. If set, Report v2 provider calls use it for the
+selected provider. If unset, `gemini` uses `GEMINI_API_KEY` and `groq` uses
+`GROQ_API_KEY`. A dedicated Report v2 key can isolate report-generation quota
+from crisis/summary quota. Crisis and summary agents do not use
+`REPORT_V2_API_KEY`.
+
+Provider mode supports Gemini and Groq provider paths. Groq can be used as a
+dedicated Report v2 provider to reduce Gemini rate-limit friction during longer
+structured report-generation tasks. Existing v1 report generation remains
+unchanged.
 
 Report v2 generation now classifies failures internally as
 `missing_summaries`, `provider_config`, `provider_api_failure`,
@@ -120,8 +139,10 @@ Prepare:
 
 - A throwaway local SQLite DB.
 - A local backend process.
-- Provider key set in the current shell only, such as `GEMINI_API_KEY`.
+- Provider key set in the current shell only, such as `GEMINI_API_KEY`,
+  `GROQ_API_KEY`, or `REPORT_V2_API_KEY`.
 - `REPORT_V2_PROVIDER_MODE=provider`.
+- `REPORT_V2_PROVIDER=gemini` or `REPORT_V2_PROVIDER=groq`.
 - Optional `REPORT_V2_MODEL`.
 - A synthetic case and session.
 - At least one persisted summary for the session.
@@ -183,10 +204,30 @@ Set-Location D:\AI_Project\ai-psych-dialogue-system\backend
 $env:DATABASE_PATH = Join-Path $env:TEMP "ai_psych_report_v2_provider_smoke.db"
 $env:GEMINI_API_KEY = "<set-real-key-in-shell-only>"
 $env:REPORT_V2_PROVIDER_MODE = "provider"
-$env:REPORT_V2_MODEL = "gemini-1.5-pro"
+$env:REPORT_V2_PROVIDER = "gemini"
+$env:REPORT_V2_MODEL = "gemini-2.5-flash"
 ```
 
-`REPORT_V2_MODEL` is optional. Omit it to use the configured fallback behavior.
+For a Groq Report v2 smoke test, set a Groq key in the current shell only:
+
+```powershell
+$env:DATABASE_PATH = Join-Path $env:TEMP "ai_psych_report_v2_provider_smoke.db"
+$env:GROQ_API_KEY = "<set-real-key-in-shell-only>"
+$env:REPORT_V2_PROVIDER_MODE = "provider"
+$env:REPORT_V2_PROVIDER = "groq"
+$env:REPORT_V2_MODEL = "llama-3.3-70b-versatile"
+```
+
+To isolate report-generation quota from the shared crisis/summary Groq key, use
+a Report-v2-specific key override:
+
+```powershell
+$env:REPORT_V2_API_KEY = "<set-report-v2-provider-key-in-shell-only>"
+$env:REPORT_V2_PROVIDER = "groq"
+```
+
+`REPORT_V2_MODEL` is optional. Omit it to use the configured provider-specific
+fallback behavior.
 
 Start the backend:
 
@@ -320,7 +361,9 @@ Invalid mode:
 Missing or invalid provider key:
 
 - Use `REPORT_V2_PROVIDER_MODE=provider`.
-- Omit or invalidate `GEMINI_API_KEY`.
+- Set `REPORT_V2_PROVIDER=gemini` and omit both `REPORT_V2_API_KEY` and
+  `GEMINI_API_KEY`, or set `REPORT_V2_PROVIDER=groq` and omit both
+  `REPORT_V2_API_KEY` and `GROQ_API_KEY`.
 - Call the generate endpoint.
 - Expect fail-closed behavior with a generic failure response.
 - Expect only an internal diagnostic category such as `provider_config` or
@@ -369,8 +412,11 @@ Remove-Item "$env:DATABASE_PATH-shm"
 
 Remove-Item Env:DATABASE_PATH
 Remove-Item Env:GEMINI_API_KEY
+Remove-Item Env:GROQ_API_KEY
 Remove-Item Env:REPORT_V2_PROVIDER_MODE
+Remove-Item Env:REPORT_V2_PROVIDER
 Remove-Item Env:REPORT_V2_MODEL
+Remove-Item Env:REPORT_V2_API_KEY
 ```
 
 Only remove explicit single-file paths. If your environment created additional

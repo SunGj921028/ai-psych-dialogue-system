@@ -31,11 +31,11 @@ Current deterministic tests live under `backend/tests/`:
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, crisis speaker-attribution refinement, third-person/caregiver and quoted-content handling, passive hopelessness as low, inability to guarantee short-term safety as high, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
-| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, post-demo Report v2 risk-language/client-understanding/theoretical-orientation prompt guidance, message safety instructions, provider mode with monkeypatched provider, model fallback behavior, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, provider error classification, and provider boundary behavior without live provider calls. |
+| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, post-demo Report v2 risk-language/client-understanding/theoretical-orientation prompt guidance, message safety instructions, provider mode with monkeypatched provider, explicit Gemini/Groq provider selection, provider-specific model fallback behavior, optional `REPORT_V2_API_KEY` override behavior, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, provider error classification, and provider boundary behavior without live provider calls. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
 | `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, archive/unarchive behavior, default archived-session exclusion, `include_archived=true` listing, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and safe session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures, report draft helper failures, and Report v2 generation diagnostics that do not leak clinical/provider details. |
-| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, categorized provider/config/parser/schema/evidence/DB failures with generic public responses, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
+| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, missing provider key classification, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, categorized provider/config/parser/schema/evidence/DB failures with generic public responses, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
 
 These tests are network-free, do not require API keys, and should be treated as the
 current deterministic backend test suite. They use temporary SQLite databases and
@@ -170,8 +170,18 @@ Covered deterministic behaviors include:
   explicit `deterministic` mode does not call the provider; explicit `provider`
   mode uses a monkeypatched provider boundary in tests; invalid mode fails
   closed.
-- `REPORT_V2_MODEL` is used only in provider mode and falls back to
-  `ANALYSIS_MODEL`, then the existing default model.
+- `REPORT_V2_PROVIDER` is used only in provider mode. Blank or unset values
+  default to `gemini`; allowed values are `gemini` and `groq`; invalid
+  providers fail closed as `provider_config`.
+- Provider selection is explicit. A model name alone does not determine the
+  provider endpoint/client.
+- `REPORT_V2_MODEL` is used only in provider mode. Gemini fallback is
+  `REPORT_V2_MODEL`, then `ANALYSIS_MODEL`, then `gemini-2.5-flash`. Groq
+  fallback is `REPORT_V2_MODEL`, then `llama-3.3-70b-versatile`; Groq does not
+  fall back to `ANALYSIS_MODEL`.
+- `REPORT_V2_API_KEY` may override the selected provider key for Report v2 only.
+  If unset, Report v2 uses `GEMINI_API_KEY` for Gemini and `GROQ_API_KEY` for
+  Groq. Crisis and summary agents do not use `REPORT_V2_API_KEY`.
 - Report Schema v2 prompt/input builder uses
   `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`, fixed curated
   knowledge-base excerpts, safety instructions, safe summary-shaped provider
@@ -187,9 +197,9 @@ Covered deterministic behaviors include:
   ref notes; validates with `ReportAIGeneratedV2`; and limits evidence notes to
   pointer-only labels such as `summary metadata`, `manual input`, and
   `persisted crisis level`.
-- `_call_report_v2_provider(...)` uses the existing Gemini-style provider
-  infrastructure in provider mode, but automated tests monkeypatch the boundary
-  and verify that no live provider is required.
+- `_call_report_v2_provider(...)` uses the selected Gemini or Groq provider path
+  in provider mode, but automated tests monkeypatch the boundary and verify that
+  no live provider is required.
 - Provider failures, invalid JSON, forbidden/manual-only fields, unsafe evidence
   refs, and invalid provider mode fail closed without persisting unsafe output
   as success.
@@ -319,9 +329,10 @@ Guidance:
   provider field metadata normalization. This remains manual evidence only; it
   is not part of pytest or CI.
 - Keep `REPORT_V2_PROVIDER_MODE=deterministic` as the default in
-  `backend/.env.example`; explicit provider mode requires `GEMINI_API_KEY`, and
-  optional `REPORT_V2_MODEL` falls back to `ANALYSIS_MODEL`, then the system
-  default.
+  `backend/.env.example`; explicit provider mode requires a selected provider
+  and corresponding key. `REPORT_V2_API_KEY` may be used as a Report-v2-specific
+  override, otherwise Gemini uses `GEMINI_API_KEY` and Groq uses `GROQ_API_KEY`.
+  Optional `REPORT_V2_MODEL` follows the provider-specific fallback rules.
 - Treat `backend/manual_checks/check_providers.py` as a connectivity script, not
   a unit test.
 - Keep `backend/manual_checks/check_db_smoke.py` as a legacy/manual smoke script

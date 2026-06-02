@@ -274,11 +274,16 @@ These are current code facts and should not be contradicted in new work:
   validation, normalizes provider `source_type` and `missing_reason` variants
   for known `ReportAIGeneratedV2` fields, and rejects unsafe evidence ref notes.
   Unknown/manual-only fields remain rejected. `_call_report_v2_provider(...)`
-  exists as a Gemini-style provider boundary used only when
+  exists as a selected-provider boundary used only when
   `REPORT_V2_PROVIDER_MODE=provider`.
 - `REPORT_V2_PROVIDER_MODE` allows `deterministic` or `provider`; invalid
-  explicit values fail closed. `REPORT_V2_MODEL` is used only in provider mode
-  and falls back to `ANALYSIS_MODEL`, then the existing default model.
+  explicit values fail closed. `REPORT_V2_PROVIDER` explicitly selects
+  `gemini` or `groq` in provider mode and defaults blank/unset values to
+  `gemini`. `REPORT_V2_MODEL` is provider-specific: Gemini falls back to
+  `ANALYSIS_MODEL`, then `gemini-2.5-flash`; Groq falls back to
+  `llama-3.3-70b-versatile` and does not use `ANALYSIS_MODEL`.
+  `REPORT_V2_API_KEY` may override the selected provider key for Report v2 only;
+  if unset, Gemini uses `GEMINI_API_KEY` and Groq uses `GROQ_API_KEY`.
 - Report v2 generation failures are classified internally for diagnostics while
   public route responses remain generic and non-leaking.
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
