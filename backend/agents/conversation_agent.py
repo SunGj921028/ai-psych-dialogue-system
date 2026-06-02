@@ -72,6 +72,10 @@ _ASSISTANT_DIAGNOSTIC_PHRASES: tuple[str, ...] = (
     "你確定是",
 )
 
+DEFAULT_CONVERSATION_MAX_TOKENS = 600
+MIN_CONVERSATION_MAX_TOKENS = 1
+MAX_CONVERSATION_MAX_TOKENS = 4096
+
 
 def _env_int(name: str, default: int) -> int:
     raw = os.getenv(name)
@@ -81,6 +85,19 @@ def _env_int(name: str, default: int) -> int:
         return int(raw)
     except ValueError:
         return default
+
+
+def _conversation_max_tokens() -> int:
+    raw = os.getenv("CONVERSATION_MAX_TOKENS")
+    if raw is None or raw.strip() == "":
+        value = DEFAULT_CONVERSATION_MAX_TOKENS
+    else:
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            logger.warning("Failed to parse CONVERSATION_MAX_TOKENS: %s", exc)
+            value = DEFAULT_CONVERSATION_MAX_TOKENS
+    return max(MIN_CONVERSATION_MAX_TOKENS, min(value, MAX_CONVERSATION_MAX_TOKENS))
 
 
 def _slice_history(history: list[ConversationMessage], window_rounds: int) -> list[ConversationMessage]:
@@ -143,17 +160,7 @@ async def generate_response(
     4) 先不做 streaming，降低 router 複雜度（見檔案頂端 TODO）。
     """
     window_rounds = _env_int("CONVERSATION_WINDOW_SIZE", 10)
-    try:
-        raw_max_tokens = os.getenv("CONVERSATION_MAX_TOKENS")
-        if raw_max_tokens is not None and raw_max_tokens.strip() != "":
-            max_tokens = int(raw_max_tokens)
-        else:
-            max_tokens = 300
-    except Exception as exc:
-        logger.warning("Failed to parse CONVERSATION_MAX_TOKENS: %s", exc)
-        max_tokens = 300
-    # constrain max_tokens to a reasonable range, e.g. [1, 4096]
-    max_tokens = max(1, min(max_tokens, 4096))
+    max_tokens = _conversation_max_tokens()
     model = os.getenv("CONVERSATION_MODEL", "gemini-2.0-flash")
 
     boundary_note = _detect_user_boundary_attempt(user_input)

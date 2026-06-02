@@ -141,3 +141,47 @@ def test_generate_response_sends_only_recent_history_window(monkeypatch):
         "assistant-7",
         "current-user",
     ]
+
+
+def test_generate_response_uses_600_default_max_tokens_when_unset(monkeypatch):
+    fake_client = FakeLLMClient(content="I hear how much this has been weighing on you.")
+    monkeypatch.setattr(conversation_agent, "get_llm_client", fake_client)
+    monkeypatch.delenv("CONVERSATION_MAX_TOKENS", raising=False)
+
+    result = _generate("current-user")
+
+    assert result.is_safe is True
+    assert fake_client.create_calls[0]["max_tokens"] == 600
+
+
+def test_generate_response_respects_valid_max_tokens_override(monkeypatch):
+    fake_client = FakeLLMClient(content="I hear how much this has been weighing on you.")
+    monkeypatch.setattr(conversation_agent, "get_llm_client", fake_client)
+    monkeypatch.setenv("CONVERSATION_MAX_TOKENS", "725")
+
+    result = _generate("current-user")
+
+    assert result.is_safe is True
+    assert fake_client.create_calls[0]["max_tokens"] == 725
+
+
+def test_generate_response_falls_back_to_600_for_invalid_max_tokens(monkeypatch):
+    fake_client = FakeLLMClient(content="I hear how much this has been weighing on you.")
+    monkeypatch.setattr(conversation_agent, "get_llm_client", fake_client)
+    monkeypatch.setenv("CONVERSATION_MAX_TOKENS", "not-a-number")
+
+    result = _generate("current-user")
+
+    assert result.is_safe is True
+    assert fake_client.create_calls[0]["max_tokens"] == 600
+
+
+def test_generate_response_clamps_non_positive_max_tokens_safely(monkeypatch):
+    fake_client = FakeLLMClient(content="I hear how much this has been weighing on you.")
+    monkeypatch.setattr(conversation_agent, "get_llm_client", fake_client)
+    monkeypatch.setenv("CONVERSATION_MAX_TOKENS", "0")
+
+    result = _generate("current-user")
+
+    assert result.is_safe is True
+    assert fake_client.create_calls[0]["max_tokens"] == 1
