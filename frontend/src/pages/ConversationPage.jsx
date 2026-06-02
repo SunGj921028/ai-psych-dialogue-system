@@ -177,6 +177,36 @@ function SectionShell({ children, className = '' }) {
   )
 }
 
+function getCrisisStatusCardConfig(level) {
+  if (level === 'high') {
+    return {
+      ariaLabel: '高風險危機狀態',
+      className:
+        'border-red-300 bg-red-50/90 text-red-950 shadow-[0_12px_30px_rgba(185,28,28,0.12)] ring-1 ring-red-200 dark:border-red-500/70 dark:bg-red-950/70 dark:text-red-100 dark:ring-red-500/30',
+      metaClassName: 'text-red-800 dark:text-red-100',
+      descriptionClassName: 'text-red-900/90 dark:text-red-100/90',
+    }
+  }
+
+  if (level === 'low' || level === 'legacy-flag') {
+    return {
+      ariaLabel: '低度危機狀態',
+      className:
+        'border-amber-200 bg-amber-50/70 text-amber-950 dark:border-amber-500/45 dark:bg-amber-950/45 dark:text-amber-100',
+      metaClassName: 'text-amber-800 dark:text-amber-100',
+      descriptionClassName: 'text-amber-950/85 dark:text-amber-100/85',
+    }
+  }
+
+  return {
+    ariaLabel: '危機狀態',
+    className:
+      'border-slate-200 bg-slate-50/80 text-slate-900 dark:border-slate-700 dark:bg-slate-900/90 dark:text-slate-100',
+    metaClassName: 'text-muted-foreground',
+    descriptionClassName: 'text-muted-foreground',
+  }
+}
+
 function EmptyState({ title, description }) {
   return (
     <div className="rounded-md border border-dashed border-indigo-200/70 bg-indigo-50/45 p-5 text-sm dark:border-indigo-700/60 dark:bg-slate-700">
@@ -338,6 +368,7 @@ export default function ConversationPage() {
   }, [crisisStatus, restoredCrisisDisplay])
   const shouldShowHighCrisisPageAlert =
     crisisDisplay.level === 'high' && crisisStatus?.crisis_level !== 'high'
+  const crisisStatusCardConfig = getCrisisStatusCardConfig(crisisDisplay.level)
 
   const loadCases = useCallback(async () => {
     setIsLoadingCases(true)
@@ -946,14 +977,19 @@ export default function ConversationPage() {
               <AlertTriangle className="h-4 w-4" />
               危機狀態
             </h2>
-            <div className="mt-3 rounded-md border border-slate-200 bg-slate-50/80 p-3 text-sm dark:border-slate-700 dark:bg-slate-900/90">
+            <div
+              aria-label={crisisStatusCardConfig.ariaLabel}
+              className={`mt-3 rounded-md border p-3 text-sm ${crisisStatusCardConfig.className}`}
+            >
               <div className="flex items-center justify-between gap-3">
-                <span className="text-muted-foreground">後端等級</span>
+                <span className={crisisStatusCardConfig.metaClassName}>
+                  風險等級
+                </span>
                 <span className="font-medium">
                   {crisisDisplay.label}
                 </span>
               </div>
-              <p className="mt-3 leading-6 text-muted-foreground">
+              <p className={`mt-3 leading-6 ${crisisStatusCardConfig.descriptionClassName}`}>
                 {crisisDisplay.description}
               </p>
             </div>

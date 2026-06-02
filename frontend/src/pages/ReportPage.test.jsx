@@ -416,6 +416,8 @@ describe('ReportPage behavior', () => {
     ).toBeInTheDocument()
     expect(screen.getByTestId('emotion-dimension-radar-chart')).toBeInTheDocument()
     expect(screen.getByText('焦慮:5')).toBeInTheDocument()
+    expect(screen.getByText('無望:3')).toBeInTheDocument()
+    expect(screen.queryByText('無助:3')).not.toBeInTheDocument()
     expect(screen.getByText('希望:4')).toBeInTheDocument()
     expect(screen.getByText('平均 5/10 · 最新：7/10')).toBeInTheDocument()
 

@@ -164,6 +164,8 @@ describe('ConversationPage crisis behavior', () => {
   test('default crisis metadata uses cautious no-crisis wording', async () => {
     await renderReadyConversationPage()
 
+    expect(screen.getByText('風險等級')).toBeInTheDocument()
+    expect(screen.queryByText('後端等級')).not.toBeInTheDocument()
     expect(screen.getByText('未偵測到危機')).toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
@@ -182,6 +184,8 @@ describe('ConversationPage crisis behavior', () => {
     await renderReadyConversationPage()
 
     expect(await screen.findByRole('alert')).toHaveTextContent(restoredHighText)
+    expect(screen.getByLabelText('高風險危機狀態')).toHaveClass('border-red-300')
+    expect(screen.getByLabelText('高風險危機狀態')).toHaveClass('bg-red-50/90')
     expect(screen.getAllByText(restoredHighText).length).toBeGreaterThan(0)
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
@@ -201,6 +205,7 @@ describe('ConversationPage crisis behavior', () => {
 
     const dialog = await screen.findByRole('dialog', { name: '高風險提醒' })
     expect(dialog).toBeInTheDocument()
+    expect(screen.getByLabelText('高風險危機狀態')).toHaveClass('border-red-300')
     expect(within(dialog).getByRole('button', { name: '我已了解' })).toBeInTheDocument()
     expect(
       screen.queryByText(
