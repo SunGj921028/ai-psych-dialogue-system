@@ -146,8 +146,9 @@ def test_generate_report_v2_ai_draft_provider_mode_calls_boundary_and_parses_jso
     monkeypatch.setenv("REPORT_V2_MODEL", "report-v2-test-model")
     calls = {}
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         calls["messages"] = messages
+        calls["provider"] = provider
         calls["model"] = model
         return """
         {
@@ -193,6 +194,7 @@ def test_generate_report_v2_ai_draft_provider_mode_calls_boundary_and_parses_jso
 
     assert result.chief_complaint_draft.value == "可能與工作壓力相關，仍需諮商師確認。"
     assert result.chief_complaint_draft.evidence_refs[0].note == "summary metadata"
+    assert calls["provider"] == "gemini"
     assert calls["model"] == "report-v2-test-model"
     assert calls["messages"][0]["role"] == "system"
     assert calls["messages"][1]["role"] == "user"
@@ -206,7 +208,8 @@ def test_generate_report_v2_ai_draft_provider_mode_defaults_model_from_analysis_
     monkeypatch.setenv("ANALYSIS_MODEL", "analysis-model-for-v2")
     calls = {}
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
+        calls["provider"] = provider
         calls["model"] = model
         return {}
 
@@ -227,7 +230,212 @@ def test_generate_report_v2_ai_draft_provider_mode_defaults_model_from_analysis_
     result = anyio.run(run_v2_draft)
 
     assert isinstance(result, ReportAIGeneratedV2)
+    assert calls["provider"] == "gemini"
     assert calls["model"] == "analysis-model-for-v2"
+
+
+def test_generate_report_v2_ai_draft_provider_mode_blank_provider_defaults_to_gemini(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "   ")
+    monkeypatch.setenv("REPORT_V2_MODEL", "report-v2-explicit-model")
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, provider, model):
+        calls["provider"] = provider
+        calls["model"] = model
+        return {}
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert calls == {
+        "provider": "gemini",
+        "model": "report-v2-explicit-model",
+    }
+
+
+def test_generate_report_v2_ai_draft_provider_mode_explicit_gemini_uses_gemini(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "gemini")
+    monkeypatch.setenv("REPORT_V2_MODEL", "report-v2-gemini-model")
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, provider, model):
+        calls["provider"] = provider
+        calls["model"] = model
+        return {}
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert calls == {
+        "provider": "gemini",
+        "model": "report-v2-gemini-model",
+    }
+
+
+def test_generate_report_v2_ai_draft_provider_mode_groq_uses_groq_default_model(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "groq")
+    monkeypatch.delenv("REPORT_V2_MODEL", raising=False)
+    monkeypatch.setenv("ANALYSIS_MODEL", "analysis-model-should-not-be-used-for-groq")
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, provider, model):
+        calls["provider"] = provider
+        calls["model"] = model
+        return {}
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert calls == {
+        "provider": "groq",
+        "model": "llama-3.3-70b-versatile",
+    }
+
+
+def test_generate_report_v2_ai_draft_provider_mode_groq_uses_configured_model(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "groq")
+    monkeypatch.setenv("REPORT_V2_MODEL", "groq-report-v2-model")
+    monkeypatch.setenv("ANALYSIS_MODEL", "analysis-model-should-not-be-used-for-groq")
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, provider, model):
+        calls["provider"] = provider
+        calls["model"] = model
+        return {}
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert calls == {
+        "provider": "groq",
+        "model": "groq-report-v2-model",
+    }
+
+
+def test_generate_report_v2_ai_draft_provider_mode_gemini_uses_default_model(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "gemini")
+    monkeypatch.delenv("REPORT_V2_MODEL", raising=False)
+    monkeypatch.delenv("ANALYSIS_MODEL", raising=False)
+    calls = {}
+
+    async def fake_call_report_v2_provider(messages, *, provider, model):
+        calls["provider"] = provider
+        calls["model"] = model
+        return {}
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert calls == {
+        "provider": "gemini",
+        "model": "gemini-2.5-flash",
+    }
+
+
+def test_generate_report_v2_ai_draft_invalid_provider_fails_closed(monkeypatch):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "surprise-provider")
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_config"
+        assert "surprise-provider" not in str(exc)
+        return
+    raise AssertionError("invalid report v2 provider should fail closed")
 
 
 def test_generate_report_v2_ai_draft_provider_mode_invalid_output_fails_closed(
@@ -235,7 +443,7 @@ def test_generate_report_v2_ai_draft_provider_mode_invalid_output_fails_closed(
 ):
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         return "not json"
 
     monkeypatch.setattr(
@@ -284,7 +492,7 @@ def test_generate_report_v2_ai_draft_provider_api_failure_is_classified(monkeypa
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     sentinel = "PRIVATE_PROVIDER_EXCEPTION_DO_NOT_LEAK"
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         raise RuntimeError(sentinel)
 
     monkeypatch.setattr(
@@ -314,7 +522,7 @@ def test_generate_report_v2_ai_draft_invalid_provider_json_is_classified(monkeyp
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     sentinel = "RAW_PROVIDER_RESPONSE_DO_NOT_LEAK"
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         return f"{sentinel}: not json"
 
     monkeypatch.setattr(
@@ -343,7 +551,7 @@ def test_generate_report_v2_ai_draft_invalid_provider_json_is_classified(monkeyp
 def test_generate_report_v2_ai_draft_schema_validation_failure_is_classified(monkeypatch):
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         return {
             "formal_diagnosis_notes": {
                 "label_zh": "manual-only",
@@ -377,7 +585,7 @@ def test_generate_report_v2_ai_draft_schema_validation_failure_is_classified(mon
 def test_generate_report_v2_ai_draft_unsafe_evidence_refs_are_classified(monkeypatch):
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         return {
             "chief_complaint_draft": {
                 "value": "safe draft value",
@@ -419,7 +627,7 @@ def test_generate_report_v2_ai_draft_provider_mode_forbidden_fields_fail_closed(
 ):
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         return {
             "formal_diagnosis_notes": {
                 "label_zh": "閮箸?賊??酉",
@@ -456,7 +664,7 @@ def test_generate_report_v2_ai_draft_provider_exception_propagates_without_fallb
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     sentinel = "PRIVATE_PROVIDER_FAILURE_DO_NOT_PERSIST"
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         raise RuntimeError(sentinel)
 
     monkeypatch.setattr(
@@ -908,13 +1116,14 @@ def test_report_v2_ai_generated_fields_do_not_include_manual_only_risk_fields():
     assert "formal_risk_assessment" not in analysis_agent.REPORT_V2_ALLOWED_AI_FIELDS
 
 
-def test_call_report_v2_provider_boundary_uses_gemini_client_and_model(monkeypatch):
+def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(monkeypatch):
     fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
     monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
 
     async def run_provider_boundary():
         return await analysis_agent._call_report_v2_provider(
             [{"role": "system", "content": "unused"}],
+            provider="gemini",
             model="report-v2-boundary-model",
         )
 
@@ -928,6 +1137,170 @@ def test_call_report_v2_provider_boundary_uses_gemini_client_and_model(monkeypat
     ]
     assert fake_client.create_calls[0]["temperature"] == 0.2
     assert fake_client.create_calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_call_report_v2_provider_boundary_uses_selected_groq_client_and_model(monkeypatch):
+    fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
+
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}],
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+        )
+
+    result = anyio.run(run_provider_boundary)
+
+    assert result == '{"chief_complaint_draft": {}}'
+    assert fake_client.calls == [{"provider": "groq"}]
+    assert fake_client.create_calls[0]["model"] == "llama-3.3-70b-versatile"
+    assert fake_client.create_calls[0]["messages"] == [
+        {"role": "system", "content": "unused"}
+    ]
+    assert fake_client.create_calls[0]["temperature"] == 0.2
+    assert fake_client.create_calls[0]["response_format"] == {"type": "json_object"}
+
+
+def test_call_report_v2_provider_uses_report_api_key_override_for_groq(monkeypatch):
+    report_key = "REPORT_V2_GROQ_KEY_DO_NOT_LEAK"
+    shared_key = "SHARED_GROQ_KEY_SHOULD_NOT_BE_USED"
+    fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
+    constructed = {}
+
+    def fake_async_openai(*, api_key, base_url):
+        constructed["api_key"] = api_key
+        constructed["base_url"] = base_url
+        return fake_client
+
+    def fail_if_shared_client_is_used(provider):
+        raise AssertionError(f"shared provider client should not be used: {provider}")
+
+    monkeypatch.setenv("REPORT_V2_API_KEY", report_key)
+    monkeypatch.setenv("GROQ_API_KEY", shared_key)
+    monkeypatch.setattr(analysis_agent, "AsyncOpenAI", fake_async_openai, raising=False)
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fail_if_shared_client_is_used)
+
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}],
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+        )
+
+    result = anyio.run(run_provider_boundary)
+
+    assert result == '{"chief_complaint_draft": {}}'
+    assert constructed["api_key"] == report_key
+    assert shared_key != constructed["api_key"]
+    assert constructed["base_url"] == "https://api.groq.com/openai/v1"
+
+
+def test_call_report_v2_provider_uses_report_api_key_override_for_gemini(monkeypatch):
+    report_key = "REPORT_V2_GEMINI_KEY_DO_NOT_LEAK"
+    shared_key = "SHARED_GEMINI_KEY_SHOULD_NOT_BE_USED"
+    fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
+    constructed = {}
+
+    def fake_async_openai(*, api_key, base_url):
+        constructed["api_key"] = api_key
+        constructed["base_url"] = base_url
+        return fake_client
+
+    def fail_if_shared_client_is_used(provider):
+        raise AssertionError(f"shared provider client should not be used: {provider}")
+
+    monkeypatch.setenv("REPORT_V2_API_KEY", report_key)
+    monkeypatch.setenv("GEMINI_API_KEY", shared_key)
+    monkeypatch.setattr(analysis_agent, "AsyncOpenAI", fake_async_openai, raising=False)
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fail_if_shared_client_is_used)
+
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}],
+            provider="gemini",
+            model="gemini-2.5-flash",
+        )
+
+    result = anyio.run(run_provider_boundary)
+
+    assert result == '{"chief_complaint_draft": {}}'
+    assert constructed["api_key"] == report_key
+    assert shared_key != constructed["api_key"]
+    assert constructed["base_url"] == "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+
+def test_call_report_v2_provider_without_override_uses_groq_provider_key_path(monkeypatch):
+    monkeypatch.delenv("REPORT_V2_API_KEY", raising=False)
+    monkeypatch.setenv("GROQ_API_KEY", "SHARED_GROQ_KEY")
+    fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
+
+    def fail_if_override_client_is_used(*, api_key, base_url):
+        raise AssertionError("report-specific override client should not be used")
+
+    monkeypatch.setattr(analysis_agent, "AsyncOpenAI", fail_if_override_client_is_used, raising=False)
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
+
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}],
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+        )
+
+    result = anyio.run(run_provider_boundary)
+
+    assert result == '{"chief_complaint_draft": {}}'
+    assert fake_client.calls == [{"provider": "groq"}]
+
+
+def test_call_report_v2_provider_without_override_uses_gemini_provider_key_path(monkeypatch):
+    monkeypatch.delenv("REPORT_V2_API_KEY", raising=False)
+    monkeypatch.setenv("GEMINI_API_KEY", "SHARED_GEMINI_KEY")
+    fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
+
+    def fail_if_override_client_is_used(*, api_key, base_url):
+        raise AssertionError("report-specific override client should not be used")
+
+    monkeypatch.setattr(analysis_agent, "AsyncOpenAI", fail_if_override_client_is_used, raising=False)
+    monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
+
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}],
+            provider="gemini",
+            model="gemini-2.5-flash",
+        )
+
+    result = anyio.run(run_provider_boundary)
+
+    assert result == '{"chief_complaint_draft": {}}'
+    assert fake_client.calls == [{"provider": "gemini"}]
+
+
+def test_call_report_v2_provider_missing_key_maps_to_provider_config(monkeypatch):
+    sentinel = "PRIVATE_PROVIDER_KEY_NAME_OR_VALUE_DO_NOT_LEAK"
+
+    def missing_key_client(provider):
+        raise ValueError(sentinel)
+
+    monkeypatch.delenv("REPORT_V2_API_KEY", raising=False)
+    monkeypatch.setattr(analysis_agent, "get_llm_client", missing_key_client)
+
+    async def run_provider_boundary():
+        return await analysis_agent._call_report_v2_provider(
+            [{"role": "system", "content": "unused"}],
+            provider="groq",
+            model="llama-3.3-70b-versatile",
+        )
+
+    try:
+        anyio.run(run_provider_boundary)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_config"
+        assert sentinel not in str(exc)
+        return
+    raise AssertionError("missing selected provider key should be provider_config")
 
 
 def test_generate_report_uses_valid_provider_json_and_code_owned_disclaimer(

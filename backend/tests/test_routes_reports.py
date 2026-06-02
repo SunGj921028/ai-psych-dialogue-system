@@ -441,8 +441,9 @@ def test_generate_report_v2_draft_provider_mode_persists_valid_provider_output(
     ).json()
     calls = {}
 
-    async def fake_call_report_v2_provider(messages, *, model):
+    async def fake_call_report_v2_provider(messages, *, provider, model):
         calls["messages"] = messages
+        calls["provider"] = provider
         calls["model"] = model
         return {
             "chief_complaint_draft": {
@@ -480,6 +481,7 @@ def test_generate_report_v2_draft_provider_mode_persists_valid_provider_output(
             "note": "summary metadata",
         }
     ]
+    assert calls["provider"] == "gemini"
     assert calls["model"] == "report-v2-route-model"
     assert calls["messages"][0]["role"] == "system"
 
@@ -518,7 +520,7 @@ def test_generate_report_v2_draft_provider_failure_is_generic_and_does_not_overw
         f"/api/cases/{case_id}/sessions/session-v2-provider-failure/report-drafts"
     ).json()
 
-    async def first_provider_output(messages, *, model):
+    async def first_provider_output(messages, *, provider, model):
         return {
             "chief_complaint_draft": {
                 "label_zh": "銝餉迄??",
@@ -544,7 +546,7 @@ def test_generate_report_v2_draft_provider_failure_is_generic_and_does_not_overw
     assert first.status_code == 200
     assert first.json()["ai_generated"]["chief_complaint_draft"]["value"] == "existing safe provider draft"
 
-    async def failing_provider(messages, *, model):
+    async def failing_provider(messages, *, provider, model):
         raise RuntimeError(sentinel)
 
     monkeypatch.setattr(
@@ -586,6 +588,35 @@ def test_generate_report_v2_draft_provider_config_failure_is_generic_and_classif
     assert "surprise-provider" not in caplog.text
 
 
+def test_generate_report_v2_draft_missing_provider_key_is_generic_and_classified(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "groq")
+    monkeypatch.delenv("REPORT_V2_API_KEY", raising=False)
+    sentinel = "PRIVATE_PROVIDER_KEY_NAME_OR_VALUE_DO_NOT_LEAK"
+    _, created, _ = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-missing-provider-key",
+    )
+
+    def missing_key_client(provider):
+        raise ValueError(sentinel)
+
+    monkeypatch.setattr("agents.analysis_agent.get_llm_client", missing_key_client)
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Failed to generate report draft"}
+    assert sentinel not in response.text
+    assert "category=provider_config" in caplog.text
+    assert sentinel not in caplog.text
+
+
 def test_generate_report_v2_draft_provider_api_exception_is_generic_and_classified(
     client,
     monkeypatch,
@@ -593,13 +624,14 @@ def test_generate_report_v2_draft_provider_api_exception_is_generic_and_classifi
 ):
     caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "groq")
     sentinel = "PRIVATE_PROVIDER_API_EXCEPTION_DO_NOT_LEAK"
     _, created, _ = _create_report_v2_draft_with_summary(
         client,
         session_id="session-v2-provider-api-failure",
     )
 
-    async def failing_provider(messages, *, model):
+    async def failing_provider(messages, *, provider, model):
         raise RuntimeError(sentinel)
 
     monkeypatch.setattr(
@@ -623,13 +655,14 @@ def test_generate_report_v2_draft_invalid_provider_json_is_generic_and_non_leaki
 ):
     caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "groq")
     sentinel = "RAW_PROVIDER_RESPONSE_DO_NOT_LEAK"
     _, created, _ = _create_report_v2_draft_with_summary(
         client,
         session_id="session-v2-invalid-provider-json",
     )
 
-    async def invalid_json_provider(messages, *, model):
+    async def invalid_json_provider(messages, *, provider, model):
         return f"{sentinel}: not json"
 
     monkeypatch.setattr(
@@ -659,7 +692,7 @@ def test_generate_report_v2_draft_schema_validation_failure_is_generic_and_class
         session_id="session-v2-schema-validation-failure",
     )
 
-    async def manual_only_provider_output(messages, *, model):
+    async def manual_only_provider_output(messages, *, provider, model):
         return {
             "formal_diagnosis_notes": {
                 "label_zh": "manual-only",
@@ -695,7 +728,7 @@ def test_generate_report_v2_draft_unsafe_evidence_refs_are_generic_and_classifie
         session_id="session-v2-unsafe-evidence-ref",
     )
 
-    async def unsafe_evidence_provider_output(messages, *, model):
+    async def unsafe_evidence_provider_output(messages, *, provider, model):
         return {
             "chief_complaint_draft": {
                 "value": "safe draft value",
