@@ -53,6 +53,25 @@ def _create_report_v2_draft_with_summary(
     return case_id, created, summary_row
 
 
+def _valid_report_v2_provider_output(summary_row: dict, value: str) -> dict:
+    return {
+        "chief_complaint_draft": {
+            "label_zh": "chief complaint draft",
+            "value": value,
+            "source_type": "ai",
+            "missing_reason": None,
+            "needs_review": True,
+            "evidence_refs": [
+                {
+                    "turn_number": 1,
+                    "summary_id": summary_row["id"],
+                    "note": "summary metadata",
+                }
+            ],
+        }
+    }
+
+
 def test_generate_report_converts_db_summaries_to_turn_summary(client, monkeypatch):
     case_id = _create_case(client)
     captured = {}
@@ -486,6 +505,122 @@ def test_generate_report_v2_draft_provider_mode_persists_valid_provider_output(
     assert calls["messages"][0]["role"] == "system"
 
 
+def test_generate_report_v2_draft_provider_failure_fallback_success_persists_output(
+    client,
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "gemini")
+    monkeypatch.setenv("REPORT_V2_MODEL", "primary-route-model")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "groq")
+    case_id, created, summary_row = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-fallback-success",
+    )
+    calls = []
+    sentinel = "PRIMARY_PROVIDER_FAILURE_DO_NOT_LEAK"
+
+    async def provider_with_fallback_success(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        if len(calls) == 1:
+            raise RuntimeError(sentinel)
+        return _valid_report_v2_provider_output(summary_row, "fallback route draft")
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        provider_with_fallback_success,
+    )
+
+    response = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ai_generated"
+    assert data["generated_at"]
+    assert data["final_report"] is None
+    assert data["ai_generated"]["chief_complaint_draft"]["value"] == "fallback route draft"
+    assert data["source_refs"] == [
+        {
+            "turn_number": 1,
+            "summary_id": summary_row["id"],
+            "note": "summary metadata",
+        }
+    ]
+    assert sentinel not in response.text
+    assert calls == [
+        ("gemini", "primary-route-model", {}),
+        ("groq", "llama-3.3-70b-versatile", {}),
+    ]
+    current = client.get(
+        f"/api/cases/{case_id}/sessions/session-v2-fallback-success/report-drafts/current"
+    )
+    assert current.status_code == 200
+    assert current.json()["ai_generated"]["chief_complaint_draft"]["value"] == "fallback route draft"
+    assert current.json()["final_report"] is None
+
+
+def test_generate_report_v2_draft_provider_failure_fallback_failure_does_not_overwrite(
+    client,
+    monkeypatch,
+    caplog,
+):
+    caplog.set_level(logging.WARNING, logger="routers.reports")
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "gemini")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "groq")
+    case_id, created, summary_row = _create_report_v2_draft_with_summary(
+        client,
+        session_id="session-v2-fallback-failure",
+    )
+
+    async def first_provider_output(messages, *, provider, model, **kwargs):
+        return _valid_report_v2_provider_output(summary_row, "existing fallback-safe draft")
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        first_provider_output,
+    )
+    first = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+    assert first.status_code == 200
+    assert first.json()["ai_generated"]["chief_complaint_draft"]["value"] == "existing fallback-safe draft"
+
+    calls = []
+    primary_sentinel = "PRIMARY_PROVIDER_FAILURE_DO_NOT_LEAK"
+    fallback_sentinel = "FALLBACK_PROVIDER_FAILURE_DO_NOT_LEAK"
+
+    async def failing_primary_and_fallback(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        if len(calls) == 1:
+            raise RuntimeError(primary_sentinel)
+        raise RuntimeError(fallback_sentinel)
+
+    monkeypatch.setattr(
+        "agents.analysis_agent._call_report_v2_provider",
+        failing_primary_and_fallback,
+    )
+
+    second = client.post(f"/api/report-drafts/{created['draft_id']}/generate")
+    current = client.get(
+        f"/api/cases/{case_id}/sessions/session-v2-fallback-failure/report-drafts/current"
+    )
+
+    assert second.status_code == 500
+    assert second.json() == {"detail": "Failed to generate report draft"}
+    assert primary_sentinel not in second.text
+    assert fallback_sentinel not in second.text
+    assert primary_sentinel not in caplog.text
+    assert fallback_sentinel not in caplog.text
+    assert "category=provider_api_failure" in caplog.text
+    assert calls == [
+        ("gemini", "gemini-2.5-flash", {}),
+        ("groq", "llama-3.3-70b-versatile", {}),
+    ]
+    assert current.status_code == 200
+    assert current.json()["ai_generated"]["chief_complaint_draft"]["value"] == "existing fallback-safe draft"
+
+
 def test_generate_report_v2_draft_provider_failure_is_generic_and_does_not_overwrite(
     client,
     monkeypatch,
@@ -656,13 +791,16 @@ def test_generate_report_v2_draft_invalid_provider_json_is_generic_and_non_leaki
     caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     monkeypatch.setenv("REPORT_V2_PROVIDER", "groq")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
     sentinel = "RAW_PROVIDER_RESPONSE_DO_NOT_LEAK"
     _, created, _ = _create_report_v2_draft_with_summary(
         client,
         session_id="session-v2-invalid-provider-json",
     )
+    calls = []
 
     async def invalid_json_provider(messages, *, provider, model):
+        calls.append((provider, model))
         return f"{sentinel}: not json"
 
     monkeypatch.setattr(
@@ -677,6 +815,7 @@ def test_generate_report_v2_draft_invalid_provider_json_is_generic_and_non_leaki
     assert sentinel not in response.text
     assert "category=invalid_provider_json" in caplog.text
     assert sentinel not in caplog.text
+    assert calls == [("groq", "llama-3.3-70b-versatile")]
 
 
 def test_generate_report_v2_draft_schema_validation_failure_is_generic_and_classified(
@@ -686,13 +825,16 @@ def test_generate_report_v2_draft_schema_validation_failure_is_generic_and_class
 ):
     caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
     sentinel = "SCHEMA_PROVIDER_PAYLOAD_DO_NOT_LEAK"
     _, created, _ = _create_report_v2_draft_with_summary(
         client,
         session_id="session-v2-schema-validation-failure",
     )
+    calls = []
 
     async def manual_only_provider_output(messages, *, provider, model):
+        calls.append((provider, model))
         return {
             "formal_diagnosis_notes": {
                 "label_zh": "manual-only",
@@ -713,6 +855,7 @@ def test_generate_report_v2_draft_schema_validation_failure_is_generic_and_class
     assert sentinel not in response.text
     assert "category=schema_validation_failed" in caplog.text
     assert sentinel not in caplog.text
+    assert calls == [("gemini", "gemini-2.5-flash")]
 
 
 def test_generate_report_v2_draft_unsafe_evidence_refs_are_generic_and_classified(
@@ -722,13 +865,16 @@ def test_generate_report_v2_draft_unsafe_evidence_refs_are_generic_and_classifie
 ):
     caplog.set_level(logging.WARNING, logger="routers.reports")
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
     sentinel = "RAW_EVIDENCE_NOTE_DO_NOT_LEAK"
     _, created, summary_row = _create_report_v2_draft_with_summary(
         client,
         session_id="session-v2-unsafe-evidence-ref",
     )
+    calls = []
 
     async def unsafe_evidence_provider_output(messages, *, provider, model):
+        calls.append((provider, model))
         return {
             "chief_complaint_draft": {
                 "value": "safe draft value",
@@ -755,6 +901,7 @@ def test_generate_report_v2_draft_unsafe_evidence_refs_are_generic_and_classifie
     assert sentinel not in response.text
     assert "category=unsafe_evidence_refs" in caplog.text
     assert sentinel not in caplog.text
+    assert calls == [("gemini", "gemini-2.5-flash")]
 
 
 def test_generate_report_v2_draft_missing_draft_returns_404(client):

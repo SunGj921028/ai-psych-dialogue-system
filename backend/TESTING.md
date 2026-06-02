@@ -31,16 +31,20 @@ Current deterministic tests live under `backend/tests/`:
 | `backend/tests/test_crisis_agent.py` | automated agent tests | Monkeypatches the crisis LLM client and covers valid JSON, fallback, normalization, contradiction repair, crisis speaker-attribution refinement, third-person/caregiver and quoted-content handling, passive hopelessness as low, inability to guarantee short-term safety as high, and heuristic crisis levels. |
 | `backend/tests/test_summary_agent.py` | automated agent tests | Monkeypatches the summary LLM client and covers valid JSON, score clamping, theme/key-statement normalization, external crisis flag ownership, and fallback. |
 | `backend/tests/test_conversation_agent.py` | automated agent tests | Monkeypatches the conversation LLM client and covers safe output, unsafe diagnostic replacement, provider fallback, boundary warnings, and history windowing. |
-| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, post-demo Report v2 risk-language/client-understanding/theoretical-orientation prompt guidance, message safety instructions, provider mode with monkeypatched provider, explicit Gemini/Groq provider selection, provider-specific model fallback behavior, optional `REPORT_V2_API_KEY` override behavior, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, provider error classification, and provider boundary behavior without live provider calls. |
+| `backend/tests/test_analysis_agent.py` | automated agent tests | Monkeypatches the analysis LLM client and Report v2 provider boundary; covers insufficient data, fixed disclaimer, code-owned `has_crisis` and `peak_turn`, v1 fallback, v1 preservation, deterministic/conservative v2 AI draft fallback, Report v2 prompt payload safety/source shaping, post-demo Report v2 risk-language/client-understanding/theoretical-orientation prompt guidance, message safety instructions, provider mode with monkeypatched provider, explicit Gemini/Groq provider selection, provider-specific model fallback behavior, optional `REPORT_V2_API_KEY` override behavior, opt-in Report v2 fallback disabled/enabled behavior, fallback provider/model/key selection, invalid fallback provider fail-closed behavior, non-eligible parser/schema/evidence failures not falling back, valid provider parser output, invalid/manual-only/unsafe parser rejection, provider exception and invalid mode fail-closed behavior, provider error classification, and provider boundary behavior without live provider calls. |
 | `backend/tests/test_routes_cases.py` | automated route tests | Covers case create/list/get/delete and missing-case 404 behavior. |
 | `backend/tests/test_routes_conversation.py` | automated route tests | Monkeypatches agent calls, verifies persistence, persisted summary `crisis_level` from mocked crisis detector output, summary API exposure, public response shape, conversation ensure/touch behavior, POST session creation/idempotency, title normalization/exposure and duplicate no-overwrite behavior, PATCH session title success/trim/clear/validation/not-found behavior, archive/unarchive behavior, default archived-session exclusion, `include_archived=true` listing, legacy/backfilled rename behavior, missing-case behavior, legacy null titles, and safe session-listing metadata behavior. |
 | `backend/tests/test_routes_errors.py` | automated route error tests | Covers non-leaking route failure behavior, including session creation/listing/title-update/archive/unarchive helper failures, report draft helper failures, and Report v2 generation diagnostics that do not leak clinical/provider details. |
-| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, missing provider key classification, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, categorized provider/config/parser/schema/evidence/DB failures with generic public responses, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
+| `backend/tests/test_routes_reports.py` | automated route tests | Covers v1 report route summary conversion and insufficient-data behavior, plus Report Schema v2 draft current/create/manual-input/generate endpoints, idempotent create behavior, manual input persistence, v2 route success, provider mode success/failure with monkeypatched provider, Report v2 fallback success persistence, fallback failure generic response/no-overwrite behavior, invalid JSON/schema/evidence failures not falling back, missing provider key classification, no overwrite on provider failure, no-summary provider non-call behavior, missing draft 404, no summaries 422, invalid agent output, categorized provider/config/parser/schema/evidence/DB failures with generic public responses, generated JSON persistence, status transition, `generated_at`, manual input preservation, final report null, safe source refs, missing-resource 404 behavior, and invalid manual input 422 behavior. |
 
 These tests are network-free, do not require API keys, and should be treated as the
 current deterministic backend test suite. They use temporary SQLite databases and
 mocked or monkeypatched LLM clients/functions where provider calls would otherwise
 occur.
+
+Current Report v2 fallback verification status: the full deterministic backend
+suite passed after opt-in provider fallback support with 219 tests. No live
+provider calls are part of CI or the default automated suite.
 
 Reported post-demo verification status: backend deterministic tests for the
 crisis speaker-attribution refinement passed. No live provider checks are part
@@ -182,6 +186,15 @@ Covered deterministic behaviors include:
 - `REPORT_V2_API_KEY` may override the selected provider key for Report v2 only.
   If unset, Report v2 uses `GEMINI_API_KEY` for Gemini and `GROQ_API_KEY` for
   Groq. Crisis and summary agents do not use `REPORT_V2_API_KEY`.
+- `REPORT_V2_FALLBACK_ENABLED` defaults disabled. Truthy values `1`, `true`,
+  `yes`, and `on` enable a Report-v2-only fallback provider path in provider
+  mode after `provider_api_failure` only. Fallback does not apply to
+  deterministic Report v2 mode, crisis/summary/conversation agents, v1 report
+  generation, invalid JSON, schema validation failures, unsafe evidence refs,
+  missing summaries, provider config failures, or DB persistence failures.
+  Fallback output must pass the same parser normalization and
+  `ReportAIGeneratedV2` validation before persistence, and existing
+  `ai_generated_json` remains intact when both primary and fallback fail.
 - Report Schema v2 prompt/input builder uses
   `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`, fixed curated
   knowledge-base excerpts, safety instructions, safe summary-shaped provider

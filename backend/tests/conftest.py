@@ -15,6 +15,24 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 
+@pytest.fixture(autouse=True)
+def isolate_provider_env(monkeypatch):
+    for name in (
+        "REPORT_V2_PROVIDER_MODE",
+        "REPORT_V2_PROVIDER",
+        "REPORT_V2_MODEL",
+        "REPORT_V2_API_KEY",
+        "REPORT_V2_FALLBACK_ENABLED",
+        "REPORT_V2_FALLBACK_PROVIDER",
+        "REPORT_V2_FALLBACK_MODEL",
+        "REPORT_V2_FALLBACK_API_KEY",
+        "ANALYSIS_MODEL",
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 def _cleanup_sqlite_files(db_path: Path) -> None:
     for path in (db_path, Path(f"{db_path}-wal"), Path(f"{db_path}-shm")):
         with suppress(FileNotFoundError, PermissionError):

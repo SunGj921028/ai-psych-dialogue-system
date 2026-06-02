@@ -43,6 +43,25 @@ def _generate_report(summaries: list[TurnSummary]):
     )
 
 
+def _valid_report_v2_provider_output(value: str = "safe provider draft") -> dict:
+    return {
+        "chief_complaint_draft": {
+            "label_zh": "chief complaint draft",
+            "value": value,
+            "source_type": "ai",
+            "missing_reason": None,
+            "needs_review": True,
+            "evidence_refs": [
+                {
+                    "turn_number": 1,
+                    "summary_id": "summary-1",
+                    "note": "summary metadata",
+                }
+            ],
+        }
+    }
+
+
 def test_generate_report_with_insufficient_summaries_does_not_call_provider(
     monkeypatch,
 ):
@@ -516,6 +535,279 @@ def test_generate_report_v2_ai_draft_provider_api_failure_is_classified(monkeypa
         assert sentinel not in str(exc)
         return
     raise AssertionError("provider API failure should be classified")
+
+
+def test_generate_report_v2_ai_draft_fallback_disabled_does_not_call_fallback(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.delenv("REPORT_V2_FALLBACK_ENABLED", raising=False)
+    calls = []
+
+    async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        raise RuntimeError("PRIVATE_PRIMARY_FAILURE_DO_NOT_LEAK")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_api_failure"
+        assert calls == [("gemini", "gemini-2.5-flash", {})]
+        return
+    raise AssertionError("provider API failure should fail without fallback")
+
+
+def test_generate_report_v2_ai_draft_fallback_enabled_uses_groq_default_model(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_PROVIDER", "gemini")
+    monkeypatch.delenv("REPORT_V2_MODEL", raising=False)
+    monkeypatch.delenv("ANALYSIS_MODEL", raising=False)
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "groq")
+    monkeypatch.delenv("REPORT_V2_FALLBACK_MODEL", raising=False)
+    calls = []
+
+    async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        if len(calls) == 1:
+            raise RuntimeError("PRIVATE_PRIMARY_FAILURE_DO_NOT_LEAK")
+        return _valid_report_v2_provider_output("fallback safe draft")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert result.chief_complaint_draft.value == "fallback safe draft"
+    assert calls[0] == ("gemini", "gemini-2.5-flash", {})
+    assert calls[1] == ("groq", "llama-3.3-70b-versatile", {})
+
+
+def test_generate_report_v2_ai_draft_primary_success_does_not_validate_fallback_config(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "on")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "surprise-provider")
+    calls = []
+
+    async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        return _valid_report_v2_provider_output("primary safe draft")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert result.chief_complaint_draft.value == "primary safe draft"
+    assert calls == [("gemini", "gemini-2.5-flash", {})]
+
+
+def test_generate_report_v2_ai_draft_invalid_fallback_provider_fails_only_when_needed(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "1")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "surprise-provider")
+    calls = []
+
+    async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        raise RuntimeError("PRIVATE_PRIMARY_FAILURE_DO_NOT_LEAK")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    try:
+        anyio.run(run_v2_draft)
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "provider_config"
+        assert calls == [("gemini", "gemini-2.5-flash", {})]
+        return
+    raise AssertionError("invalid fallback provider should fail closed")
+
+
+def test_generate_report_v2_ai_draft_fallback_uses_configured_model_and_key(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "yes")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "groq")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_MODEL", "fallback-groq-model")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_API_KEY", "FALLBACK_KEY_DO_NOT_LEAK")
+    monkeypatch.setenv("REPORT_V2_API_KEY", "PRIMARY_KEY_SHOULD_NOT_BE_USED_BY_FALLBACK")
+    calls = []
+
+    async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        if len(calls) == 1:
+            raise RuntimeError("PRIVATE_PRIMARY_FAILURE_DO_NOT_LEAK")
+        return _valid_report_v2_provider_output("fallback configured draft")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert result.chief_complaint_draft.value == "fallback configured draft"
+    assert calls[1] == (
+        "groq",
+        "fallback-groq-model",
+        {"api_key_override": "FALLBACK_KEY_DO_NOT_LEAK"},
+    )
+
+
+def test_generate_report_v2_ai_draft_fallback_api_key_uses_report_key_when_unset(
+    monkeypatch,
+):
+    monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
+    monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "groq")
+    monkeypatch.delenv("REPORT_V2_FALLBACK_API_KEY", raising=False)
+    monkeypatch.setenv("REPORT_V2_API_KEY", "REPORT_KEY_FOR_FALLBACK")
+    calls = []
+
+    async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+        calls.append((provider, model, kwargs))
+        if len(calls) == 1:
+            raise RuntimeError("PRIVATE_PRIMARY_FAILURE_DO_NOT_LEAK")
+        return _valid_report_v2_provider_output("fallback report key draft")
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_call_report_v2_provider",
+        fake_call_report_v2_provider,
+    )
+
+    async def run_v2_draft():
+        return await analysis_agent.generate_report_v2_ai_draft(
+            case_id="case-1",
+            session_id="session-1",
+            summaries=[],
+            manual_input=ReportManualInputV2(),
+        )
+
+    result = anyio.run(run_v2_draft)
+
+    assert result.chief_complaint_draft.value == "fallback report key draft"
+    assert calls[1][2] == {"api_key_override": "REPORT_KEY_FOR_FALLBACK"}
+
+
+def test_generate_report_v2_ai_draft_non_api_failures_do_not_call_fallback(
+    monkeypatch,
+):
+    cases = [
+        ("invalid_provider_json", "not json"),
+        ("schema_validation_failed", {"formal_diagnosis_notes": {"value": "unsafe"}}),
+        (
+            "unsafe_evidence_refs",
+            {
+                "chief_complaint_draft": {
+                    "value": "safe text",
+                    "source_type": "ai",
+                    "evidence_refs": [
+                        {
+                            "turn_number": 1,
+                            "summary_id": "summary-1",
+                            "note": "raw unsafe note",
+                        }
+                    ],
+                }
+            },
+        ),
+    ]
+
+    for expected_category, raw_output in cases:
+        monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
+        monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "true")
+        calls = []
+
+        async def fake_call_report_v2_provider(messages, *, provider, model, **kwargs):
+            calls.append((provider, model, kwargs))
+            return raw_output
+
+        monkeypatch.setattr(
+            analysis_agent,
+            "_call_report_v2_provider",
+            fake_call_report_v2_provider,
+        )
+
+        async def run_v2_draft():
+            return await analysis_agent.generate_report_v2_ai_draft(
+                case_id="case-1",
+                session_id="session-1",
+                summaries=[],
+                manual_input=ReportManualInputV2(),
+            )
+
+        try:
+            anyio.run(run_v2_draft)
+        except analysis_agent.ReportV2GenerationError as exc:
+            assert exc.category == expected_category
+            assert len(calls) == 1
+            continue
+        raise AssertionError(f"{expected_category} should not fallback")
 
 
 def test_generate_report_v2_ai_draft_invalid_provider_json_is_classified(monkeypatch):
@@ -1120,8 +1412,9 @@ def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(
     fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
     captured = {}
 
-    def fake_report_v2_client(provider):
+    def fake_report_v2_client(provider, *, api_key_override=None):
         captured["provider"] = provider
+        captured["api_key_override"] = api_key_override
         return fake_client
 
     monkeypatch.setattr(
@@ -1141,6 +1434,7 @@ def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(
 
     assert result == '{"chief_complaint_draft": {}}'
     assert captured["provider"] == "gemini"
+    assert captured["api_key_override"] is None
     assert fake_client.calls == []
     assert fake_client.create_calls[0]["model"] == "report-v2-boundary-model"
     assert fake_client.create_calls[0]["messages"] == [
@@ -1154,8 +1448,9 @@ def test_call_report_v2_provider_boundary_uses_selected_groq_client_and_model(mo
     fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
     captured = {}
 
-    def fake_report_v2_client(provider):
+    def fake_report_v2_client(provider, *, api_key_override=None):
         captured["provider"] = provider
+        captured["api_key_override"] = api_key_override
         return fake_client
 
     monkeypatch.setattr(
@@ -1175,6 +1470,7 @@ def test_call_report_v2_provider_boundary_uses_selected_groq_client_and_model(mo
 
     assert result == '{"chief_complaint_draft": {}}'
     assert captured["provider"] == "groq"
+    assert captured["api_key_override"] is None
     assert fake_client.calls == []
     assert fake_client.create_calls[0]["model"] == "llama-3.3-70b-versatile"
     assert fake_client.create_calls[0]["messages"] == [

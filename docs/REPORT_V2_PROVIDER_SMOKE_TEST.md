@@ -79,6 +79,10 @@ REPORT_V2_PROVIDER_MODE=deterministic
 REPORT_V2_PROVIDER=gemini
 REPORT_V2_MODEL=
 REPORT_V2_API_KEY=
+REPORT_V2_FALLBACK_ENABLED=false
+REPORT_V2_FALLBACK_PROVIDER=groq
+REPORT_V2_FALLBACK_MODEL=llama-3.3-70b-versatile
+REPORT_V2_FALLBACK_API_KEY=
 ```
 
 Keep deterministic mode as the default for normal local setup. Provider mode is
@@ -124,6 +128,38 @@ Provider mode supports Gemini and Groq provider paths. Groq can be used as a
 dedicated Report v2 provider to reduce Gemini rate-limit friction during longer
 structured report-generation tasks. Existing v1 report generation remains
 unchanged.
+
+Report v2 provider mode can also enable an opt-in fallback provider path. It is
+disabled by default with `REPORT_V2_FALLBACK_ENABLED=false`; truthy values
+`1`, `true`, `yes`, and `on` enable fallback only after the primary Report v2
+provider fails with `provider_api_failure`, such as a transient outage, timeout,
+503, or rate-limit-like API failure. A common manual configuration is Gemini as
+the primary provider for higher quality output and Groq as fallback for transient
+availability failures. This fallback is Report-v2-only: it does not affect
+crisis, summary, conversation, v1 report generation, or deterministic Report v2
+mode.
+
+Fallback is not a safety or schema bypass. It does not run for
+`provider_config`, `missing_summaries`, `invalid_provider_json`,
+`schema_validation_failed`, `unsafe_evidence_refs`, or `db_persistence_failed`.
+Fallback output must pass the same parser normalization and
+`ReportAIGeneratedV2` validation before persistence. If fallback fails, the
+public response remains the same generic failure response and existing
+`ai_generated_json` is not overwritten.
+
+Fallback configuration:
+
+```text
+REPORT_V2_FALLBACK_ENABLED=false
+REPORT_V2_FALLBACK_PROVIDER=groq
+REPORT_V2_FALLBACK_MODEL=llama-3.3-70b-versatile
+REPORT_V2_FALLBACK_API_KEY=
+```
+
+`REPORT_V2_FALLBACK_API_KEY` is optional. If set, fallback calls use it first.
+If unset, fallback key selection uses `REPORT_V2_API_KEY`, then the selected
+provider-specific key path. If fallback provider/model/key match the primary
+provider/model/key, the system allows it as one retry for transient failure.
 
 Report v2 generation now classifies failures internally as
 `missing_summaries`, `provider_config`, `provider_api_failure`,
@@ -228,6 +264,24 @@ $env:REPORT_V2_PROVIDER = "groq"
 
 `REPORT_V2_MODEL` is optional. Omit it to use the configured provider-specific
 fallback behavior.
+
+For a Gemini-primary, Groq-fallback manual smoke test, set both providers in the
+current shell only:
+
+```powershell
+$env:DATABASE_PATH = Join-Path $env:TEMP "ai_psych_report_v2_provider_smoke.db"
+$env:GEMINI_API_KEY = "<set-real-gemini-key-in-shell-only>"
+$env:GROQ_API_KEY = "<set-real-groq-key-in-shell-only>"
+$env:REPORT_V2_PROVIDER_MODE = "provider"
+$env:REPORT_V2_PROVIDER = "gemini"
+$env:REPORT_V2_MODEL = "gemini-2.5-flash"
+$env:REPORT_V2_FALLBACK_ENABLED = "true"
+$env:REPORT_V2_FALLBACK_PROVIDER = "groq"
+$env:REPORT_V2_FALLBACK_MODEL = "llama-3.3-70b-versatile"
+```
+
+Use `REPORT_V2_FALLBACK_API_KEY` only when you intentionally want a
+fallback-specific key. Do not write provider keys to `.env` for smoke testing.
 
 Start the backend:
 
@@ -376,6 +430,23 @@ Provider failure after a successful generation:
 - Call generate again.
 - Confirm the previous `ai_generated_json` remains intact.
 
+Opt-in fallback success:
+
+- Use `REPORT_V2_PROVIDER_MODE=provider`.
+- Use Gemini as primary and Groq as fallback.
+- Force a primary transient/provider API failure with synthetic data only.
+- Expect one fallback provider attempt.
+- Expect fallback output to persist only after normal parser/schema validation.
+
+Fallback-ineligible output failure:
+
+- Enable fallback.
+- Force primary output to be invalid JSON, schema-invalid, or to contain unsafe
+  evidence refs.
+- Expect no fallback call.
+- Expect a generic failure response and a diagnostic category matching
+  `invalid_provider_json`, `schema_validation_failed`, or `unsafe_evidence_refs`.
+
 No-summary draft:
 
 - Create a draft for a synthetic session with no persisted summaries.
@@ -417,6 +488,10 @@ Remove-Item Env:REPORT_V2_PROVIDER_MODE
 Remove-Item Env:REPORT_V2_PROVIDER
 Remove-Item Env:REPORT_V2_MODEL
 Remove-Item Env:REPORT_V2_API_KEY
+Remove-Item Env:REPORT_V2_FALLBACK_ENABLED
+Remove-Item Env:REPORT_V2_FALLBACK_PROVIDER
+Remove-Item Env:REPORT_V2_FALLBACK_MODEL
+Remove-Item Env:REPORT_V2_FALLBACK_API_KEY
 ```
 
 Only remove explicit single-file paths. If your environment created additional

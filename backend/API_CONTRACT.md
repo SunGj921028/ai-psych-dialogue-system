@@ -743,6 +743,20 @@ Implementation notes:
   If set, Report v2 provider calls use it for the selected provider. If unset,
   `gemini` uses `GEMINI_API_KEY` and `groq` uses `GROQ_API_KEY`. Crisis and
   summary agents do not use `REPORT_V2_API_KEY`.
+- Report v2 provider mode can optionally enable a Report-v2-only fallback
+  provider path through `REPORT_V2_FALLBACK_ENABLED`; unset, blank, or false-like
+  values keep fallback disabled, while `1`, `true`, `yes`, and `on` enable it.
+  Fallback is attempted only after the primary Report v2 provider fails with
+  `provider_api_failure`; it does not run for deterministic Report v2 mode,
+  crisis/summary/conversation agents, v1 report generation, missing summaries,
+  provider configuration errors, invalid provider JSON, schema validation
+  failures, unsafe evidence refs, or DB persistence failures. The fallback
+  provider defaults to `groq`, Groq defaults to `llama-3.3-70b-versatile`, and
+  `REPORT_V2_FALLBACK_MODEL` can override the fallback model.
+  `REPORT_V2_FALLBACK_API_KEY` is used first for fallback calls; if unset, key
+  selection uses `REPORT_V2_API_KEY`, then the selected provider-specific key
+  path. Matching primary/fallback provider/model/key is allowed as one retry for
+  transient failure.
 - Provider mode builds v2 prompt/messages, calls the Report v2 provider
   boundary for the selected provider, parses provider output, validates it as
   `ReportAIGeneratedV2`, and returns only validated output.
@@ -771,7 +785,10 @@ Implementation notes:
   and `unknown_generation_failure`. These categories are diagnostic only and
   must not change the public non-leaking response shape.
 - Provider failures do not persist a conservative empty fallback as success and
-  do not overwrite existing `ai_generated_json`.
+  do not overwrite existing `ai_generated_json`. Fallback output, when used,
+  must pass the same parser normalization and `ReportAIGeneratedV2` validation
+  before persistence; if fallback fails, the public route response remains a
+  generic 500 and existing `ai_generated_json` is preserved.
 - Existing v1 `POST /api/reports/generate` behavior remains unchanged.
 - This endpoint does not add diagnosis automation, medication advice, emergency
   workflow automation, treatment plan automation, PDF export, browser storage,
@@ -1043,6 +1060,13 @@ These are not required for Task 09 or remain future integration work:
   provider responses, provider exception text, model/provider secrets, key
   values, or clinical content, and do not overwrite existing
   `ai_generated_json`.
+- Report v2 fallback is opt-in and disabled by default. It may be used for
+  transient primary provider API failures such as 503, timeout, or
+  rate-limit-like failures that are classified as `provider_api_failure`, but it
+  must not be used to bypass invalid JSON, schema validation, unsafe evidence
+  refs, missing summaries, provider config, or DB persistence failures. If both
+  primary and fallback fail, return the same generic non-leaking 500 and preserve
+  any existing `ai_generated_json`.
 - Report v2 route diagnostics may use internal categories:
   `missing_summaries`, `provider_config`, `provider_api_failure`,
   `invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,

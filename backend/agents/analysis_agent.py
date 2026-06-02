@@ -43,6 +43,7 @@ REPORT_V2_PROVIDER_BASE_URLS = {
 }
 REPORT_V2_DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
 REPORT_V2_DEFAULT_GROQ_MODEL = "llama-3.3-70b-versatile"
+REPORT_V2_FALLBACK_TRUTHY_VALUES = {"1", "true", "yes", "on"}
 ReportV2GenerationErrorCategory = Literal[
     "missing_summaries",
     "provider_config",
@@ -198,6 +199,20 @@ def _get_report_v2_provider() -> str:
     return raw
 
 
+def _is_report_v2_fallback_enabled() -> bool:
+    raw = os.getenv("REPORT_V2_FALLBACK_ENABLED", "").strip().lower()
+    return raw in REPORT_V2_FALLBACK_TRUTHY_VALUES
+
+
+def _get_report_v2_fallback_provider() -> str:
+    raw = os.getenv("REPORT_V2_FALLBACK_PROVIDER", "").strip().lower()
+    if not raw:
+        return REPORT_V2_PROVIDER_GROQ
+    if raw not in REPORT_V2_PROVIDERS:
+        raise ReportV2GenerationError("provider_config")
+    return raw
+
+
 def _get_report_v2_model(provider: str) -> str:
     configured_model = (os.getenv("REPORT_V2_MODEL") or "").strip()
     if configured_model:
@@ -212,11 +227,41 @@ def _get_report_v2_model(provider: str) -> str:
     raise ReportV2GenerationError("provider_config")
 
 
-def _get_report_v2_provider_client(provider: str) -> AsyncOpenAI:
+def _get_report_v2_fallback_model(provider: str) -> str:
+    configured_model = (os.getenv("REPORT_V2_FALLBACK_MODEL") or "").strip()
+    if configured_model:
+        return configured_model
+
+    if provider == REPORT_V2_PROVIDER_GEMINI:
+        return _get_report_v2_model(provider)
+
+    if provider == REPORT_V2_PROVIDER_GROQ:
+        return REPORT_V2_DEFAULT_GROQ_MODEL
+
+    raise ReportV2GenerationError("provider_config")
+
+
+def _get_report_v2_fallback_api_key_override() -> str | None:
+    fallback_api_key = (os.getenv("REPORT_V2_FALLBACK_API_KEY") or "").strip()
+    if fallback_api_key:
+        return fallback_api_key
+
+    report_api_key = (os.getenv("REPORT_V2_API_KEY") or "").strip()
+    if report_api_key:
+        return report_api_key
+
+    return None
+
+
+def _get_report_v2_provider_client(
+    provider: str,
+    *,
+    api_key_override: str | None = None,
+) -> AsyncOpenAI:
     if provider not in REPORT_V2_PROVIDERS:
         raise ReportV2GenerationError("provider_config")
 
-    report_api_key = (os.getenv("REPORT_V2_API_KEY") or "").strip()
+    report_api_key = api_key_override or (os.getenv("REPORT_V2_API_KEY") or "").strip()
     if not report_api_key:
         try:
             return get_llm_client(provider)
@@ -453,11 +498,15 @@ async def _call_report_v2_provider(
     *,
     provider: str,
     model: str,
+    api_key_override: str | None = None,
 ) -> str:
     if provider not in REPORT_V2_PROVIDERS:
         raise ReportV2GenerationError("provider_config")
 
-    client = _get_report_v2_provider_client(provider)
+    client = _get_report_v2_provider_client(
+        provider,
+        api_key_override=api_key_override,
+    )
     resp = await client.chat.completions.create(
         model=model,
         temperature=0.2,
@@ -465,6 +514,55 @@ async def _call_report_v2_provider(
         messages=messages_or_payload,
     )
     return resp.choices[0].message.content or ""
+
+
+async def _call_report_v2_provider_for_generation(
+    messages_or_payload: Any,
+    *,
+    provider: str,
+    model: str,
+    api_key_override: str | None = None,
+) -> str:
+    try:
+        kwargs: dict[str, Any] = {
+            "provider": provider,
+            "model": model,
+        }
+        if api_key_override is not None:
+            kwargs["api_key_override"] = api_key_override
+        return await _call_report_v2_provider(messages_or_payload, **kwargs)
+    except ReportV2GenerationError:
+        raise
+    except Exception as exc:
+        raise ReportV2GenerationError("provider_api_failure", cause=exc) from exc
+
+
+async def _call_report_v2_provider_with_optional_fallback(
+    messages_or_payload: Any,
+    *,
+    provider: str,
+    model: str,
+) -> str:
+    try:
+        return await _call_report_v2_provider_for_generation(
+            messages_or_payload,
+            provider=provider,
+            model=model,
+        )
+    except ReportV2GenerationError as primary_error:
+        if primary_error.category != "provider_api_failure":
+            raise
+        if not _is_report_v2_fallback_enabled():
+            raise
+
+        fallback_provider = _get_report_v2_fallback_provider()
+        fallback_model = _get_report_v2_fallback_model(fallback_provider)
+        return await _call_report_v2_provider_for_generation(
+            messages_or_payload,
+            provider=fallback_provider,
+            model=fallback_model,
+            api_key_override=_get_report_v2_fallback_api_key_override(),
+        )
 
 
 def _parse_report_v2_provider_output(raw_output: str | dict[str, Any]) -> ReportAIGeneratedV2:
@@ -840,17 +938,12 @@ async def generate_report_v2_ai_draft(
         knowledge_excerpts=knowledge_excerpts,
     )
     messages = _build_report_v2_messages(payload)
-    try:
-        provider = _get_report_v2_provider()
-        raw_output = await _call_report_v2_provider(
-            messages,
-            provider=provider,
-            model=_get_report_v2_model(provider),
-        )
-    except ReportV2GenerationError:
-        raise
-    except Exception as exc:
-        raise ReportV2GenerationError("provider_api_failure", cause=exc) from exc
+    provider = _get_report_v2_provider()
+    raw_output = await _call_report_v2_provider_with_optional_fallback(
+        messages,
+        provider=provider,
+        model=_get_report_v2_model(provider),
+    )
     return _parse_report_v2_provider_output(raw_output)
 
 

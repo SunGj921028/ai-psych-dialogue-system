@@ -284,6 +284,22 @@ These are current code facts and should not be contradicted in new work:
   `llama-3.3-70b-versatile` and does not use `ANALYSIS_MODEL`.
   `REPORT_V2_API_KEY` may override the selected provider key for Report v2 only;
   if unset, Gemini uses `GEMINI_API_KEY` and Groq uses `GROQ_API_KEY`.
+- Report v2 provider mode supports an opt-in fallback provider path through
+  `REPORT_V2_FALLBACK_ENABLED`, disabled by default. Truthy values `1`, `true`,
+  `yes`, and `on` enable fallback only after a primary `provider_api_failure`.
+  Fallback is Report-v2-only and does not affect crisis, summary, conversation,
+  v1 report generation, or deterministic Report v2 mode. It does not run for
+  provider config errors, missing summaries, invalid JSON, schema validation
+  failures, unsafe evidence refs, or DB persistence failures. Fallback provider
+  defaults to `groq`, fallback Groq model defaults to
+  `llama-3.3-70b-versatile`, `REPORT_V2_FALLBACK_MODEL` can override it, and
+  fallback key selection uses `REPORT_V2_FALLBACK_API_KEY`, then
+  `REPORT_V2_API_KEY`, then the provider-specific key path. Matching
+  primary/fallback provider/model/key is allowed as one retry for transient
+  failure. Fallback output must pass the same parser normalization and
+  `ReportAIGeneratedV2` validation before persistence; if fallback fails,
+  public responses remain generic and existing `ai_generated_json` is not
+  overwritten.
 - Report v2 generation failures are classified internally for diagnostics while
   public route responses remain generic and non-leaking.
 - Gemini `response_format={"type": "json_object"}` compatibility is a known risk.
