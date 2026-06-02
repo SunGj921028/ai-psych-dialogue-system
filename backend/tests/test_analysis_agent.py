@@ -62,6 +62,11 @@ def _valid_report_v2_provider_output(value: str = "safe provider draft") -> dict
     }
 
 
+def _clear_report_v2_provider_key_env(monkeypatch) -> None:
+    for name in ("REPORT_V2_API_KEY", "REPORT_V2_FALLBACK_API_KEY", "GROQ_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_generate_report_with_insufficient_summaries_does_not_call_provider(
     monkeypatch,
 ):
@@ -540,6 +545,7 @@ def test_generate_report_v2_ai_draft_provider_api_failure_is_classified(monkeypa
 def test_generate_report_v2_ai_draft_fallback_disabled_does_not_call_fallback(
     monkeypatch,
 ):
+    _clear_report_v2_provider_key_env(monkeypatch)
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     monkeypatch.delenv("REPORT_V2_FALLBACK_ENABLED", raising=False)
     calls = []
@@ -574,6 +580,7 @@ def test_generate_report_v2_ai_draft_fallback_disabled_does_not_call_fallback(
 def test_generate_report_v2_ai_draft_fallback_enabled_uses_groq_default_model(
     monkeypatch,
 ):
+    _clear_report_v2_provider_key_env(monkeypatch)
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     monkeypatch.setenv("REPORT_V2_PROVIDER", "gemini")
     monkeypatch.delenv("REPORT_V2_MODEL", raising=False)
@@ -613,6 +620,7 @@ def test_generate_report_v2_ai_draft_fallback_enabled_uses_groq_default_model(
 def test_generate_report_v2_ai_draft_primary_success_does_not_validate_fallback_config(
     monkeypatch,
 ):
+    _clear_report_v2_provider_key_env(monkeypatch)
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "on")
     monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "surprise-provider")
@@ -645,6 +653,7 @@ def test_generate_report_v2_ai_draft_primary_success_does_not_validate_fallback_
 def test_generate_report_v2_ai_draft_invalid_fallback_provider_fails_only_when_needed(
     monkeypatch,
 ):
+    _clear_report_v2_provider_key_env(monkeypatch)
     monkeypatch.setenv("REPORT_V2_PROVIDER_MODE", "provider")
     monkeypatch.setenv("REPORT_V2_FALLBACK_ENABLED", "1")
     monkeypatch.setenv("REPORT_V2_FALLBACK_PROVIDER", "surprise-provider")
