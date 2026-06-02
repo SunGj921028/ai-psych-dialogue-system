@@ -1410,7 +1410,18 @@ def test_report_v2_ai_generated_fields_do_not_include_manual_only_risk_fields():
 
 def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(monkeypatch):
     fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
-    monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
+    captured = {}
+
+    def fake_report_v2_client(provider, *, api_key_override=None):
+        captured["provider"] = provider
+        captured["api_key_override"] = api_key_override
+        return fake_client
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_get_report_v2_provider_client",
+        fake_report_v2_client,
+    )
 
     async def run_provider_boundary():
         return await analysis_agent._call_report_v2_provider(
@@ -1422,7 +1433,8 @@ def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(
     result = anyio.run(run_provider_boundary)
 
     assert result == '{"chief_complaint_draft": {}}'
-    assert fake_client.calls == [{"provider": "gemini"}]
+    assert captured["provider"] == "gemini"
+    assert captured["api_key_override"] is None
     assert fake_client.create_calls[0]["model"] == "report-v2-boundary-model"
     assert fake_client.create_calls[0]["messages"] == [
         {"role": "system", "content": "unused"}
@@ -1433,7 +1445,18 @@ def test_call_report_v2_provider_boundary_uses_selected_gemini_client_and_model(
 
 def test_call_report_v2_provider_boundary_uses_selected_groq_client_and_model(monkeypatch):
     fake_client = FakeLLMClient(content='{"chief_complaint_draft": {}}')
-    monkeypatch.setattr(analysis_agent, "get_llm_client", fake_client)
+    captured = {}
+
+    def fake_report_v2_client(provider, *, api_key_override=None):
+        captured["provider"] = provider
+        captured["api_key_override"] = api_key_override
+        return fake_client
+
+    monkeypatch.setattr(
+        analysis_agent,
+        "_get_report_v2_provider_client",
+        fake_report_v2_client,
+    )
 
     async def run_provider_boundary():
         return await analysis_agent._call_report_v2_provider(
@@ -1445,7 +1468,8 @@ def test_call_report_v2_provider_boundary_uses_selected_groq_client_and_model(mo
     result = anyio.run(run_provider_boundary)
 
     assert result == '{"chief_complaint_draft": {}}'
-    assert fake_client.calls == [{"provider": "groq"}]
+    assert captured["provider"] == "groq"
+    assert captured["api_key_override"] is None
     assert fake_client.create_calls[0]["model"] == "llama-3.3-70b-versatile"
     assert fake_client.create_calls[0]["messages"] == [
         {"role": "system", "content": "unused"}
