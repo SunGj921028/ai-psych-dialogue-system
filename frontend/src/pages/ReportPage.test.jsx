@@ -16,6 +16,25 @@ vi.mock('../api/client.js', () => ({
   updateReportDraftManualInput: vi.fn(),
 }))
 
+vi.mock('recharts', () => ({
+  PolarAngleAxis: () => <div data-testid="radar-angle-axis" />,
+  PolarGrid: () => <div data-testid="radar-grid" />,
+  PolarRadiusAxis: () => <div data-testid="radar-radius-axis" />,
+  Radar: ({ dataKey }) => <div data-testid={`radar-series-${dataKey}`} />,
+  RadarChart: ({ children, data }) => (
+    <div data-testid="emotion-dimension-radar-chart">
+      {data?.map((entry) => (
+        <span key={entry.key}>{`${entry.dimension}:${entry.average}`}</span>
+      ))}
+      {children}
+    </div>
+  ),
+  ResponsiveContainer: ({ children }) => (
+    <div data-testid="radar-responsive-container">{children}</div>
+  ),
+  Tooltip: () => <div data-testid="radar-tooltip" />,
+}))
+
 const caseId = 'case-1'
 const sessionId = 'session-1'
 
@@ -369,6 +388,102 @@ describe('ReportPage behavior', () => {
     expect(screen.getByText('第 2 輪')).toBeInTheDocument()
     expect(screen.getByText('摘要危機標記：是')).toBeInTheDocument()
     expect(screen.getByText('僅為 AI 微摘要整理，非客觀臨床量表。')).toBeInTheDocument()
+  })
+
+  test('renders an accessible emotion dimension radar chart from averaged summaries', async () => {
+    api.getSessionSummaries.mockResolvedValue([
+      makeSummaryRow({
+        turn_number: 1,
+        dimensions: {
+          anxiety: 3,
+          sadness: 1,
+          anger: 0,
+          hopelessness: 2,
+          confusion: 4,
+          hope: 6,
+        },
+      }),
+      makeSummaryRow({
+        turn_number: 2,
+        dimensions: {
+          anxiety: 7,
+          sadness: 3,
+          anger: 2,
+          hopelessness: 4,
+          confusion: 6,
+          hope: 2,
+        },
+      }),
+    ])
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(
+      await screen.findByRole('region', {
+        name: '情緒面向雷達圖，顯示本會談微摘要的平均分布',
+      }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('視覺化僅供諮商師審閱微摘要趨勢，非正式量表或診斷。'),
+    ).toBeInTheDocument()
+    expect(screen.getByTestId('emotion-dimension-radar-chart')).toBeInTheDocument()
+    expect(screen.getByText('焦慮:5')).toBeInTheDocument()
+    expect(screen.getByText('希望:4')).toBeInTheDocument()
+    expect(screen.getByText('平均 5/10 · 最新：7/10')).toBeInTheDocument()
+
+    expect(api.getCase).toHaveBeenCalledTimes(1)
+    expect(api.getSessionSummaries).toHaveBeenCalledTimes(1)
+    expect(api.getCurrentReportDraft).toHaveBeenCalledTimes(1)
+    expect(api.generateReport).not.toHaveBeenCalled()
+    expect(api.generateReportDraftV2).not.toHaveBeenCalled()
+  })
+
+  test('keeps the emotion dimension empty state when no dimension values exist', async () => {
+    const summaryWithoutDimensions = makeSummaryRow()
+    summaryWithoutDimensions.summary.emotion_dimensions = {}
+    api.getSessionSummaries.mockResolvedValue([summaryWithoutDimensions])
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(await screen.findByText('微摘要整理輔助')).toBeInTheDocument()
+    expect(screen.getByText('尚無可整理的情緒面向資料。')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('region', {
+        name: '情緒面向雷達圖，顯示本會談微摘要的平均分布',
+      }),
+    ).not.toBeInTheDocument()
+  })
+
+  test('rendering the radar chart does not write clinical content to browser storage', async () => {
+    api.getSessionSummaries.mockResolvedValue([
+      makeSummaryRow({
+        themes: ['SYNTHETIC_CHART_THEME_SECRET'],
+        key_statement: 'SYNTHETIC_CHART_KEY_SECRET',
+        dimensions: {
+          anxiety: 6,
+          sadness: 4,
+          anger: 1,
+          hopelessness: 3,
+          confusion: 5,
+          hope: 2,
+        },
+      }),
+    ])
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(
+      await screen.findByRole('region', {
+        name: '情緒面向雷達圖，顯示本會談微摘要的平均分布',
+      }),
+    ).toBeInTheDocument()
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain('SYNTHETIC_CHART_THEME_SECRET')
+    expect(storedData).not.toContain('SYNTHETIC_CHART_KEY_SECRET')
+    expect(storedData).not.toContain('draft-1')
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
   })
 
   test('places session review aids before the v2 draft section', async () => {

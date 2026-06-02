@@ -196,10 +196,11 @@ Current facts:
   prompts or raw provider responses. A classroom demo runbook exists at
   `docs/DEMO_RUNBOOK.md`. The post-demo prompt-quality refinements for crisis
   attribution, Report v2 risk-language screening, client-understanding wording,
-  and theoretical-orientation wording are complete. Prompt/version audit
-  metadata, counselor review/final report workflow, print-friendly/PDF export,
-  charts/Recharts planning, production deployment/testing, and future docs
-  refreshes remain future work.
+  and theoretical-orientation wording are complete. The first Recharts demo
+  visualization slice for ReportPage emotion dimension averages is implemented.
+  Prompt/version audit metadata, counselor review/final report workflow,
+  print-friendly/PDF export, additional chart polish/visualizations, production
+  deployment/testing, and future docs refreshes remain future work.
 - Report v2 safety/privacy constraints remain unchanged: no browser storage of
   generated report text or `ai_generated` JSON, no persisted raw prompts or raw
   provider responses, no raw message use, no crisis detector reason use, no API
@@ -380,8 +381,14 @@ Current facts:
   intensity trend, emotion dimension average/latest snapshot, theme frequency
   chips, micro-summary timeline, and crisis occurrence indicator from existing
   backend data.
+- ReportPage's emotion dimension review aid now includes the first Recharts demo
+  visualization slice: a compact radar chart using existing
+  `getEmotionDimensionAverages(sortedSummaries)` derived average scores on a
+  fixed `0-10` scale. The existing text/bar overview remains visible as a
+  fallback, and the empty state remains `尚無可整理的情緒面向資料。`.
 - ReportPage review aids are counselor-facing context only and are not objective
-  clinical measurements.
+  clinical measurements. The radar chart is a visual aid only; it is not a
+  formal assessment, scale, diagnosis, or risk evaluation.
 - ReportPage groups v2 manual input, v2 generation, and v2 preview under
   `v2 報告草稿`. The existing v1 transient report generation section is lower on
   the page, labeled `舊版 v1 暫存報告`, and remains visually separate and
@@ -488,16 +495,16 @@ Current facts:
   metadata, and low/default crisis states do not open the modal.
 - Restored persisted high-risk state from loaded summaries does not auto-open or
   replay the high-risk modal.
-- PDF export, hard delete/session data-retention workflow, title search/filter, richer session
-  metadata, optional charting library integration, runtime/provider status
-  endpoint if needed, and MCP integration remain future work.
+- PDF export, hard delete/session data-retention workflow, title search/filter,
+  richer session metadata, optional additional visualization work, runtime/provider
+  status endpoint if needed, and MCP integration remain future work.
 - Any future runtime/provider status endpoint must avoid leaking secrets. Real
   provider settings UI remains out of scope unless explicitly designed.
 - Frontend v2 AI draft generation integration now exists through the separate
   `v2 AI ?阮?Ｙ?` action card and `generateReportDraftV2(draftId)`.
   Manual local provider smoke testing has been completed for Report v2 provider
   mode. The post-demo prompt refinement batch is complete. Editable counselor
-  final report workflow, reviewed status, charts/Recharts planning,
+  final report workflow, reviewed status, additional chart polish/visualizations,
   print-friendly/PDF export, and production deployment/testing have not been
   implemented for the report workspace.
 
@@ -630,8 +637,8 @@ Current facts:
 | Task 07 MCP case query server | future | Still out of scope after Task 09; defer until API/data access behavior is stable. |
 | Task 09 FastAPI routes | implemented | Routes mounted under `/api` with deterministic route tests, including durable session metadata creation/listing and backend-only manual session rename. |
 | Task 11 conversation page | implemented | Integrated with backend conversation API; stabilized bounded chat layout, submit behavior, query-param resume, durable backend session creation for create-case/new-session flows, backend-level-only crisis UI behavior, and restored persisted `crisis_level` display from loaded summaries. |
-| Task 12 visualization components | partial | ReportPage has summary-derived review aids; optional Recharts/charts remain future work. |
-| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, transient-report note, `會談整理輔助` before the v2 workflow, v2 manual input/generate/preview grouped under `v2 報告草稿`, lower `舊版 v1 暫存報告`, a separate v2 AI draft generation action card, and a simplified read-only v2 preview focused on demo-useful manual plus `ai_generated` fields. Backend Report Schema v2 models, backend `report_drafts` persistence, backend manual input API, backend-only deterministic v2 AI draft generation endpoint, backend v2 prompt/input builder, backend v2 provider parser, disabled-by-default provider mode, frontend draft API helpers including `generateReportDraftV2`, completed manual local provider smoke testing, the classroom demo runbook, and post-demo prompt/preview refinements exist. Reviewed status, counselor final report workflow, print-friendly/PDF export, charts/Recharts planning, production deployment/testing, and docs after future slices remain future work. |
+| Task 12 visualization components | partial | ReportPage has summary-derived review aids and the first Recharts demo visualization slice: an emotion dimension radar chart derived from structured summary averages on a fixed `0-10` scale, with text/bar fallback preserved. Optional emotion intensity line chart, theme frequency chart, and chart polish remain future work. |
+| Task 13 report page | partial | Counselor review workspace exists with manual transient v1 generation, prominent backend disclaimer, transient-report note, `會談整理輔助` before the v2 workflow, Recharts emotion dimension radar visualization, v2 manual input/generate/preview grouped under `v2 報告草稿`, lower `舊版 v1 暫存報告`, a separate v2 AI draft generation action card, and a simplified read-only v2 preview focused on demo-useful manual plus `ai_generated` fields. Backend Report Schema v2 models, backend `report_drafts` persistence, backend manual input API, backend-only deterministic v2 AI draft generation endpoint, backend v2 prompt/input builder, backend v2 provider parser, disabled-by-default provider mode, frontend draft API helpers including `generateReportDraftV2`, completed manual local provider smoke testing, the classroom demo runbook, and post-demo prompt/preview refinements exist. Reviewed status, counselor final report workflow, print-friendly/PDF export, additional chart polish/visualizations, production deployment/testing, and docs after future slices remain future work. |
 | Task 14 history page | partial | Lists backend cases and session metadata, including empty durable sessions returned by the backend; displays session titles when present with an untitled fallback, keeps session IDs visible as secondary metadata, supports inline manual title rename/clear, and implements archive-only session lifecycle controls. Hard delete, title search/filter, labels, and richer session metadata remain future work. |
 | Task 15 settings page | implemented / static | Static counselor-facing informational page covering purpose, safety boundaries, storage/privacy, theme behavior, backend-managed provider configuration, and counselor review reminders; no secrets, provider/model selection, API calls, storage writes, or second theme toggle. |
 | Backend deterministic testing foundation | implemented | Route, DB, and agent tests exist under `backend/tests/` without live provider calls. |
@@ -671,10 +678,10 @@ Status categories:
 1. Keep context documents accurate as work proceeds.
 2. Keep deterministic backend tests current as route and agent behavior evolves.
 3. Complete remaining frontend workflows: hard delete/data-retention policy,
-   title search/filter, PDF export, optional charts/Recharts, editable/final
-   report review workflow, report status, optional HistoryPage crisis-level
-   display, and optional runtime/provider status if needed without leaking
-   secrets.
+   title search/filter, PDF export, optional additional visualizations and chart
+   polish, editable/final report review workflow, report status, optional
+   HistoryPage crisis-level display, and optional runtime/provider status if
+   needed without leaking secrets.
 4. Keep ReportPage frontend tests current as final-report and export workflows
    are added.
 5. Add optional Playwright/E2E coverage later, and visual regression later if
@@ -908,9 +915,9 @@ Future intent:
   provider smoke testing has been completed with synthetic/local data. A
   classroom demo runbook exists at `docs/DEMO_RUNBOOK.md`. Post-demo prompt and
   preview refinements are complete. Remaining future work includes
-  charts/Recharts planning, reviewed status and counselor final report workflow,
-  print-friendly/PDF export, production deployment/testing, and documentation
-  updates after future slices.
+  additional chart polish/visualizations, reviewed status and counselor final
+  report workflow, print-friendly/PDF export, production deployment/testing, and
+  documentation updates after future slices.
 - Add report status UI and counselor review/final-report workflow when
   prioritized.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
@@ -925,10 +932,11 @@ Future intent:
 - Frontend testing should add coverage for counselor final report workflow and
   PDF export when those features are implemented, plus optional Playwright/E2E
   later and visual regression later if needed.
-- Charts/Recharts planning, reviewed status and counselor final report workflow,
-  print-friendly/PDF export, production deployment/testing, documentation after
-  future slices, MCP, hard delete, title search/filter, latest/peak crisis
-  aggregates, and real provider settings UI remain separate future work.
+- Additional chart polish/visualizations, reviewed status and counselor final
+  report workflow, print-friendly/PDF export, production deployment/testing,
+  documentation after future slices, MCP, hard delete, title search/filter,
+  latest/peak crisis aggregates, and real provider settings UI remain separate
+  future work.
 
 ## Related Context Documents
 
