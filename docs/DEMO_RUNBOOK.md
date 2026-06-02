@@ -327,6 +327,9 @@ Requirements:
   `GEMINI_API_KEY` for Gemini, `GROQ_API_KEY` for Groq, or
   `REPORT_V2_API_KEY` as a Report-v2-specific override
 - optionally set `REPORT_V2_MODEL`
+- optionally enable Report-v2-only fallback with
+  `REPORT_V2_FALLBACK_ENABLED=true`, commonly Gemini primary plus Groq fallback,
+  for transient provider API failures such as 503 or rate-limit-like failures
 - use synthetic/de-identified data only
 - keep keys and `.env` hidden from screen sharing
 - do not commit `.env`, logs, provider outputs, screenshots, or smoke DB files
@@ -334,6 +337,15 @@ Requirements:
 Groq can be used as a dedicated Report v2 provider to reduce Gemini rate-limit
 friction during longer structured report generation. `REPORT_V2_API_KEY` can
 separate report-generation quota from the crisis/summary keys.
+
+Provider fallback is opt-in and disabled by default. It applies only to Report v2
+provider mode after `provider_api_failure`; it does not affect crisis, summary,
+conversation, v1 report generation, or deterministic Report v2 mode. Fallback is
+not a safety/schema bypass: invalid JSON, schema validation failures, unsafe
+evidence refs, missing summaries, provider configuration failures, and DB
+persistence failures do not trigger fallback. Fallback output must still validate
+before persistence, and existing `ai_generated_json` remains intact if both
+primary and fallback fail.
 
 Provider mode has been smoke-tested locally with synthetic data, but it still
 depends on provider availability, model behavior, local environment, and network
@@ -343,6 +355,8 @@ access.
 
 If provider mode fails during the demo:
 
+- if opt-in fallback was configured and the failure was transient, let the
+  fallback attempt complete and verify the generated draft normally
 - switch to deterministic mode
 - use a previously generated synthetic draft if available
 - explain that provider mode was smoke-tested locally with synthetic data

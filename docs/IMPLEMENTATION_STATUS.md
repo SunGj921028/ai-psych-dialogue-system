@@ -118,6 +118,18 @@ Current facts:
   If set, Report v2 provider calls use it for the selected provider. If unset,
   Gemini uses `GEMINI_API_KEY` and Groq uses `GROQ_API_KEY`. Crisis and summary
   agents do not use `REPORT_V2_API_KEY`.
+- Report v2 provider mode also supports an opt-in fallback provider path through
+  `REPORT_V2_FALLBACK_ENABLED`, which is disabled by default and accepts truthy
+  values `1`, `true`, `yes`, and `on`. The fallback applies only to Report v2
+  provider mode, only after a primary `provider_api_failure`, and does not affect
+  crisis, summary, conversation, v1 report generation, or deterministic Report v2
+  mode. `REPORT_V2_FALLBACK_PROVIDER` defaults to `groq`;
+  `REPORT_V2_FALLBACK_MODEL` overrides the fallback model, otherwise Groq uses
+  `llama-3.3-70b-versatile`. `REPORT_V2_FALLBACK_API_KEY` is used first for
+  fallback calls; if unset, fallback key selection uses `REPORT_V2_API_KEY`, then
+  the selected provider-specific key path. If fallback provider/model/key match
+  the primary provider/model/key, it is allowed as one retry for transient
+  failures.
 - `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"` exists for the backend
   Report Schema v2 prompt/input builder slice.
 - Backend Report v2 prompt/input builder helpers now exist. They use fixed
@@ -148,6 +160,13 @@ Current facts:
   validates it as `ReportAIGeneratedV2`, and returns only validated output.
   Provider failures, invalid provider output, invalid mode values, invalid
   provider values, and missing selected provider keys fail closed.
+- Report v2 fallback is not a safety/schema bypass. It does not run for
+  `provider_config`, `missing_summaries`, `invalid_provider_json`,
+  `schema_validation_failed`, `unsafe_evidence_refs`, or
+  `db_persistence_failed`; fallback success must pass the same parser
+  normalization and `ReportAIGeneratedV2` validation before persistence. If both
+  primary and fallback fail, public route responses remain generic and existing
+  `ai_generated_json` is not overwritten.
 - Report v2 generation failures are classified internally as
   `missing_summaries`, `provider_config`, `provider_api_failure`,
   `invalid_provider_json`, `schema_validation_failed`, `unsafe_evidence_refs`,
@@ -536,7 +555,7 @@ Current facts:
 - Agent tests monkeypatch LLM clients and do not require API keys, network access,
   or live providers.
 - The full deterministic backend suite passed after Report v2 provider selection
-  and `REPORT_V2_API_KEY` override support with 210 tests.
+  and Report v2 opt-in provider fallback support with 219 tests.
 - Manual/live backend scripts live under `backend/manual_checks/` as `check_*.py`
   files to avoid pytest discovery.
 - `backend/manual_checks/check_db_smoke.py` remains a legacy/manual smoke script
@@ -591,11 +610,13 @@ Current facts:
   unset/default deterministic mode, explicit deterministic mode, provider mode
   with monkeypatched provider, explicit Gemini/Groq provider selection,
   provider-specific model fallback behavior, `REPORT_V2_API_KEY` override
-  behavior, provider exception, invalid mode, invalid provider values, missing
-  selected provider key classification, route-level provider success/failure
-  behavior, no overwrite on provider failure, no-summary provider non-call
-  behavior, v1 report preservation, and deterministic v2 generation
-  preservation.
+  behavior, opt-in provider fallback trigger behavior, fallback provider/model/key
+  selection, invalid fallback provider classification, fallback parser/schema
+  validation, provider exception, invalid mode, invalid provider values, missing
+  selected provider key classification, route-level provider success/fallback
+  success/fallback failure behavior, no overwrite on provider or fallback
+  failure, no-summary provider non-call behavior, v1 report preservation, and
+  deterministic v2 generation preservation.
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
@@ -785,6 +806,20 @@ Current reality:
   `ANALYSIS_MODEL` fallback. `REPORT_V2_API_KEY` can override the selected
   provider key for Report v2 only; if unset, Gemini uses `GEMINI_API_KEY` and
   Groq uses `GROQ_API_KEY`.
+- Report v2 provider mode has an optional fallback provider path that is disabled
+  by default through `REPORT_V2_FALLBACK_ENABLED=false`. Truthy values
+  `1`, `true`, `yes`, and `on` enable fallback only for Report v2 provider mode
+  after the primary provider fails with `provider_api_failure`, such as a
+  transient outage, timeout, 503, or rate-limit-like API failure. Fallback does
+  not run for deterministic mode, missing summaries, provider configuration
+  errors, invalid provider JSON, schema validation failures, unsafe evidence
+  refs, or DB persistence failures, and it does not affect crisis, summary,
+  conversation, or v1 report generation. The fallback provider defaults to
+  `groq`; fallback Groq defaults to `llama-3.3-70b-versatile`; fallback model can
+  be overridden with `REPORT_V2_FALLBACK_MODEL`; fallback key selection uses
+  `REPORT_V2_FALLBACK_API_KEY`, then `REPORT_V2_API_KEY`, then the
+  provider-specific key path. Matching primary/fallback provider/model/key is
+  allowed as one retry for transient failure.
 - Backend Report Schema v2 prompt/input builder helpers exist with
   `REPORT_V2_PROMPT_VERSION = "report_v2_prompt_001"`. They use fixed curated
   knowledge-base excerpts and safety instructions, shape summaries into safe
@@ -804,9 +839,11 @@ Current reality:
   boundary, parses provider output, validates it as `ReportAIGeneratedV2`, and
   returns only validated output. Provider failures, invalid provider output,
   invalid mode values, invalid provider values, and missing selected provider
-  keys fail closed; provider failures do not persist a conservative empty
-  fallback as success and do not overwrite existing `ai_generated_json`. Raw
-  prompts, raw provider responses, and secrets are not persisted.
+  keys fail closed; fallback output still passes the same parser normalization
+  and `ReportAIGeneratedV2` validation before persistence. Provider/fallback
+  failures do not persist a conservative empty fallback as success and do not
+  overwrite existing `ai_generated_json`. Raw prompts, raw provider responses,
+  exception text, secrets, clinical text, and traces are not persisted or exposed.
 - Local Report v2 provider smoke testing has passed with synthetic data after
   provider field metadata normalization. The observed successful checks included
   `POST /api/report-drafts/{draft_id}/generate` returning
