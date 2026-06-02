@@ -14,6 +14,15 @@ import {
   Tags,
 } from 'lucide-react'
 import {
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+  Tooltip,
+} from 'recharts'
+import {
   createReportDraft,
   generateReport,
   generateReportDraftV2,
@@ -602,13 +611,88 @@ function ThemeFrequencyList({ themeCounts }) {
   )
 }
 
+function getEmotionDimensionRadarData(dimensions) {
+  return dimensions
+    .filter((dimension) => dimension.average != null)
+    .map((dimension) => ({
+      key: dimension.key,
+      dimension: dimension.label,
+      average: Number(dimension.average.toFixed(1)),
+    }))
+}
+
+function EmotionDimensionRadarTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null
+
+  const dimensionLabel = label ?? payload[0]?.payload?.dimension ?? '情緒面向'
+  const score = formatScore(payload[0]?.value)
+
+  return (
+    <div className="rounded-md border border-slate-200 bg-white px-3 py-2 text-xs shadow-lg dark:border-slate-700 dark:bg-slate-900">
+      <p className="font-medium text-slate-900 dark:text-slate-100">
+        {dimensionLabel}
+      </p>
+      <p className="mt-1 text-muted-foreground">平均 {score}/10</p>
+    </div>
+  )
+}
+
+function EmotionDimensionRadarChart({ dimensions }) {
+  const chartData = getEmotionDimensionRadarData(dimensions)
+
+  if (chartData.length === 0) return null
+
+  return (
+    <section
+      aria-label="情緒面向雷達圖，顯示本會談微摘要的平均分布"
+      className="rounded-md border border-slate-200 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-900/70"
+      role="region"
+    >
+      <p className="text-xs leading-5 text-muted-foreground">
+        視覺化僅供諮商師審閱微摘要趨勢，非正式量表或診斷。
+      </p>
+      <div
+        aria-hidden="true"
+        className="mt-3 h-56 w-full min-w-0 text-slate-500 dark:text-slate-300"
+      >
+        <ResponsiveContainer height="100%" width="100%">
+          <RadarChart data={chartData} outerRadius="72%">
+            <PolarGrid stroke="currentColor" strokeOpacity={0.35} />
+            <PolarAngleAxis
+              dataKey="dimension"
+              tick={{ fill: 'currentColor', fontSize: 12 }}
+            />
+            <PolarRadiusAxis
+              angle={30}
+              axisLine={false}
+              domain={[0, 10]}
+              tick={{ fill: 'currentColor', fontSize: 10 }}
+              tickCount={6}
+            />
+            <Radar
+              dataKey="average"
+              fill="#4f46e5"
+              fillOpacity={0.22}
+              name="平均"
+              stroke="#4f46e5"
+              strokeWidth={2}
+            />
+            <Tooltip content={<EmotionDimensionRadarTooltip />} />
+          </RadarChart>
+        </ResponsiveContainer>
+      </div>
+    </section>
+  )
+}
+
 function EmotionDimensionOverview({ dimensions }) {
   if (dimensions.every((dimension) => dimension.average == null)) {
     return <p className="text-sm text-muted-foreground">尚無可整理的情緒面向資料。</p>
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
+      <EmotionDimensionRadarChart dimensions={dimensions} />
       {dimensions.map((dimension) => {
         const averageWidth = dimension.average == null ? 0 : dimension.average * 10
         const latestText =
