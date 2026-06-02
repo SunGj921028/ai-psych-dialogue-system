@@ -312,7 +312,9 @@ describe('ReportPage behavior', () => {
       expect(api.getCurrentReportDraft).toHaveBeenCalledWith(caseId, sessionId)
     })
     expect(await screen.findByText('SYNTHETIC_SUMMARY_KEY')).toBeInTheDocument()
-    expect(screen.getByText('舊版 v1 暫存報告')).toBeInTheDocument()
+    expect(screen.getByText('個案概念化報告草稿')).toBeInTheDocument()
+    expect(screen.queryByText('舊版 v1 暫存報告')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '產生 v1 AI 草稿' })).not.toBeInTheDocument()
     expect(api.generateReport).not.toHaveBeenCalled()
   })
 
@@ -328,27 +330,13 @@ describe('ReportPage behavior', () => {
     ).toBeInTheDocument()
   })
 
-  test('clicking generate calls generateReport with case_id and session_id', async () => {
-    const user = userEvent.setup()
+  test('hides the legacy v1 report controls from the main demo UI', async () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
-
-    await waitFor(() => {
-      expect(api.generateReport).toHaveBeenCalledWith({
-        case_id: caseId,
-        session_id: sessionId,
-      })
-    })
-  })
-
-  test('after manual generation displays backend-supplied disclaimer', async () => {
-    const user = userEvent.setup()
-    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
-
-    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
-
-    expect(await screen.findByText('SYNTHETIC_BACKEND_DISCLAIMER')).toBeInTheDocument()
+    expect(await screen.findByText('個案概念化報告草稿')).toBeInTheDocument()
+    expect(screen.queryByText('舊版 v1 暫存報告')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '產生 v1 AI 草稿' })).not.toBeInTheDocument()
+    expect(api.generateReport).not.toHaveBeenCalled()
   })
 
   test('renders lightweight summary review aids from loaded summaries', async () => {
@@ -492,11 +480,12 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     const reviewSectionHeading = await screen.findByText('會談整理輔助')
-    const v2SectionHeading = screen.getByText('v2 報告草稿')
+    const v2SectionHeading = screen.getByText('個案概念化報告草稿')
 
     expect(
-      screen.getByText('建議先檢視本區整理，再建立或產生 v2 報告草稿。'),
+      screen.getByText('建議先檢視本區整理，再建立或產生個案概念化報告草稿。'),
     ).toBeInTheDocument()
+    expect(screen.queryByText(sessionId)).not.toBeInTheDocument()
     expect(screen.getByText('微摘要整理輔助')).toBeInTheDocument()
     expect(screen.getByText('危機標記彙整')).toBeInTheDocument()
     expect(screen.getByText('情緒強度趨勢')).toBeInTheDocument()
@@ -509,30 +498,25 @@ describe('ReportPage behavior', () => {
     ).toBeTruthy()
   })
 
-  test('labels the v1 report area as legacy transient while keeping v1 generation isolated', async () => {
-    const user = userEvent.setup()
-
+  test('keeps legacy v1 hidden while v2 generation remains isolated', async () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('舊版 v1 暫存報告')).toBeInTheDocument()
-
-    await user.click(screen.getByRole('button', { name: '產生 v1 AI 草稿' }))
-
-    await waitFor(() => {
-      expect(api.generateReport).toHaveBeenCalledWith({
-        case_id: caseId,
-        session_id: sessionId,
-      })
-    })
+    expect(await screen.findByText('個案概念化報告草稿')).toBeInTheDocument()
+    expect(screen.queryByText('舊版 v1 暫存報告')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '產生 v1 AI 草稿' })).not.toBeInTheDocument()
+    expect(api.generateReport).not.toHaveBeenCalled()
     expect(api.generateReportDraftV2).not.toHaveBeenCalled()
   })
 
   test('does not write clinical report or summary content to browser storage', async () => {
-    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({
+        aiGenerated: makeAiGenerated({ chiefComplaint: 'SYNTHETIC_CHIEF_COMPLAINT' }),
+      }),
+    )
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
-    await screen.findByText('SYNTHETIC_BACKEND_DISCLAIMER')
+    await screen.findByText('SYNTHETIC_CHIEF_COMPLAINT')
 
     const storedValues = [
       ...Object.values(window.localStorage),
@@ -541,7 +525,6 @@ describe('ReportPage behavior', () => {
 
     expect(storedValues).not.toContain('SYNTHETIC_SUMMARY_KEY')
     expect(storedValues).not.toContain('SYNTHETIC_CHIEF_COMPLAINT')
-    expect(storedValues).not.toContain('SYNTHETIC_BACKEND_DISCLAIMER')
   })
 
   test('loads current draft when it exists and renders manual input values', async () => {
@@ -553,7 +536,8 @@ describe('ReportPage behavior', () => {
     expect(screen.getByDisplayValue('SYNTHETIC_AGE_GENDER')).toBeInTheDocument()
     expect(screen.getByDisplayValue('SYNTHETIC_OCCUPATION_STATUS')).toBeInTheDocument()
     expect(screen.getByDisplayValue('SYNTHETIC_FAMILY_STATUS')).toBeInTheDocument()
-    expect(screen.getByDisplayValue('SYNTHETIC_CLIENT_UNDERSTANDING')).toBeInTheDocument()
+    expect(screen.queryByLabelText('個案對問題的理解／主訴補充')).not.toBeInTheDocument()
+    expect(screen.queryByDisplayValue('SYNTHETIC_CLIENT_UNDERSTANDING')).not.toBeInTheDocument()
     expect(screen.getByDisplayValue('SYNTHETIC_ASSESSMENT_DATA')).toBeInTheDocument()
     expect(screen.getByDisplayValue('SYNTHETIC_RISK_NOTES')).toBeInTheDocument()
     expect(screen.getByDisplayValue('SYNTHETIC_SAFETY_PLAN')).toBeInTheDocument()
@@ -713,7 +697,7 @@ describe('ReportPage behavior', () => {
     expect(basicSection).toHaveTextContent('SYNTHETIC_FAMILY_STATUS')
     expect(basicSection).toHaveTextContent('SYNTHETIC_REFERRAL_SOURCE')
     expect(basicSection).toHaveTextContent('2 次／2026-05-21')
-    expect(basicSection).toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
+    expect(basicSection).not.toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
 
     const psychologicalSection = getSectionByHeading('三、心理評估')
     expect(psychologicalSection).toHaveTextContent('SYNTHETIC_ASSESSMENT_DATA')
@@ -747,9 +731,17 @@ describe('ReportPage behavior', () => {
     expect(screen.getAllByText('待評估').length).toBeGreaterThan(3)
     expect(
       screen.getAllByText('此欄位待未來 AI 草稿或諮商師補充').length,
-    ).toBeGreaterThan(3)
+    ).toBeGreaterThan(2)
+    expect(screen.queryByText('主要理論取向')).not.toBeInTheDocument()
     const riskSection = getSectionByHeading('五、風險評估')
     expect(riskSection).not.toHaveTextContent('無風險')
+    expect(riskSection).not.toHaveTextContent('自殺意念')
+    expect(riskSection).not.toHaveTextContent('自殺計畫／意圖')
+    expect(riskSection).not.toHaveTextContent('自傷行為')
+    expect(riskSection).not.toHaveTextContent('他傷風險')
+    expect(riskSection).not.toHaveTextContent('物質濫用')
+    expect(riskSection).not.toHaveTextContent('精神病性症狀')
+    expect(riskSection).not.toHaveTextContent('整體風險等級')
     expect(riskSection).not.toHaveTextContent('安全計畫（諮商師手動提供）')
   })
 
@@ -762,13 +754,13 @@ describe('ReportPage behavior', () => {
 
     expect(await screen.findByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
-    expect(basicSection).toHaveTextContent('諮商師確認：個案對問題的理解')
-    expect(basicSection).toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
     expect(basicSection).toHaveTextContent(
       'AI 補充草稿：個案對問題理解的可能表述，需審閱',
     )
     expect(basicSection).toHaveTextContent('SYNTHETIC_V2_CLIENT_AI')
     expect(basicSection).toHaveTextContent('第 2 輪')
+    expect(basicSection).not.toHaveTextContent('諮商師確認：個案對問題的理解')
+    expect(basicSection).not.toHaveTextContent('SYNTHETIC_CLIENT_UNDERSTANDING')
     expect(basicSection).not.toHaveTextContent('summary-secret-2')
 
     const currentSection = getSectionByHeading('二、現況評估與觀察')
@@ -780,6 +772,7 @@ describe('ReportPage behavior', () => {
     expect(psychologicalSection).toHaveTextContent('SYNTHETIC_V2_PSYCHOLOGICAL_AI')
 
     const formulationSection = getSectionByHeading('四、理論取向與個案概念化')
+    expect(formulationSection).not.toHaveTextContent('主要理論取向')
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_THEORY_AI')
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_CONCEPTUALIZATION_AI')
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_FORMATION_AI')
@@ -788,7 +781,15 @@ describe('ReportPage behavior', () => {
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_PROTECTIVE_AI')
 
     const riskSection = getSectionByHeading('五、風險評估')
+    expect(riskSection).toHaveTextContent('危機語句摘要')
     expect(riskSection).toHaveTextContent('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')
+    expect(riskSection).not.toHaveTextContent('自殺意念')
+    expect(riskSection).not.toHaveTextContent('自殺計畫／意圖')
+    expect(riskSection).not.toHaveTextContent('自傷行為')
+    expect(riskSection).not.toHaveTextContent('他傷風險')
+    expect(riskSection).not.toHaveTextContent('物質濫用')
+    expect(riskSection).not.toHaveTextContent('精神病性症狀')
+    expect(riskSection).not.toHaveTextContent('整體風險等級')
     expect(riskSection).not.toHaveTextContent('SYNTHETIC_RISK_NOTES')
     expect(riskSection).not.toHaveTextContent('正式風險評估備註')
     expect(riskSection).toHaveTextContent('安全計畫（諮商師手動提供）')
@@ -820,6 +821,7 @@ describe('ReportPage behavior', () => {
     expect(psychologicalSection).not.toHaveTextContent('內在衝突')
 
     const formulationSection = getSectionByHeading('四、理論取向與個案概念化')
+    expect(formulationSection).not.toHaveTextContent('主要理論取向')
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_THEORY_AI')
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_CONCEPTUALIZATION_AI')
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_FORMATION_AI')
@@ -828,11 +830,14 @@ describe('ReportPage behavior', () => {
     expect(formulationSection).toHaveTextContent('SYNTHETIC_V2_PROTECTIVE_AI')
 
     const riskSection = getSectionByHeading('五、風險評估')
+    expect(riskSection).toHaveTextContent('危機語句摘要')
     expect(riskSection).toHaveTextContent('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')
+    expect(riskSection).not.toHaveTextContent('自殺意念')
+    expect(riskSection).not.toHaveTextContent('整體風險等級')
     expect(riskSection).not.toHaveTextContent('正式風險評估備註')
   })
 
-  test('manual client understanding remains primary when both manual and ai draft exist', async () => {
+  test('preview hides persisted manual client understanding while showing ai client understanding draft', async () => {
     api.getCurrentReportDraft.mockResolvedValue(
       makeReportDraft({
         aiGenerated: makeAiGenerated({ clientUnderstanding: 'SYNTHETIC_AI_SUPPLEMENT' }),
@@ -844,15 +849,16 @@ describe('ReportPage behavior', () => {
 
     expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
-    expect(basicSection).toHaveTextContent('諮商師確認：個案對問題的理解')
-    expect(basicSection).toHaveTextContent('SYNTHETIC_COUNSELOR_CONFIRMED_CLIENT')
     expect(basicSection).toHaveTextContent(
       'AI 補充草稿：個案對問題理解的可能表述，需審閱',
     )
     expect(basicSection).toHaveTextContent('SYNTHETIC_AI_SUPPLEMENT')
+    expect(basicSection).toHaveTextContent('AI 草稿，需諮商師審閱')
+    expect(basicSection).not.toHaveTextContent('諮商師確認：個案對問題的理解')
+    expect(basicSection).not.toHaveTextContent('SYNTHETIC_COUNSELOR_CONFIRMED_CLIENT')
   })
 
-  test('manual client understanding can be empty so ai draft fills the main field with draft label', async () => {
+  test('ai client understanding draft appears in preview when available', async () => {
     api.getCurrentReportDraft.mockResolvedValue(
       makeReportDraft({
         aiGenerated: makeAiGenerated({ clientUnderstanding: 'SYNTHETIC_AI_MAIN_CLIENT' }),
@@ -871,7 +877,7 @@ describe('ReportPage behavior', () => {
     expect(basicSection).not.toHaveTextContent('諮商師確認：個案對問題的理解')
   })
 
-  test('client understanding shows pending assessment when manual and ai draft are absent', async () => {
+  test('client understanding row is hidden when ai draft is absent', async () => {
     api.getCurrentReportDraft.mockResolvedValue(
       makeReportDraft({
         aiGenerated: makeAiGenerated({ clientUnderstanding: '' }),
@@ -883,8 +889,7 @@ describe('ReportPage behavior', () => {
 
     expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
-    expect(basicSection).toHaveTextContent('諮商師確認：個案對問題的理解')
-    expect(basicSection).toHaveTextContent('待評估')
+    expect(basicSection).not.toHaveTextContent('諮商師確認：個案對問題的理解')
     expect(basicSection).not.toHaveTextContent(
       'AI 補充草稿：個案對問題理解的可能表述，需審閱',
     )
@@ -973,23 +978,15 @@ describe('ReportPage behavior', () => {
     expect(document.body.textContent).not.toContain(rawErrorSentinel)
   })
 
-  test('draft load failure is sanitized and keeps v1 generation usable', async () => {
-    const user = userEvent.setup()
+  test('draft load failure is sanitized and keeps legacy v1 hidden', async () => {
     const rawErrorSentinel = 'RAW_DRAFT_LOAD_SECRET'
     api.getCurrentReportDraft.mockRejectedValue(new Error(rawErrorSentinel))
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     expect(await screen.findByText('無法載入 v2 手動資料草稿，請稍後再試。')).toBeInTheDocument()
     expect(document.body.textContent).not.toContain(rawErrorSentinel)
-
-    await user.click(screen.getByRole('button', { name: '產生 v1 AI 草稿' }))
-
-    await waitFor(() => {
-      expect(api.generateReport).toHaveBeenCalledWith({
-        case_id: caseId,
-        session_id: sessionId,
-      })
-    })
+    expect(screen.queryByRole('button', { name: '產生 v1 AI 草稿' })).not.toBeInTheDocument()
+    expect(api.generateReport).not.toHaveBeenCalled()
   })
 
   test('does not write manual input or report draft content to browser storage', async () => {
@@ -1107,8 +1104,7 @@ describe('ReportPage error handling', () => {
     expect(Object.keys(window.sessionStorage)).toEqual([])
   })
 
-  test('generateReport failure is sanitized and leaves generated report content absent', async () => {
-    const user = userEvent.setup()
+  test('legacy v1 generation remains hidden during error handling', async () => {
     const rawErrorSentinel = 'RAW_REPORT_GENERATION_SECRET'
     api.generateReport.mockRejectedValue(new Error(rawErrorSentinel))
 
@@ -1120,16 +1116,7 @@ describe('ReportPage error handling', () => {
     })
 
     expect(api.generateReport).not.toHaveBeenCalled()
-
-    await user.click(await screen.findByRole('button', { name: '產生 v1 AI 草稿' }))
-
-    await waitFor(() => {
-      expect(api.generateReport).toHaveBeenCalledTimes(1)
-      expect(api.generateReport).toHaveBeenCalledWith({
-        case_id: caseId,
-        session_id: sessionId,
-      })
-    })
+    expect(screen.queryByRole('button', { name: '產生 v1 AI 草稿' })).not.toBeInTheDocument()
 
     expect(document.body.textContent).not.toContain(rawErrorSentinel)
     expect(screen.queryByText('SYNTHETIC_BACKEND_DISCLAIMER')).not.toBeInTheDocument()

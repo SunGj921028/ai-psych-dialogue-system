@@ -10,7 +10,6 @@ import {
   PlusCircle,
   RefreshCcw,
   Save,
-  ShieldCheck,
   Tags,
 } from 'lucide-react'
 import {
@@ -24,7 +23,6 @@ import {
 } from 'recharts'
 import {
   createReportDraft,
-  generateReport,
   generateReportDraftV2,
   getCurrentReportDraft,
   getCase,
@@ -68,17 +66,6 @@ function clampScore(value) {
   if (!Number.isFinite(numberValue)) return null
 
   return Math.max(0, Math.min(10, numberValue))
-}
-
-function formatTrend(value) {
-  const trendLabels = {
-    ascending: '逐步升高',
-    descending: '逐步下降',
-    fluctuating: '起伏變動',
-    stable: '相對穩定',
-  }
-
-  return trendLabels[value] ?? value ?? '未提供'
 }
 
 const EMOTION_DIMENSION_LABELS = {
@@ -187,12 +174,6 @@ const MANUAL_INPUT_FIELDS = [
     type: 'input',
   },
   {
-    id: 'client_understanding',
-    label: '個案對問題的理解／主訴補充',
-    path: ['problem_onset_course', 'client_understanding'],
-    type: 'textarea',
-  },
-  {
     id: 'assessment_testing_data',
     label: '心理測驗／衡鑑資料補充',
     path: ['assessment_testing_data'],
@@ -284,17 +265,6 @@ function SectionCard({ title, description, children }) {
         ) : null}
       </div>
       {children}
-    </section>
-  )
-}
-
-function ReportTextBlock({ title, value }) {
-  return (
-    <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
-      <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">{title}</h4>
-      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
-        {value || '未提供'}
-      </p>
     </section>
   )
 }
@@ -849,7 +819,6 @@ export default function ReportPage() {
   const sessionId = searchParams.get('sessionId')
   const [caseInfo, setCaseInfo] = useState(null)
   const [summaries, setSummaries] = useState([])
-  const [report, setReport] = useState(null)
   const [reportDraft, setReportDraft] = useState(null)
   const [formManualInput, setFormManualInput] = useState({})
   const [draftState, setDraftState] = useState('idle')
@@ -863,7 +832,6 @@ export default function ReportPage() {
   const [showDraftGenerateConversationLink, setShowDraftGenerateConversationLink] =
     useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState('')
   const sortedSummaries = getSortedSummaries(summaries)
   const conversationUrl =
@@ -921,28 +889,6 @@ export default function ReportPage() {
   useEffect(() => {
     loadReportContext()
   }, [loadReportContext])
-
-  async function handleGenerateReport() {
-    if (!caseId || !sessionId) {
-      setError('缺少個案或會談識別碼，無法產生報告草稿。')
-      return
-    }
-
-    setIsGenerating(true)
-    setError('')
-
-    try {
-      const generatedReport = await generateReport({
-        case_id: caseId,
-        session_id: sessionId,
-      })
-      setReport(generatedReport)
-    } catch (generateError) {
-      setError(getFriendlyError(generateError, '無法產生報告草稿，請稍後再試。'))
-    } finally {
-      setIsGenerating(false)
-    }
-  }
 
   async function handleCreateDraft() {
     if (!caseId || !sessionId) return
@@ -1111,20 +1057,20 @@ export default function ReportPage() {
             會談整理輔助
           </h2>
           <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            建議先檢視本區整理，再建立或產生 v2 報告草稿。
+            建議先檢視本區整理，再建立或產生個案概念化報告草稿。
           </p>
         </div>
 
-        <section className="grid gap-3 md:grid-cols-4">
+        <section className="grid gap-3 md:grid-cols-3">
           <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-4 shadow-sm dark:border-indigo-700/60 dark:bg-indigo-950/32">
             <p className="text-xs text-muted-foreground">個案代碼</p>
             <p className="mt-1 font-semibold">
               {isLoading ? '載入中...' : caseInfo?.code_name ?? '未提供'}
             </p>
           </div>
-          <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90 md:col-span-2">
-            <p className="text-xs text-muted-foreground">會談識別碼</p>
-            <p className="mt-1 truncate font-mono text-xs">{sessionId}</p>
+          <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
+            <p className="text-xs text-muted-foreground">會談狀態</p>
+            <p className="mt-1 font-semibold">已連結會談</p>
           </div>
           <div className="rounded-md border border-slate-200 bg-white/80 p-4 shadow-sm dark:border-slate-700 dark:bg-slate-900/90">
             <p className="text-xs text-muted-foreground">可用微摘要</p>
@@ -1141,7 +1087,7 @@ export default function ReportPage() {
               <p className="text-sm text-muted-foreground">載入中...</p>
             </SectionCard>
           ) : summaries.length > 0 ? (
-            <SummaryReviewAids report={report} summaries={summaries} />
+            <SummaryReviewAids summaries={summaries} />
           ) : null}
 
           <SectionCard
@@ -1177,7 +1123,7 @@ export default function ReportPage() {
             className="mt-1 text-xl font-semibold tracking-tight text-slate-950 dark:text-slate-50"
             id="v2-draft-heading"
           >
-            v2 報告草稿
+            個案概念化報告草稿
           </h2>
         </div>
 
@@ -1209,135 +1155,6 @@ export default function ReportPage() {
         <ReportV2Preview draft={reportDraft} />
       </section>
 
-      <section className="space-y-4 border-t border-slate-200 pt-5 dark:border-slate-800" aria-labelledby="legacy-v1-heading">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            Legacy v1 transient report
-          </p>
-          <h2
-            className="mt-1 text-lg font-semibold tracking-tight text-slate-800 dark:text-slate-100"
-            id="legacy-v1-heading"
-          >
-            舊版 v1 暫存報告
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-muted-foreground">
-            保留既有 v1 產生流程；此區內容只在本頁暫時顯示，離開或重新整理後需重新產生。
-          </p>
-        </div>
-
-        <div className="rounded-md border border-slate-200/75 bg-slate-50/70 p-4 dark:border-slate-700 dark:bg-slate-900/45">
-          {!report ? (
-            <div>
-              <p className="mb-3 text-sm leading-6 text-muted-foreground">
-                v1 草稿不會自動產生，也不會讀寫 v2 手動資料草稿。請由諮商師確認摘要脈絡後手動觸發。
-              </p>
-              <button
-                className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
-                disabled={isGenerating || !caseId || !sessionId}
-                onClick={handleGenerateReport}
-                type="button"
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileText className="h-4 w-4" />
-                )}
-                {isGenerating ? '產生中' : '產生 v1 AI 草稿'}
-              </button>
-            </div>
-          ) : (
-            <>
-              <section className="rounded-md border border-amber-200 bg-amber-50/90 p-4 text-sm text-amber-950 shadow-[0_10px_26px_rgba(146,64,14,0.08)] dark:border-amber-500/35 dark:bg-amber-950/55 dark:text-amber-100 dark:shadow-[0_10px_26px_rgba(0,0,0,0.24)]">
-                <div className="flex gap-3">
-                  <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div>
-                    <h2 className="font-semibold">報告免責聲明</h2>
-                    <p className="mt-2 whitespace-pre-wrap leading-6">
-                      {report.disclaimer}
-                    </p>
-                  </div>
-                </div>
-              </section>
-
-              <SectionCard
-                title="舊版 v1 暫存報告內容"
-                description={`產生時間：${formatDate(report.generated_at)}。以下內容需由諮商師審閱後才可使用，不作診斷文件。`}
-              >
-                <div className="grid gap-3">
-                  <ReportTextBlock title="主訴摘要" value={report.chief_complaint} />
-
-                  <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
-                    <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">情緒模式觀察</h4>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
-                      {report.emotion_pattern?.description ?? '未提供'}
-                    </p>
-                    <div className="mt-4 grid gap-3 text-sm sm:grid-cols-3">
-                      <div className="rounded-md border border-indigo-100 bg-indigo-50/55 p-3 dark:border-indigo-700/60 dark:bg-indigo-950/32">
-                        <p className="text-xs text-muted-foreground">強度趨勢</p>
-                        <p className="mt-1 font-medium">
-                          {formatTrend(report.emotion_pattern?.intensity_trend)}
-                        </p>
-                      </div>
-                      <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/90">
-                        <p className="text-xs text-muted-foreground">高峰輪次</p>
-                        <p className="mt-1 font-medium">
-                          {report.emotion_pattern?.peak_turn ?? '未提供'}
-                        </p>
-                      </div>
-                      <div className="rounded-md border border-slate-200 bg-slate-50/80 p-3 dark:border-slate-700 dark:bg-slate-900/90">
-                        <p className="text-xs text-muted-foreground">主要情緒</p>
-                        <p className="mt-1 font-medium">
-                          {report.emotion_pattern?.dominant_emotions?.join('、') ??
-                            '未提供'}
-                        </p>
-                      </div>
-                    </div>
-                  </section>
-
-                  <ReportTextBlock
-                    title="認知與行為觀察"
-                    value={report.cognitive_behavioral_analysis}
-                  />
-                  <ReportTextBlock
-                    title="初步概念化"
-                    value={report.initial_conceptualization}
-                  />
-
-                  <section className="rounded-md border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-700 dark:bg-card">
-                    <h4 className="text-sm font-semibold text-indigo-950 dark:text-indigo-200">供諮商師審閱的可能取向</h4>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      以下僅為後端報告提供的取向名稱，並非具體治療指令或治療計畫。
-                    </p>
-                    {report.suggested_directions?.length ? (
-                      <ul className="mt-2 space-y-2 text-sm leading-6 text-muted-foreground">
-                        {report.suggested_directions.map((direction) => (
-                          <li key={direction}>• {direction}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-2 text-sm text-muted-foreground">未提供</p>
-                    )}
-                  </section>
-
-                  <ReportTextBlock title="危機摘要" value={report.crisis_summary} />
-
-                  <section className="rounded-md border border-slate-200 bg-white p-4 text-sm shadow-sm dark:border-slate-700 dark:bg-card">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="font-semibold">報告危機彙整</span>
-                      <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs dark:border-slate-700 dark:bg-slate-900/70">
-                        has_crisis：{report.has_crisis ? 'true' : 'false'}
-                      </span>
-                    </div>
-                    <p className="mt-2 leading-6 text-muted-foreground">
-                      此欄位由後端報告資料提供，僅作諮商師審閱與後續判斷參考。
-                    </p>
-                  </section>
-                </div>
-              </SectionCard>
-            </>
-          )}
-        </div>
-      </section>
     </div>
   )
 }

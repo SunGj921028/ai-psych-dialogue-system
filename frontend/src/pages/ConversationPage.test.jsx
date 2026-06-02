@@ -269,6 +269,11 @@ describe('ConversationPage crisis behavior', () => {
     await submitSyntheticTurn()
 
     expect(await screen.findByText('SYNTHETIC_LOW_METADATA_REASON')).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'low 等級僅作為諮商師審閱 metadata 顯示，不提升為紅色警示。',
+      ),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
@@ -287,6 +292,11 @@ describe('ConversationPage crisis behavior', () => {
     await renderReadyConversationPage()
 
     expect(screen.getByText(restoredLowText)).toBeInTheDocument()
+    expect(
+      screen.queryByText(
+        'low 等級僅作為諮商師審閱 metadata 顯示，不提升為紅色警示。',
+      ),
+    ).not.toBeInTheDocument()
     expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     expect(screen.queryByRole('dialog', { name: '高風險提醒' })).not.toBeInTheDocument()
   })
@@ -557,6 +567,7 @@ describe('ConversationPage resume query behavior', () => {
     )
     expect(await screen.findByText('SYNTHETIC_RESUMED_MESSAGE')).toBeInTheDocument()
     expect(screen.getByText('已從歷史紀錄恢復此會談')).toBeInTheDocument()
+    expect(screen.queryByText('query-session')).not.toBeInTheDocument()
     expect(
       document.querySelector(
         'a[href="/report/query-case?sessionId=query-session"]',
@@ -690,6 +701,22 @@ describe('ConversationPage resume query behavior', () => {
         turn_number: 4,
       }),
     )
+  })
+
+  test('keeps a single visible report entry point without the duplicate report card', async () => {
+    setActiveSession()
+    mockSessionData()
+
+    await renderReadyConversationPage()
+
+    expect(
+      screen.getByRole('link', { name: /前往草稿報告/ }),
+    ).toHaveAttribute('href', `/report/${activeCaseId}?sessionId=${activeSessionId}`)
+    expect(
+      screen.queryByRole('heading', { name: '草稿報告' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '開啟報告頁' })).not.toBeInTheDocument()
+    expect(screen.queryByText(activeSessionId)).not.toBeInTheDocument()
   })
 })
 

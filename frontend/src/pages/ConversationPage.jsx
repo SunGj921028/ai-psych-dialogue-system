@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
   AlertTriangle,
-  ArrowRight,
   Bot,
   ClipboardList,
   FileText,
@@ -739,8 +738,10 @@ export default function ConversationPage() {
             <p className="mt-1 font-medium">{activeCase?.code_name ?? '尚未選擇'}</p>
           </div>
           <div className="rounded-md border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/90">
-            <p className="text-xs text-muted-foreground">會談識別碼</p>
-            <p className="mt-1 truncate font-mono text-xs">{sessionId || '尚未建立'}</p>
+            <p className="text-xs text-muted-foreground">會談狀態</p>
+            <p className="mt-1 font-medium">
+              {sessionId ? '已建立會談' : '尚未建立'}
+            </p>
           </div>
           <div className="rounded-md border border-slate-200 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/90">
             <p className="text-xs text-muted-foreground">摘要數</p>
@@ -956,38 +957,6 @@ export default function ConversationPage() {
                 {crisisDisplay.description}
               </p>
             </div>
-            {crisisDisplay.level === 'low' ? (
-              <p className="mt-3 text-xs leading-5 text-muted-foreground">
-                low 等級僅作為諮商師審閱 metadata 顯示，不提升為紅色警示。
-              </p>
-            ) : null}
-          </SectionShell>
-
-          <SectionShell className="p-4 ring-1 ring-white/60">
-            <h2 className="flex items-center gap-2 font-semibold">
-              <FileText className="h-4 w-4" />
-              草稿報告
-            </h2>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              完成會談輸入後，可前往個案概念化草稿頁，由諮商師審閱後再決定是否使用。
-            </p>
-            {reportUrl ? (
-              <Link
-                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-md border border-indigo-200 bg-indigo-50/70 px-4 py-2 text-sm font-medium text-indigo-950 transition hover:bg-indigo-100 dark:border-indigo-700/60 dark:bg-indigo-950/32 dark:text-indigo-100 dark:hover:bg-indigo-900/45"
-                to={reportUrl}
-              >
-                開啟報告頁
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            ) : (
-              <button
-                className="mt-4 inline-flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-md border bg-slate-50 px-4 py-2 text-sm font-medium opacity-60 dark:border-slate-700 dark:bg-slate-900"
-                disabled
-                type="button"
-              >
-                請先選擇個案
-              </button>
-            )}
           </SectionShell>
         </aside>
       </div>
