@@ -72,7 +72,7 @@ const EMOTION_DIMENSION_LABELS = {
   anxiety: '焦慮',
   sadness: '悲傷',
   anger: '憤怒',
-  hopelessness: '無助',
+  hopelessness: '無望',
   confusion: '困惑',
   hope: '希望',
 }
