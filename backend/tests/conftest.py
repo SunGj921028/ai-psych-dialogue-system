@@ -26,6 +26,24 @@ def _cleanup_sqlite_files(db_path: Path) -> None:
         db_path.parent.parent.rmdir()
 
 
+@pytest.fixture(autouse=True)
+def isolate_provider_env(monkeypatch):
+    for name in (
+        "GEMINI_API_KEY",
+        "GROQ_API_KEY",
+        "REPORT_V2_API_KEY",
+        "REPORT_V2_PROVIDER",
+        "REPORT_V2_PROVIDER_MODE",
+        "REPORT_V2_MODEL",
+        "ANALYSIS_MODEL",
+        "LLM_API_KEY",
+        "LLM_BASE_URL",
+        "LLM_MODEL",
+        "OPENAI_API_KEY",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+
 @pytest.fixture()
 def client(monkeypatch):
     db_dir = Path(tempfile.gettempdir()) / "ai_psych_dialogue_route_tests" / uuid.uuid4().hex
