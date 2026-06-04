@@ -130,7 +130,14 @@ Current implementation facts:
   understanding remains counselor-owned and primary, and AI client
   understanding is only supplemental draft text requiring review.
 - `theoretical_orientation_rationale` guidance now requires the generated text
-  to begin with `初步建議取向：...`. No schema field was added.
+  to begin with `初步建議取向：...` and uses evidence-based multi-orientation
+  prompting. CBT is one possible option, not the default or only supported
+  answer. The prompt asks the provider to consider structured summaries,
+  persisted manual input, and curated psychology orientation cues, including
+  CBT, humanistic / person-centered, psychodynamic, attachment, interpersonal,
+  family systems, solution-focused brief counseling, narrative, trauma-informed,
+  and integrative orientations. `待與督導確認` is reserved for insufficient, mixed,
+  or indistinguishable evidence. No schema field was added.
 - Backend Report v2 provider output parsing accepts JSON string or dict input,
   rejects invalid JSON and non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
@@ -480,7 +487,10 @@ Examples:
 
 `theoretical_orientation_rationale` may include a cautious AI suggestion, but it
 must begin with `初步建議取向：...` and remain a draft rationale for counselor
-review.
+review. It should select a tentative orientation from the available evidence and
+curated orientation cues rather than defaulting to CBT. `待與督導確認` remains
+appropriate when data are insufficient, mixed, or not enough to distinguish
+among plausible orientations.
 
 ### `system_owned`
 
@@ -903,7 +913,10 @@ Current prompt/input builder behavior:
   counselor review; the manual client-understanding field remains primary and
   counselor-owned.
 - `theoretical_orientation_rationale` should begin with
-  `初步建議取向：...`.
+  `初步建議取向：...`, frame CBT as one possible orientation rather than the
+  default, and allow non-CBT orientations when supported by structured summaries,
+  persisted manual input, and curated psychology cues. `待與督導確認` should be
+  used for insufficient, mixed, or indistinguishable evidence.
 
 Current provider parser behavior:
 
@@ -1192,7 +1205,11 @@ Current backend prompt/parser/provider-boundary tests cover:
   summaries and persisted `crisis_level` only
 - explicit-denial versus absent-data risk-language handling
 - AI `client_understanding_draft` as supplemental review-needed text
-- `theoretical_orientation_rationale` beginning with `初步建議取向：...`
+- `theoretical_orientation_rationale` beginning with `初步建議取向：...`,
+  evidence-based multi-orientation prompt/message guidance, CBT-as-one-option
+  wording, and `待與督導確認` reserved for insufficient/mixed evidence
+- non-CBT `theoretical_orientation_rationale` parser regression, such as
+  `人本／個人中心取向`, with strict manual-only/unknown field rejection preserved
 - unset/default deterministic mode
 - explicit deterministic mode
 - provider mode with monkeypatched provider output
@@ -1315,3 +1332,6 @@ Human decisions needed before coding:
   mode in development?
 - What prompt-quality acceptance criteria should be used for provider-backed v2
   drafts?
+- Continue manual regression checks with Case B / Case C style prompts to verify
+  that family systems, interpersonal, attachment, psychodynamic, humanistic, or
+  integrative orientations appear when case evidence supports them.

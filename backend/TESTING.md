@@ -204,12 +204,20 @@ Covered deterministic behaviors include:
   `crisis_language_summary` screening from summaries and persisted
   `crisis_level` only, explicit-denial versus absent-data handling,
   supplemental `client_understanding_draft`, and
-  `theoretical_orientation_rationale` beginning with `初步建議取向：...`.
+  evidence-based multi-orientation `theoretical_orientation_rationale` guidance.
+  The orientation tests assert that the field begins with `初步建議取向：...`, CBT
+  is one possible option rather than the default, multiple non-CBT options are
+  present, `待與督導確認` is reserved for insufficient or mixed evidence, and
+  cautious/non-final wording remains.
 - Report Schema v2 provider output parser accepts JSON strings or dicts; rejects
   invalid JSON, non-object JSON, unknown/manual-only fields, and unsafe evidence
   ref notes; validates with `ReportAIGeneratedV2`; and limits evidence notes to
   pointer-only labels such as `summary metadata`, `manual input`, and
   `persisted crisis level`.
+- Parser regression coverage confirms a non-CBT
+  `theoretical_orientation_rationale` value such as `人本／個人中心取向` validates
+  successfully while strict rejection of manual-only/unknown fields remains
+  covered.
 - `_call_report_v2_provider(...)` uses the selected Gemini or Groq provider path
   in provider mode, but automated tests monkeypatch the boundary and verify that
   no live provider is required.

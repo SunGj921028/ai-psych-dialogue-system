@@ -1117,7 +1117,7 @@ def test_report_v2_prompt_payload_instructs_client_understanding_draft_when_evid
     assert "不得臆造" in encoded
 
 
-def test_report_v2_prompt_payload_requires_explicit_initial_orientation_in_rationale():
+def test_report_v2_prompt_payload_allows_evidence_based_multi_orientation_rationale():
     payload = analysis_agent._build_report_v2_prompt_payload(
         case_id="case-1",
         session_id="session-1",
@@ -1131,11 +1131,29 @@ def test_report_v2_prompt_payload_requires_explicit_initial_orientation_in_ratio
     assert "theoretical_orientation_rationale_guidance" in instructions
     assert "theoretical_orientation_rationale" in encoded
     assert "初步建議取向：" in encoded
-    assert "初步建議取向：認知行為治療（CBT）。" in encoded
+    assert "CBT 只是可能選項之一，不是預設答案" in encoded
+    for option in [
+        "認知行為治療（CBT）",
+        "人本／個人中心取向",
+        "心理動力取向",
+        "依附取向",
+        "人際取向",
+        "家庭系統取向",
+        "焦點解決短期諮商",
+        "敘事取向",
+        "創傷知情取向",
+        "整合取向",
+    ]:
+        assert option in encoded
+    assert "資料不足、證據混雜，或多個取向皆可能但不足以區分" in encoded
     assert "初步建議取向：待與督導確認。" in encoded
+    assert "CBT） as the initial recommended orientation" not in encoded
     assert "可能適合" in encoded
     assert "需諮商師審閱" in encoded
+    assert "尚待確認" in encoded
     assert "不得宣稱最終治療模式" in encoded
+    assert "不得提供心理或精神科診斷" in encoded
+    assert "不得填寫診斷" in encoded
     assert "formal clinical decision" in encoded
 
 
@@ -1155,10 +1173,21 @@ def test_report_v2_messages_repeat_client_understanding_and_orientation_boundari
     assert "client's own understanding, attribution, or meaning-making" in encoded
     assert "If evidence is insufficient" in encoded
     assert "初步建議取向：" in encoded
+    assert "CBT is one possible option, not the default" in encoded
+    assert "人本／個人中心取向" in encoded
+    assert "心理動力取向" in encoded
+    assert "家庭系統取向" in encoded
+    assert "創傷知情取向" in encoded
+    assert "資料不足、證據混雜" in encoded
     assert "可能適合" in encoded
     assert "需諮商師審閱" in encoded
+    assert "尚待確認" in encoded
     assert "待與督導確認" in encoded
+    assert "When evidence supports CBT" not in encoded
+    assert "otherwise begin with 初步建議取向：待與督導確認" not in encoded
     assert "Do not claim a final treatment model" in encoded
+    assert "diagnosis" in encoded
+    assert "treatment plan" in encoded
 
 
 def test_report_v2_prompt_payload_instructs_dialogue_based_risk_language_screening():
@@ -1250,6 +1279,40 @@ def test_parse_report_v2_provider_output_accepts_valid_json_with_safe_evidence_r
     assert isinstance(result, ReportAIGeneratedV2)
     assert result.chief_complaint_draft.value == "可能與工作壓力相關，尚待確認。"
     assert result.chief_complaint_draft.evidence_refs[0].note == "summary metadata"
+
+
+def test_parse_report_v2_provider_output_accepts_non_cbt_orientation_without_relaxing_schema():
+    raw = {
+        "theoretical_orientation_rationale": {
+            "label_zh": "初步取向建議與理由",
+            "value": (
+                "初步建議取向：人本／個人中心取向。"
+                "此為根據目前摘要中自我價值、情緒經驗與意義探索線索所形成的初步草稿，"
+                "需諮商師審閱並與督導確認。"
+            ),
+            "source_type": "ai",
+            "missing_reason": None,
+            "needs_review": True,
+            "evidence_refs": [],
+        }
+    }
+
+    result = analysis_agent._parse_report_v2_provider_output(raw)
+
+    assert isinstance(result, ReportAIGeneratedV2)
+    assert result.theoretical_orientation_rationale.value.startswith(
+        "初步建議取向：人本／個人中心取向。"
+    )
+    assert "認知行為治療（CBT）" not in result.theoretical_orientation_rationale.value
+
+    try:
+        analysis_agent._parse_report_v2_provider_output(
+            {"formal_diagnosis_notes": {"value": "manual-only field must still fail"}}
+        )
+    except analysis_agent.ReportV2GenerationError as exc:
+        assert exc.category == "schema_validation_failed"
+        return
+    raise AssertionError("manual-only provider output should still fail closed")
 
 
 def test_parse_report_v2_provider_output_normalizes_known_fields_missing_metadata():
