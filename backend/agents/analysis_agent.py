@@ -303,6 +303,18 @@ def _get_report_v2_curated_knowledge_excerpts() -> list[str]:
         "撰寫時需區分事實與推論；推論使用「可能」「推測」「尚待確認」「需由諮商師確認」。",
         "缺失資料應留空、設為 null，或標示「待評估」，不得臆造症狀、史實、測驗分數或風險細節。",
         "理論取向可提供初步概念化語言，但不得自動化診斷、用藥建議、正式治療計畫或正式風險等級。",
+        (
+            "取向線索僅供概念化參考，不是診斷或處遇處方：CBT 可參考自動化思考、迴避、因應行為、"
+            "認知-情緒-行為循環；人本／個人中心可參考自我價值、一致性、情緒經驗、接納與意義。"
+        ),
+        (
+            "心理動力可參考重複關係模式、防衛、內在衝突與有資料支持的早期經驗；依附／人際可參考"
+            "拋棄擔憂、追求／退縮、尋求保證與人際互動模式；家庭系統可參考家庭期待、角色壓力與親子互動循環。"
+        ),
+        (
+            "焦點解決可參考具體目標、例外經驗、資源與近期因應；敘事可參考問題飽和故事與替代自我敘事；"
+            "創傷知情可參考明確支持的安全、穩定化與創傷線索；整合取向可用於多個模式皆有資料支持且需合併觀點時。"
+        ),
     ]
 
 
@@ -423,19 +435,30 @@ def _build_report_v2_prompt_payload(
             "theoretical_orientation_rationale_guidance": {
                 "target_field": "theoretical_orientation_rationale",
                 "purpose": (
-                    "Provide a cautious initial orientation recommendation only when evidence supports it, "
-                    "then explain why it may fit. This is draft wording for counselor review, not a formal clinical decision."
+                    "Analyze structured summaries, saved manual_input, and curated knowledge excerpts to provide "
+                    "a cautious initial orientation recommendation only when evidence supports it, then explain "
+                    "why it may fit. This is draft wording for counselor review, not a formal clinical decision."
                 ),
-                "required_opening": [
-                    "初步建議取向：認知行為治療（CBT）。",
-                    "初步建議取向：待與督導確認。",
+                "required_opening": "初步建議取向：",
+                "orientation_options": [
+                    "認知行為治療（CBT）",
+                    "人本／個人中心取向",
+                    "心理動力取向",
+                    "依附取向",
+                    "人際取向",
+                    "家庭系統取向",
+                    "焦點解決短期諮商",
+                    "敘事取向",
+                    "創傷知情取向",
+                    "整合取向",
                 ],
                 "writing_rules": [
                     "theoretical_orientation_rationale 的 value 必須以「初步建議取向：」開頭。",
-                    "If cognitive, behavioral, emotion-regulation, avoidance, or coping-pattern evidence supports CBT, explicitly name 認知行為治療（CBT） as the initial recommended orientation.",
-                    "If evidence does not support a specific orientation, begin with 初步建議取向：待與督導確認。",
-                    "Use cautious wording such as 初步建議取向、可能適合、需諮商師審閱、待與督導確認.",
-                    "不得宣稱最終治療模式、正式治療決策、診斷或處遇計畫。",
+                    "請根據結構化 summaries 與已儲存 manual_input，提出最符合目前資料的謹慎初步取向建議；CBT 只是可能選項之一，不是預設答案。",
+                    "可考慮的取向包括：認知行為治療（CBT）、人本／個人中心取向、心理動力取向、依附取向、人際取向、家庭系統取向、焦點解決短期諮商、敘事取向、創傷知情取向、整合取向。",
+                    "若資料不足、證據混雜，或多個取向皆可能但不足以區分，請以「初步建議取向：待與督導確認。」開頭。",
+                    "說明需使用「初步建議取向」「可能適合」「需諮商師審閱」「尚待確認」「待與督導確認」等謹慎語句。",
+                    "不得宣稱最終治療模式、正式治療決策、診斷、處遇計畫或治療計畫。",
                 ],
             },
             "output_schema": "只輸出 JSON object，且必須符合 ReportAIGeneratedV2；未知欄位會被拒絕。",
@@ -473,10 +496,13 @@ def _build_report_v2_messages(payload: dict[str, Any]) -> list[dict[str, str]]:
         "leave it empty/null/待評估 with missing_reason no_data or not_assessed; manual input remains "
         "counselor-confirmed and primary.\n"
         "For theoretical_orientation_rationale, the value must begin with 初步建議取向：. "
-        "When evidence supports CBT, begin with 初步建議取向：認知行為治療（CBT）。; "
-        "otherwise begin with 初步建議取向：待與督導確認。. Use cautious wording such as "
-        "可能適合、需諮商師審閱、待與督導確認. Do not claim a final treatment model "
-        "or formal clinical decision.\n"
+        "Analyze structured summaries, saved manual_input, and curated knowledge excerpts; CBT is one possible "
+        "option, not the default. Consider orientations such as 認知行為治療（CBT）、人本／個人中心取向、"
+        "心理動力取向、依附取向、人際取向、家庭系統取向、焦點解決短期諮商、敘事取向、"
+        "創傷知情取向、整合取向. 若資料不足、證據混雜，或多個取向皆可能但不足以區分，"
+        "begin with 初步建議取向：待與督導確認。. Use cautious wording such as "
+        "可能適合、需諮商師審閱、尚待確認、待與督導確認. Do not claim a final treatment model, "
+        "formal clinical decision, diagnosis, treatment prescription, or treatment plan.\n"
         "Cover suicide ideation language, suicide plan/intent language, self-harm language, "
         "harm-to-others language, substance-use language, psychotic-symptom language, "
         "and an overall risk-language screening impression when evidence allows.\n"
