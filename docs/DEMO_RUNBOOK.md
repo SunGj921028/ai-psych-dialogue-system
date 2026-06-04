@@ -446,6 +446,9 @@ After class:
 - reviewed status
 - print-friendly report view
 - PDF export
+- manual provider regression checks with Case B / Case C style scenarios to
+  confirm family systems, interpersonal, attachment, psychodynamic, humanistic,
+  or integrative orientations appear when supported by the case evidence
 - optional emotion intensity line chart, theme frequency chart, and additional
   chart polish
 - any crisis visualization should remain cautious and must not imply formal risk

@@ -133,7 +133,9 @@ mismatches.
   and frontend v2 generate/preview integration are implemented. Manual local
   provider smoke testing has passed with synthetic data, and a classroom demo
   runbook exists at `docs/DEMO_RUNBOOK.md`. The post-demo prompt/preview
-  refinement batch is complete. Counselor final report workflow, reviewed
+  refinement batch is complete, including evidence-based multi-orientation
+  guidance for Report v2 theoretical orientation rationale. Counselor final
+  report workflow, reviewed
   status, print-friendly/PDF export, production deployment/testing, additional
   chart polish/visualizations, hard delete/session data-retention workflow,
   title search/filter, richer session metadata, optional secret-safe
@@ -266,8 +268,10 @@ These are current code facts and should not be contradicted in new work:
   bound/truncate `key_statement`, and exclude raw messages, crisis detector
   reasons, DB-internal `round`, and session title. Post-demo refinements cover
   dialogue-based `crisis_language_summary`, supplemental
-  `client_understanding_draft`, and `theoretical_orientation_rationale` starting
-  with `初步建議取向：...`.
+  `client_understanding_draft`, and evidence-based multi-orientation
+  `theoretical_orientation_rationale` starting with `初步建議取向：...`. CBT is one
+  possible option rather than the default, and `待與督導確認` is reserved for
+  insufficient, mixed, or indistinguishable evidence.
 - Report v2 provider output parsing exists. It accepts JSON string or dict
   inputs, rejects invalid/non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema

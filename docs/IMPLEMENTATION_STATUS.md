@@ -141,9 +141,16 @@ Current facts:
   persisted `crisis_level`; it covers suicide ideation, plan/intent,
   self-harm, harm-to-others, substance use, psychotic symptoms, and overall
   screening impression while distinguishing explicit denial from absent data.
-  `client_understanding_draft` is supplemental AI draft text only, and
-  `theoretical_orientation_rationale` should begin with
-  `初步建議取向：...`. No Report v2 schema field was added for these refinements.
+  `client_understanding_draft` is supplemental AI draft text only.
+  `theoretical_orientation_rationale` remains AI draft-only, must begin with
+  `初步建議取向：...`, and now uses evidence-based multi-orientation guidance:
+  CBT is one possible option rather than the default, while humanistic /
+  person-centered, psychodynamic, attachment, interpersonal, family systems,
+  solution-focused brief counseling, narrative, trauma-informed, and integrative
+  orientations may be considered when supported by structured summaries,
+  persisted manual input, and curated psychology orientation cues.
+  `待與督導確認` is reserved for insufficient, mixed, or indistinguishable
+  evidence. No Report v2 schema field was added for these refinements.
 - Backend Report v2 provider output parsing now exists. The parser accepts a
   JSON string or dict, rejects invalid JSON and non-object JSON, validates with
   `ReportAIGeneratedV2`, rejects unknown/manual-only fields through strict schema
@@ -225,7 +232,8 @@ Current facts:
   prompts or raw provider responses. A classroom demo runbook exists at
   `docs/DEMO_RUNBOOK.md`. The post-demo prompt-quality refinements for crisis
   attribution, Report v2 risk-language screening, client-understanding wording,
-  and theoretical-orientation wording are complete. The first Recharts demo
+  and evidence-based multi-orientation theoretical-orientation wording are
+  complete. The first Recharts demo
   visualization slice for ReportPage emotion dimension averages is implemented.
   Prompt/version audit metadata, counselor review/final report workflow,
   print-friendly/PDF export, additional chart polish/visualizations, production
@@ -237,7 +245,8 @@ Current facts:
   advice, no formal risk-level automation, no safety plan generation, no
   treatment plan automation, no PDF export, and v1 behavior remains unchanged.
   Fixed knowledge-base excerpts are reference and writing guidance only, not
-  case facts.
+  case facts; orientation cues support cautious conceptualization language only
+  and do not prescribe treatment.
 
 ### Backend Routers
 
@@ -533,8 +542,11 @@ Current facts:
 - Frontend v2 AI draft generation integration now exists through the separate
   `v2 AI ?阮?Ｙ?` action card and `generateReportDraftV2(draftId)`.
   Manual local provider smoke testing has been completed for Report v2 provider
-  mode. The post-demo prompt refinement batch is complete. Editable counselor
-  final report workflow, reviewed status, additional chart polish/visualizations,
+  mode. The post-demo prompt refinement batch is complete, including
+  evidence-based multi-orientation guidance for
+  `theoretical_orientation_rationale` instead of the old CBT-or-supervision
+  binary. Editable counselor final report workflow, reviewed status,
+  additional chart polish/visualizations,
   print-friendly/PDF export, and production deployment/testing have not been
   implemented for the report workspace.
 
@@ -554,8 +566,8 @@ Current facts:
   behavior where provider calls would otherwise occur.
 - Agent tests monkeypatch LLM clients and do not require API keys, network access,
   or live providers.
-- The full deterministic backend suite passed after Report v2 provider selection
-  and Report v2 opt-in provider fallback support with 219 tests.
+- The full deterministic backend suite passed after Report v2 theoretical
+  orientation prompt refinement with 224 tests.
 - Manual/live backend scripts live under `backend/manual_checks/` as `check_*.py`
   files to avoid pytest discovery.
 - `backend/manual_checks/check_db_smoke.py` remains a legacy/manual smoke script
@@ -617,6 +629,13 @@ Current facts:
   success/fallback failure behavior, no overwrite on provider or fallback
   failure, no-summary provider non-call behavior, v1 report preservation, and
   deterministic v2 generation preservation.
+- Report Schema v2 prompt/message tests now cover evidence-based
+  `theoretical_orientation_rationale` guidance: the field must begin with
+  `初步建議取向：`, CBT is one possible option rather than the default, multiple
+  non-CBT options are present, `待與督導確認` is reserved for insufficient or mixed
+  evidence, and cautious/non-final wording remains. A parser regression confirms
+  a non-CBT rationale such as `人本／個人中心取向` validates successfully while
+  strict rejection of manual-only/unknown fields remains covered.
 - Backend route-test DB isolation was improved to reduce Windows SQLite temp/WAL
   lock flakiness.
 - Current frontend coverage includes header/theme toggle behavior, safe theme
@@ -982,6 +1001,10 @@ Future intent:
   documentation updates after future slices.
 - Add report status UI and counselor review/final-report workflow when
   prioritized.
+- Continue manual provider regression checks with Case B / Case C style scenarios
+  to confirm family systems, interpersonal, attachment, psychodynamic,
+  humanistic, or integrative orientations appear when the structured summaries
+  and manual input support them.
 - Optional latest/peak session `crisis_level` aggregate remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
 - Smarter scroll behavior can be considered later as optional UX refinement.
