@@ -28,21 +28,9 @@ cd frontend && npm run dev
 ## 環境變數（後端）
 
 1. 複製 `backend/.env.example` 為 `backend/.env`
-2. 填入 `LLM_API_KEY` 與其他必要欄位
+2. 填入必要欄位
 
 請勿將 `.env` 提交至版本庫（已列於 `backend/.gitignore`）。
-
-## 切換 LLM 提供商
-
-程式不需修改，只要調整 `backend/.env`：
-
-| 用法 | 範例 `LLM_BASE_URL` |
-|------|---------------------|
-| OpenAI 相容 API（預設） | `https://api.openai.com/v1` |
-| Anthropic（若你的 SDK/閘道相容 OpenAI 介面） | `https://api.anthropic.com/v1` |
-| 本機 Ollama | `http://localhost:11434/v1` |
-
-依提供商設定 `LLM_MODEL` 與 `LLM_API_KEY` 即可。
 
 ## shadcn/ui 元件
 
