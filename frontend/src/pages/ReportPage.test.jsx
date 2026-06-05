@@ -548,14 +548,16 @@ describe('ReportPage behavior', () => {
   test('missing current draft shows create state', async () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('尚未建立 v2 手動資料草稿')).toBeInTheDocument()
-    expect(screen.getByText('需先建立 v2 草稿後才可預覽')).toBeInTheDocument()
+    expect(await screen.findByText('尚未建立報告草稿')).toBeInTheDocument()
+    expect(screen.getByText('需先建立報告草稿後才可預覽')).toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: '產生 v2 AI 草稿' }),
+      screen.queryByRole('button', { name: '產生 AI 草稿' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '建立 v2 手動資料草稿' }),
+      screen.getByRole('button', { name: '建立報告草稿' }),
     ).toBeInTheDocument()
+    expect(screen.queryByText('尚未建立 v2 手動資料草稿')).not.toBeInTheDocument()
+    expect(screen.queryByText('需先建立 v2 草稿後才可預覽')).not.toBeInTheDocument()
   })
 
   test('v2 generate action renders when a draft exists', async () => {
@@ -563,15 +565,18 @@ describe('ReportPage behavior', () => {
 
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('v2 AI 草稿產生')).toBeInTheDocument()
+    expect(await screen.findByText('AI 草稿產生')).toBeInTheDocument()
     expect(
       screen.getByText(
-        '依目前已儲存的手動資料與會談摘要產生五段式報告的 AI 草稿。此草稿需由諮商師審閱，且不會影響目前 v1 暫時報告。',
+        '依目前已儲存的手動資料與會談摘要產生五段式報告的 AI 草稿。此草稿需由諮商師審閱，且不會影響其他暫存內容。',
       ),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: '產生 v2 AI 草稿' }),
+      screen.getByRole('button', { name: '產生 AI 草稿' }),
     ).toBeInTheDocument()
+    expect(screen.getByText('報告手動資料')).toBeInTheDocument()
+    expect(screen.queryByText('v2 AI 草稿產生')).not.toBeInTheDocument()
+    expect(screen.queryByText('Report v2 手動資料')).not.toBeInTheDocument()
   })
 
   test('successful v2 generation updates the draft preview without calling v1 generation', async () => {
@@ -584,14 +589,14 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     await user.click(
-      await screen.findByRole('button', { name: '產生 v2 AI 草稿' }),
+      await screen.findByRole('button', { name: '產生 AI 草稿' }),
     )
 
     await waitFor(() => {
       expect(api.generateReportDraftV2).toHaveBeenCalledWith('draft-1')
     })
     expect(api.generateReport).not.toHaveBeenCalled()
-    expect(await screen.findByText('已產生 v2 AI 草稿')).toBeInTheDocument()
+    expect(await screen.findByText('已產生 AI 草稿')).toBeInTheDocument()
     expect(screen.getByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
   })
 
@@ -607,15 +612,15 @@ describe('ReportPage behavior', () => {
     const referralInput = await screen.findByLabelText('轉介來源')
     await user.clear(referralInput)
     await user.type(referralInput, 'UPDATED_REFERRAL_SOURCE')
-    await user.click(screen.getByRole('button', { name: '產生 v2 AI 草稿' }))
+    await user.click(screen.getByRole('button', { name: '產生 AI 草稿' }))
 
     expect(api.generateReportDraftV2).not.toHaveBeenCalled()
     expect(
-      screen.getByText('請先儲存手動資料，再產生 v2 AI 草稿'),
+      screen.getByText('請先儲存手動資料，再產生 AI 草稿'),
     ).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
-    await user.click(await screen.findByRole('button', { name: '產生 v2 AI 草稿' }))
+    await user.click(screen.getByRole('button', { name: '儲存報告手動資料' }))
+    await user.click(await screen.findByRole('button', { name: '產生 AI 草稿' }))
 
     await waitFor(() => {
       expect(api.generateReportDraftV2).toHaveBeenCalledWith('draft-1')
@@ -630,7 +635,7 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     expect(
-      await screen.findByRole('button', { name: '重新產生 v2 AI 草稿' }),
+      await screen.findByRole('button', { name: '重新產生 AI 草稿' }),
     ).toBeInTheDocument()
   })
 
@@ -645,11 +650,11 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     await user.click(
-      await screen.findByRole('button', { name: '產生 v2 AI 草稿' }),
+      await screen.findByRole('button', { name: '產生 AI 草稿' }),
     )
 
     expect(
-      await screen.findByText('至少需要一筆會談摘要才能產生 v2 AI 草稿'),
+      await screen.findByText('至少需要一筆會談摘要才能產生 AI 草稿'),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: '回到工作台新增會談摘要' }),
@@ -669,7 +674,7 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     expect(await screen.findByText('EXISTING_AI')).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: '重新產生 v2 AI 草稿' }))
+    await user.click(screen.getByRole('button', { name: '重新產生 AI 草稿' }))
 
     expect(await screen.findByText('產生失敗，請稍後再試')).toBeInTheDocument()
     expect(screen.getByText('EXISTING_AI')).toBeInTheDocument()
@@ -681,10 +686,12 @@ describe('ReportPage behavior', () => {
 
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(await screen.findByText('個案概念化報告預覽')).toBeInTheDocument()
     expect(
-      screen.getByText('唯讀預覽，尚非正式報告；未產生 v2 AI 草稿。'),
+      screen.getByText('唯讀預覽，尚非正式報告；未產生 AI 草稿。'),
     ).toBeInTheDocument()
+    expect(screen.queryByText('Report Schema v2')).not.toBeInTheDocument()
+    expect(screen.queryByText('v2 五段式報告預覽')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '一、基本資料與主訴' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '二、現況評估與觀察' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: '三、心理評估' })).toBeInTheDocument()
@@ -729,7 +736,7 @@ describe('ReportPage behavior', () => {
 
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(await screen.findByText('個案概念化報告預覽')).toBeInTheDocument()
     expect(screen.getAllByText('待評估').length).toBeGreaterThan(3)
     expect(
       screen.getAllByText('此欄位待未來 AI 草稿或諮商師補充').length,
@@ -849,7 +856,7 @@ describe('ReportPage behavior', () => {
 
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(await screen.findByText('個案概念化報告預覽')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
     expect(basicSection).toHaveTextContent(
       'AI 補充草稿：個案對問題理解的可能表述，需審閱',
@@ -889,7 +896,7 @@ describe('ReportPage behavior', () => {
 
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(await screen.findByText('個案概念化報告預覽')).toBeInTheDocument()
     const basicSection = getSectionByHeading('一、基本資料與主訴')
     expect(basicSection).not.toHaveTextContent('諮商師確認：個案對問題的理解')
     expect(basicSection).not.toHaveTextContent(
@@ -955,13 +962,13 @@ describe('ReportPage behavior', () => {
     expect(screen.queryByText('SYNTHETIC_SUMMARY_KEY')).not.toBeInTheDocument()
     expect(screen.queryByTestId('emotion-dimension-radar-chart')).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: '建立 v2 手動資料草稿' }),
+      screen.queryByRole('button', { name: '建立報告草稿' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: '儲存 v2 手動資料' }),
+      screen.queryByRole('button', { name: '儲存報告手動資料' }),
     ).not.toBeInTheDocument()
     expect(
-      screen.queryByRole('button', { name: '重新產生 v2 AI 草稿' }),
+      screen.queryByRole('button', { name: '重新產生 AI 草稿' }),
     ).not.toBeInTheDocument()
     expect(screen.queryByText('舊版 v1 暫存報告')).not.toBeInTheDocument()
 
@@ -976,7 +983,7 @@ describe('ReportPage behavior', () => {
     expect(Object.keys(window.sessionStorage)).toEqual([])
 
     await user.click(screen.getByRole('button', { name: '返回編輯檢視' }))
-    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(await screen.findByText('個案概念化報告預覽')).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: '列印友善檢視' }),
     ).toBeInTheDocument()
@@ -1012,7 +1019,7 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     await user.click(
-      await screen.findByRole('button', { name: '建立 v2 手動資料草稿' }),
+      await screen.findByRole('button', { name: '建立報告草稿' }),
     )
 
     expect(api.createReportDraft).toHaveBeenCalledWith(caseId, sessionId, {})
@@ -1030,7 +1037,7 @@ describe('ReportPage behavior', () => {
     const referralInput = await screen.findByLabelText('轉介來源')
     await user.clear(referralInput)
     await user.type(referralInput, 'UPDATED_REFERRAL_SOURCE')
-    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+    await user.click(screen.getByRole('button', { name: '儲存報告手動資料' }))
 
     await waitFor(() => {
       expect(api.updateReportDraftManualInput).toHaveBeenCalledWith(
@@ -1063,7 +1070,7 @@ describe('ReportPage behavior', () => {
     await user.type(safetyPlan, 'UPDATED_SAFETY_PLAN')
     expect(screen.getByText('未儲存變更')).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+    await user.click(screen.getByRole('button', { name: '儲存報告手動資料' }))
 
     expect(await screen.findByText('已儲存')).toBeInTheDocument()
     expect(screen.getByDisplayValue('UPDATED_SAFETY_PLAN')).toBeInTheDocument()
@@ -1082,7 +1089,7 @@ describe('ReportPage behavior', () => {
     const riskNotes = await screen.findByLabelText('正式風險評估備註')
     await user.clear(riskNotes)
     await user.type(riskNotes, 'UNSAVED_RISK_NOTES')
-    await user.click(screen.getByRole('button', { name: '儲存 v2 手動資料' }))
+    await user.click(screen.getByRole('button', { name: '儲存報告手動資料' }))
 
     expect(await screen.findByText('儲存失敗，請稍後再試')).toBeInTheDocument()
     expect(screen.getByDisplayValue('UNSAVED_RISK_NOTES')).toBeInTheDocument()
@@ -1094,7 +1101,7 @@ describe('ReportPage behavior', () => {
     api.getCurrentReportDraft.mockRejectedValue(new Error(rawErrorSentinel))
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
-    expect(await screen.findByText('無法載入 v2 手動資料草稿，請稍後再試。')).toBeInTheDocument()
+    expect(await screen.findByText('無法載入報告手動資料，請稍後再試。')).toBeInTheDocument()
     expect(document.body.textContent).not.toContain(rawErrorSentinel)
     expect(screen.queryByRole('button', { name: '產生 v1 AI 草稿' })).not.toBeInTheDocument()
     expect(api.generateReport).not.toHaveBeenCalled()
@@ -1135,7 +1142,7 @@ describe('ReportPage behavior', () => {
     renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
 
     await user.click(
-      await screen.findByRole('button', { name: '產生 v2 AI 草稿' }),
+      await screen.findByRole('button', { name: '產生 AI 草稿' }),
     )
     expect(await screen.findByText('SYNTHETIC_V2_GENERATED_SECRET')).toBeInTheDocument()
 
@@ -1146,7 +1153,6 @@ describe('ReportPage behavior', () => {
     expect(Object.keys(window.sessionStorage)).toEqual([])
   })
 })
-
 describe('ReportPage error handling', () => {
   beforeEach(() => {
     api.getCase.mockResolvedValue({

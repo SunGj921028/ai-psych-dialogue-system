@@ -191,13 +191,13 @@ export default function ReportV2Preview({ draft, className = '' }) {
     >
       <div className="border-b border-slate-100 pb-3 dark:border-slate-800">
         <p className="text-xs font-semibold text-indigo-800 dark:text-indigo-300">
-          Report Schema v2
+          個案概念化報告
         </p>
         <h3 className="mt-1 font-semibold text-slate-950 dark:text-slate-50">
-          v2 五段式報告預覽
+          個案概念化報告預覽
         </h3>
         <p className="mt-1 text-sm leading-6 text-muted-foreground">
-          唯讀預覽，尚非正式報告；未產生 v2 AI 草稿。
+          唯讀預覽，尚非正式報告；未產生 AI 草稿。
         </p>
         <div className="mt-3 flex flex-wrap gap-2 text-xs">
           {['非正式報告', '尚未審閱', '非 PDF 匯出版'].map((label) => (
@@ -213,7 +213,7 @@ export default function ReportV2Preview({ draft, className = '' }) {
 
       {!hasDraft ? (
         <div className="mt-4 rounded-md border border-dashed border-slate-300 bg-slate-50/80 p-4 text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900/55">
-          需先建立 v2 草稿後才可預覽
+          需先建立報告草稿後才可預覽
         </div>
       ) : (
         <div className="mt-4 space-y-4">
