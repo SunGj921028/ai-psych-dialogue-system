@@ -277,6 +277,7 @@ export default function ConversationPage() {
   const queryCaseId = searchParams.get('caseId') ?? ''
   const querySessionId = searchParams.get('sessionId') ?? ''
   const messageListRef = useRef(null)
+  const speechRecognitionRef = useRef(null)
   const appliedQuerySessionRef = useRef('')
   const [cases, setCases] = useState([])
   const [activeCaseId, setActiveCaseId] = useState(() => {
@@ -297,8 +298,17 @@ export default function ConversationPage() {
   const [isCreatingSession, setIsCreatingSession] = useState(false)
   const [isLoadingSession, setIsLoadingSession] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isVoiceListening, setIsVoiceListening] = useState(false)
+  const [voiceInputStatus, setVoiceInputStatus] = useState('')
   const [error, setError] = useState('')
   const [submitFailed, setSubmitFailed] = useState(false)
+
+  const SpeechRecognitionConstructor = useMemo(() => {
+    if (typeof window === 'undefined') return null
+
+    return window.SpeechRecognition || window.webkitSpeechRecognition || null
+  }, [])
+  const isVoiceInputSupported = Boolean(SpeechRecognitionConstructor)
 
   const activeCase = useMemo(() => {
     return cases.find((item) => item.id === activeCaseId) ?? null
@@ -466,6 +476,20 @@ export default function ConversationPage() {
     messageList.scrollTop = messageList.scrollHeight
   }, [isLoadingSession, messages, summaries])
 
+  useEffect(() => {
+    return () => {
+      const recognition = speechRecognitionRef.current
+
+      if (!recognition) return
+
+      recognition.onstart = null
+      recognition.onresult = null
+      recognition.onerror = null
+      recognition.onend = null
+      recognition.abort?.()
+    }
+  }, [])
+
   async function handleCreateCase(event) {
     event.preventDefault()
 
@@ -611,6 +635,75 @@ export default function ConversationPage() {
 
     event.preventDefault()
     void handleSubmitTurn(event)
+  }
+
+  function appendVoiceTranscript(transcript) {
+    const normalizedTranscript = transcript.trim()
+
+    if (!normalizedTranscript) return
+
+    setUserInput((currentInput) => {
+      const trimmedCurrentInput = currentInput.trimEnd()
+
+      if (!trimmedCurrentInput) {
+        return normalizedTranscript
+      }
+
+      return `${trimmedCurrentInput}\n${normalizedTranscript}`
+    })
+    setVoiceInputStatus('result')
+  }
+
+  function handleStartVoiceInput() {
+    if (!isVoiceInputSupported) {
+      setVoiceInputStatus('unsupported')
+      return
+    }
+
+    try {
+      const recognition = new SpeechRecognitionConstructor()
+
+      recognition.lang = 'zh-TW'
+      recognition.interimResults = false
+      recognition.continuous = false
+      recognition.maxAlternatives = 1
+      recognition.onstart = () => {
+        setIsVoiceListening(true)
+        setVoiceInputStatus('listening')
+      }
+      recognition.onresult = (event) => {
+        const transcript = Array.from(event.results ?? [])
+          .map((result) => result?.[0]?.transcript ?? '')
+          .filter(Boolean)
+          .join(' ')
+
+        appendVoiceTranscript(transcript)
+      }
+      recognition.onerror = () => {
+        setIsVoiceListening(false)
+        setVoiceInputStatus('error')
+        speechRecognitionRef.current = null
+      }
+      recognition.onend = () => {
+        setIsVoiceListening(false)
+        speechRecognitionRef.current = null
+      }
+
+      speechRecognitionRef.current = recognition
+      recognition.start()
+    } catch {
+      setIsVoiceListening(false)
+      setVoiceInputStatus('error')
+      speechRecognitionRef.current = null
+    }
+  }
+
+  function handleStopVoiceInput() {
+    const recognition = speechRecognitionRef.current
+
+    setIsVoiceListening(false)
+    setVoiceInputStatus('')
+    recognition?.stop?.()
   }
 
   return (
@@ -876,14 +969,51 @@ export default function ConversationPage() {
                 onKeyDown={handleInputKeyDown}
                 placeholder="輸入本輪由個案提供、諮商師代為整理的文字..."
               />
-              <button
-                className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600 md:w-auto md:self-end"
-                disabled={!activeCaseId || !sessionId || isSubmitting}
-                type="submit"
-              >
-                <Send className="h-4 w-4" />
-                {isSubmitting ? '送出中' : '送出本輪'}
-              </button>
+              <div className="flex flex-col gap-2 md:w-36 md:self-end">
+                {isVoiceInputSupported ? (
+                  <button
+                    aria-label={isVoiceListening ? '停止語音輸入' : '語音輸入'}
+                    className="inline-flex w-full items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-input dark:bg-card dark:hover:bg-slate-800"
+                    onClick={
+                      isVoiceListening ? handleStopVoiceInput : handleStartVoiceInput
+                    }
+                    type="button"
+                  >
+                    {isVoiceListening ? '停止語音輸入' : '語音輸入'}
+                  </button>
+                ) : (
+                  <p className="rounded-md border border-slate-200 bg-slate-50 p-2 text-xs leading-5 text-muted-foreground dark:border-slate-700 dark:bg-slate-900">
+                    此瀏覽器不支援語音輸入，請改用鍵盤輸入。
+                  </p>
+                )}
+                <button
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-md bg-primary px-5 py-2 text-sm font-medium text-primary-foreground shadow-[0_10px_22px_rgba(30,41,59,0.16)] transition hover:bg-indigo-900 disabled:cursor-not-allowed disabled:opacity-60 dark:hover:bg-indigo-600"
+                  disabled={!activeCaseId || !sessionId || isSubmitting}
+                  type="submit"
+                >
+                  <Send className="h-4 w-4" />
+                  {isSubmitting ? '送出中' : '送出本輪'}
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 space-y-2 text-xs leading-5 text-muted-foreground">
+              <p>
+                語音輸入僅用於將語音轉成文字；送出前請先確認辨識內容，demo 請使用合成或去識別化資料。
+              </p>
+              <p aria-live="polite">
+                {voiceInputStatus === 'listening'
+                  ? '正在聆聽，辨識結果會先填入輸入框，請確認後再送出。'
+                  : null}
+                {voiceInputStatus === 'result'
+                  ? '已填入語音辨識文字，請確認內容後再送出。'
+                  : null}
+                {voiceInputStatus === 'error'
+                  ? '語音辨識失敗，請再試一次或改用鍵盤輸入。'
+                  : null}
+                {voiceInputStatus === 'unsupported'
+                  ? '此瀏覽器不支援語音輸入，請改用鍵盤輸入。'
+                  : null}
+              </p>
             </div>
             {isSubmitting || submitFailed ? (
               <p

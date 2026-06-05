@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { beforeEach, describe, expect, test, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import ConversationPage from './ConversationPage.jsx'
 import { renderWithRouter } from '../test/renderWithRouter.jsx'
 import * as api from '../api/client.js'
@@ -53,6 +53,52 @@ function getStoredBrowserData() {
     ...Object.entries(window.localStorage).flat(),
     ...Object.entries(window.sessionStorage).flat(),
   ].join('\n')
+}
+
+function clearSpeechRecognitionSupport() {
+  Object.defineProperty(window, 'SpeechRecognition', {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  })
+  Object.defineProperty(window, 'webkitSpeechRecognition', {
+    configurable: true,
+    writable: true,
+    value: undefined,
+  })
+}
+
+function installSpeechRecognitionMock(propertyName = 'SpeechRecognition') {
+  clearSpeechRecognitionSupport()
+
+  const instances = []
+  const RecognitionMock = vi.fn(function MockSpeechRecognition() {
+    this.start = vi.fn(() => this.onstart?.())
+    this.stop = vi.fn(() => this.onend?.())
+    this.abort = vi.fn(() => this.onend?.())
+    instances.push(this)
+  })
+
+  Object.defineProperty(window, propertyName, {
+    configurable: true,
+    writable: true,
+    value: RecognitionMock,
+  })
+
+  return { RecognitionMock, instances }
+}
+
+afterEach(() => {
+  clearSpeechRecognitionSupport()
+})
+
+function emitSpeechResult(instance, transcript) {
+  act(() => {
+    instance.onresult?.({
+      results: [[{ transcript }]],
+    })
+    instance.onend?.()
+  })
 }
 
 function mockSessionData({ messages = [], summaries = [] } = {}) {
@@ -909,6 +955,7 @@ describe('ConversationPage durable session creation behavior', () => {
 
 describe('ConversationPage input keyboard UX', () => {
   beforeEach(() => {
+    clearSpeechRecognitionSupport()
     setActiveSession()
     mockSessionData()
     api.sendConversationTurn.mockResolvedValue(
@@ -976,6 +1023,163 @@ describe('ConversationPage input keyboard UX', () => {
     })
 
     expect(api.sendConversationTurn).not.toHaveBeenCalled()
+  })
+})
+
+describe('ConversationPage voice input UX', () => {
+  beforeEach(() => {
+    clearSpeechRecognitionSupport()
+    setActiveSession()
+    mockSessionData()
+    api.sendConversationTurn.mockResolvedValue(
+      makeCrisisResponse({
+        crisis_flag: false,
+        crisis_level: 'none',
+        reason: 'SYNTHETIC_NONE_REASON',
+      }),
+    )
+  })
+
+  test('shows voice input control when webkitSpeechRecognition is available', async () => {
+    installSpeechRecognitionMock('webkitSpeechRecognition')
+
+    await renderReadyConversationPage()
+
+    expect(screen.getByRole('button', { name: '語音輸入' })).toBeInTheDocument()
+  })
+
+  test('starts listening and shows listening helper text when voice input is clicked', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+
+    expect(instances[0].start).toHaveBeenCalledTimes(1)
+    expect(
+      screen.getByText('正在聆聽，辨識結果會先填入輸入框，請確認後再送出。'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '停止語音輸入' })).toBeInTheDocument()
+  })
+
+  test('recognized transcript is appended to existing textarea content', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+
+    const input = getConversationInput()
+    await user.type(input, 'SYNTHETIC_EXISTING_TEXT')
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+
+    emitSpeechResult(instances[0], 'SYNTHETIC_VOICE_TRANSCRIPT')
+
+    expect(input).toHaveValue(
+      'SYNTHETIC_EXISTING_TEXT\nSYNTHETIC_VOICE_TRANSCRIPT',
+    )
+    expect(
+      screen.getByText('已填入語音辨識文字，請確認內容後再送出。'),
+    ).toBeInTheDocument()
+  })
+
+  test('voice recognition does not automatically submit before counselor review', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+
+    emitSpeechResult(instances[0], 'SYNTHETIC_VOICE_ONLY_MESSAGE')
+
+    expect(getConversationInput()).toHaveValue('SYNTHETIC_VOICE_ONLY_MESSAGE')
+    expect(api.sendConversationTurn).not.toHaveBeenCalled()
+  })
+
+  test('user can manually send after reviewing recognized text', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+    emitSpeechResult(instances[0], 'SYNTHETIC_REVIEWED_VOICE_MESSAGE')
+
+    await user.click(getSubmitTurnButton())
+
+    await waitFor(() => {
+      expect(api.sendConversationTurn).toHaveBeenCalledTimes(1)
+    })
+    expect(api.sendConversationTurn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_input: 'SYNTHETIC_REVIEWED_VOICE_MESSAGE',
+      }),
+    )
+  })
+
+  test('stop button stops recognition and resets listening state', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+    await user.click(screen.getByRole('button', { name: '停止語音輸入' }))
+
+    expect(instances[0].stop).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: '語音輸入' })).toBeInTheDocument()
+    expect(
+      screen.queryByText('正在聆聽，辨識結果會先填入輸入框，請確認後再送出。'),
+    ).not.toBeInTheDocument()
+  })
+
+  test('unsupported browser shows fallback message and keeps keyboard input working', async () => {
+    const user = userEvent.setup()
+
+    await renderReadyConversationPage()
+
+    expect(
+      screen.getByText('此瀏覽器不支援語音輸入，請改用鍵盤輸入。'),
+    ).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '語音輸入' })).not.toBeInTheDocument()
+
+    const input = getConversationInput()
+    await user.type(input, 'SYNTHETIC_KEYBOARD_STILL_WORKS')
+
+    expect(input).toHaveValue('SYNTHETIC_KEYBOARD_STILL_WORKS')
+  })
+
+  test('recognition error shows a generic message without raw browser details', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+
+    act(() => {
+      instances[0].onerror?.({ error: 'RAW_BROWSER_AUDIO_ERROR_DETAIL' })
+    })
+
+    expect(
+      screen.getByText('語音辨識失敗，請再試一次或改用鍵盤輸入。'),
+    ).toBeInTheDocument()
+    expect(document.body.textContent).not.toContain('RAW_BROWSER_AUDIO_ERROR_DETAIL')
+    expect(screen.getByRole('button', { name: '語音輸入' })).toBeInTheDocument()
+  })
+
+  test('voice transcript and speech state are not written to browser storage', async () => {
+    const user = userEvent.setup()
+    const { instances } = installSpeechRecognitionMock()
+
+    await renderReadyConversationPage()
+    await user.click(screen.getByRole('button', { name: '語音輸入' }))
+    emitSpeechResult(instances[0], 'SYNTHETIC_VOICE_STORAGE_SENTINEL')
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain('SYNTHETIC_VOICE_STORAGE_SENTINEL')
+    expect(storedData).not.toContain('語音辨識失敗')
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage).sort()).toEqual([
+      'ai-psych-active-case-id',
+      'ai-psych-active-session-id',
+    ])
   })
 })
 
