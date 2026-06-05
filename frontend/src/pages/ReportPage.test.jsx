@@ -921,11 +921,11 @@ describe('ReportPage behavior', () => {
     )
 
     expect(
-      screen.getByRole('heading', { level: 1, name: '個案概念化報告草稿' }),
+      screen.getByRole('heading', { level: 1, name: '個案概念化報告' }),
     ).toBeInTheDocument()
     expect(
-      screen.getByText('AI assisted draft / counselor review required'),
-    ).toBeInTheDocument()
+      screen.queryByText('AI assisted draft / counselor review required'),
+    ).not.toBeInTheDocument()
     expect(
       screen.getByText('本報告為 AI 輔助草稿，需由諮商師審閱。'),
     ).toBeInTheDocument()
@@ -936,8 +936,8 @@ describe('ReportPage behavior', () => {
       screen.getByText('資料不足處應維持待評估，並由諮商師依專業判斷補充。'),
     ).toBeInTheDocument()
     expect(
-      screen.getByText('not diagnosis/formal risk assessment/treatment plan'),
-    ).toBeInTheDocument()
+      screen.queryByText('not diagnosis/formal risk assessment/treatment plan'),
+    ).not.toBeInTheDocument()
 
     expect(screen.getByText('CASE-001')).toBeInTheDocument()
     expect(screen.getByText('SYNTHETIC_AGE_GENDER')).toBeInTheDocument()
@@ -947,6 +947,9 @@ describe('ReportPage behavior', () => {
     expect(screen.getByText('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')).toBeInTheDocument()
     expect(screen.getByText('安全計畫（諮商師手動提供）')).toBeInTheDocument()
     expect(screen.getByText('SYNTHETIC_SAFETY_PLAN')).toBeInTheDocument()
+    expect(screen.queryByText('AI 草稿，需諮商師審閱')).not.toBeInTheDocument()
+    expect(screen.queryByText('第 1 輪')).not.toBeInTheDocument()
+    expect(screen.queryByText('第 2 輪')).not.toBeInTheDocument()
 
     expect(screen.queryByText(sessionId)).not.toBeInTheDocument()
     expect(screen.queryByText('SYNTHETIC_SUMMARY_KEY')).not.toBeInTheDocument()
@@ -997,7 +1000,7 @@ describe('ReportPage behavior', () => {
     )
 
     expect(
-      screen.getByRole('heading', { level: 1, name: '個案概念化報告草稿' }),
+      screen.getByRole('heading', { level: 1, name: '個案概念化報告' }),
     ).toBeInTheDocument()
     expect(screen.queryByText('安全計畫（諮商師手動提供）')).not.toBeInTheDocument()
     expect(screen.queryByText('SYNTHETIC_SAFETY_PLAN')).not.toBeInTheDocument()

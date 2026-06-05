@@ -1,8 +1,6 @@
 const MISSING_TEXT = '待評估'
-const FUTURE_PLACEHOLDER = '此欄位待未來 AI 草稿或諮商師補充'
-const AI_DRAFT_BADGE = 'AI 草稿，需諮商師審閱'
 const CLIENT_UNDERSTANDING_AI_LABEL =
-  'AI 補充草稿：個案對問題理解的可能表述，需審閱'
+  '個案對問題理解的可能表述'
 
 const STATUS_LABELS = {
   ai_generated: '已產生 AI 草稿',
@@ -60,18 +58,6 @@ function getAiField(aiGenerated, key) {
   return hasFieldValue(field) ? field : null
 }
 
-function formatTurnEvidence(field) {
-  const turnNumbers = [
-    ...new Set(
-      (field?.evidence_refs ?? [])
-        .map((ref) => ref?.turn_number)
-        .filter((turnNumber) => Number.isInteger(turnNumber)),
-    ),
-  ].sort((a, b) => a - b)
-
-  return turnNumbers.map((turnNumber) => `第 ${turnNumber} 輪`)
-}
-
 function formatSessionCountDate(manualInput) {
   const sessionCount = getReportFieldValue(manualInput, [
     'basic_info',
@@ -99,21 +85,13 @@ function getStatusLabel(status) {
   return STATUS_LABELS[status] ?? '草稿狀態待確認'
 }
 
-function PrintField({ label, value, badges = [], evidence = [] }) {
-  const isMissing = value === MISSING_TEXT || value === FUTURE_PLACEHOLDER
+function PrintField({ label, value }) {
+  const isMissing = value === MISSING_TEXT
 
   return (
     <div className="break-inside-avoid border-b border-slate-200 pb-3 print:break-inside-avoid">
       <dt className="flex flex-wrap items-center gap-2 text-[13px] font-semibold text-slate-600">
         <span>{label}</span>
-        {badges.map((badge) => (
-          <span
-            className="rounded-full border border-slate-300 px-2 py-0.5 text-[11px] font-medium text-slate-600"
-            key={badge}
-          >
-            {badge}
-          </span>
-        ))}
       </dt>
       <dd
         className={`mt-1 whitespace-pre-wrap text-[15px] leading-7 ${
@@ -122,24 +100,12 @@ function PrintField({ label, value, badges = [], evidence = [] }) {
       >
         {value}
       </dd>
-      {evidence.length ? (
-        <dd className="mt-1 flex flex-wrap gap-1.5 text-xs text-slate-500">
-          {evidence.map((item) => (
-            <span
-              className="rounded-full border border-slate-200 px-2 py-0.5"
-              key={item}
-            >
-              {item}
-            </span>
-          ))}
-        </dd>
-      ) : null}
     </div>
   )
 }
 
 function FutureField({ label }) {
-  return <PrintField badges={['未產生']} label={label} value={FUTURE_PLACEHOLDER} />
+  return <PrintField label={label} value={MISSING_TEXT} />
 }
 
 function AiField({ field, label }) {
@@ -147,8 +113,6 @@ function AiField({ field, label }) {
 
   return (
     <PrintField
-      badges={[AI_DRAFT_BADGE]}
-      evidence={formatTurnEvidence(field)}
       label={label}
       value={getFieldDisplayValue(field)}
     />
@@ -213,10 +177,10 @@ export default function ReportV2PrintView({
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                Report v2 Draft
+                報告草稿
               </p>
               <h1 className="mt-2 text-3xl font-semibold tracking-tight">
-                個案概念化報告草稿
+                個案概念化報告
               </h1>
             </div>
             {statusLabel ? (
@@ -239,15 +203,9 @@ export default function ReportV2PrintView({
         </header>
 
         <section className="break-inside-avoid rounded-md border border-amber-300 bg-amber-50 p-4 text-sm leading-7 text-amber-950 print:break-inside-avoid print:bg-white">
-          <p className="font-semibold">
-            AI assisted draft / counselor review required
-          </p>
           <p>本報告為 AI 輔助草稿，需由諮商師審閱。</p>
           <p>內容不構成診斷、正式風險評估、治療處方或治療計畫。</p>
           <p>資料不足處應維持待評估，並由諮商師依專業判斷補充。</p>
-          <p className="text-xs text-amber-900">
-            not diagnosis/formal risk assessment/treatment plan
-          </p>
         </section>
 
         <PrintSection title="一、基本資料與主訴">
