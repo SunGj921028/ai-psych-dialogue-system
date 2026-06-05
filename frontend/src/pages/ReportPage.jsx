@@ -8,6 +8,7 @@ import {
   FileText,
   Loader2,
   PlusCircle,
+  Printer,
   RefreshCcw,
   Save,
   Tags,
@@ -30,6 +31,7 @@ import {
   updateReportDraftManualInput,
 } from '../api/client.js'
 import ReportV2Preview from '../components/ReportV2Preview.jsx'
+import ReportV2PrintView from '../components/ReportV2PrintView.jsx'
 
 function getFriendlyError(error, fallback = '操作失敗，請稍後再試。') {
   if (error?.response?.status === 404) {
@@ -831,6 +833,7 @@ export default function ReportPage() {
   const [draftGenerateStatus, setDraftGenerateStatus] = useState('')
   const [showDraftGenerateConversationLink, setShowDraftGenerateConversationLink] =
     useState(false)
+  const [isPrintView, setIsPrintView] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const sortedSummaries = getSortedSummaries(summaries)
@@ -852,6 +855,7 @@ export default function ReportPage() {
     setSaveStatus('已儲存')
     setDraftGenerateStatus('')
     setShowDraftGenerateConversationLink(false)
+    setIsPrintView(false)
 
     try {
       const draftResultPromise = getCurrentReportDraft(caseId, sessionId)
@@ -981,6 +985,15 @@ export default function ReportPage() {
     }
   }
 
+  function handleOpenPrintView() {
+    if (!getDraftId(reportDraft)) return
+    setIsPrintView(true)
+  }
+
+  function handlePrintReport() {
+    window.print()
+  }
+
   if (!sessionId) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8 pb-24">
@@ -1001,6 +1014,17 @@ export default function ReportPage() {
           </Link>
         </section>
       </div>
+    )
+  }
+
+  if (isPrintView && getDraftId(reportDraft)) {
+    return (
+      <ReportV2PrintView
+        caseInfo={caseInfo}
+        draft={reportDraft}
+        onBack={() => setIsPrintView(false)}
+        onPrint={handlePrintReport}
+      />
     )
   }
 
@@ -1151,6 +1175,19 @@ export default function ReportPage() {
           onGenerateDraft={handleGenerateDraftV2}
           showConversationLink={showDraftGenerateConversationLink}
         />
+
+        {getDraftId(reportDraft) ? (
+          <div className="flex justify-end">
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-card dark:text-slate-50 dark:hover:bg-slate-800"
+              onClick={handleOpenPrintView}
+              type="button"
+            >
+              <Printer className="h-4 w-4" />
+              列印友善檢視
+            </button>
+          </div>
+        ) : null}
 
         <ReportV2Preview draft={reportDraft} />
       </section>

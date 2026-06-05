@@ -897,6 +897,112 @@ describe('ReportPage behavior', () => {
     )
   })
 
+  test('shows a print-friendly action when a v2 draft preview is available', async () => {
+    api.getCurrentReportDraft.mockResolvedValue(makeReportDraft())
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    expect(
+      await screen.findByRole('button', { name: '列印友善檢視' }),
+    ).toBeInTheDocument()
+  })
+
+  test('print-friendly view renders document content and hides workflow controls', async () => {
+    const user = userEvent.setup()
+    const printMock = vi.spyOn(window, 'print').mockImplementation(() => {})
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({ aiGenerated: makeAiGenerated() }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(
+      await screen.findByRole('button', { name: '列印友善檢視' }),
+    )
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: '個案概念化報告草稿' }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('AI assisted draft / counselor review required'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('本報告為 AI 輔助草稿，需由諮商師審閱。'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('內容不構成診斷、正式風險評估、治療處方或治療計畫。'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('資料不足處應維持待評估，並由諮商師依專業判斷補充。'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('not diagnosis/formal risk assessment/treatment plan'),
+    ).toBeInTheDocument()
+
+    expect(screen.getByText('CASE-001')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_AGE_GENDER')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_ASSESSMENT_DATA')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_V2_CHIEF_AI')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_V2_THEORY_AI')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_V2_CRISIS_LANGUAGE_AI')).toBeInTheDocument()
+    expect(screen.getByText('安全計畫（諮商師手動提供）')).toBeInTheDocument()
+    expect(screen.getByText('SYNTHETIC_SAFETY_PLAN')).toBeInTheDocument()
+
+    expect(screen.queryByText(sessionId)).not.toBeInTheDocument()
+    expect(screen.queryByText('SYNTHETIC_SUMMARY_KEY')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('emotion-dimension-radar-chart')).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '建立 v2 手動資料草稿' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '儲存 v2 手動資料' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: '重新產生 v2 AI 草稿' }),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText('舊版 v1 暫存報告')).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: '列印' }))
+    expect(printMock).toHaveBeenCalledTimes(1)
+
+    const storedData = getStoredBrowserData()
+    expect(storedData).not.toContain('SYNTHETIC_V2_CHIEF_AI')
+    expect(storedData).not.toContain('SYNTHETIC_SAFETY_PLAN')
+    expect(storedData).not.toContain('draft-1')
+    expect(Object.keys(window.localStorage)).toEqual([])
+    expect(Object.keys(window.sessionStorage)).toEqual([])
+
+    await user.click(screen.getByRole('button', { name: '返回編輯檢視' }))
+    expect(await screen.findByText('v2 五段式報告預覽')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: '列印友善檢視' }),
+    ).toBeInTheDocument()
+
+    printMock.mockRestore()
+  })
+
+  test('print-friendly view shows manual safety plan only when provided', async () => {
+    const user = userEvent.setup()
+    api.getCurrentReportDraft.mockResolvedValue(
+      makeReportDraft({
+        aiGenerated: makeAiGenerated(),
+        safetyPlan: '',
+      }),
+    )
+
+    renderReportPage(`/report/${caseId}?sessionId=${sessionId}`)
+
+    await user.click(
+      await screen.findByRole('button', { name: '列印友善檢視' }),
+    )
+
+    expect(
+      screen.getByRole('heading', { level: 1, name: '個案概念化報告草稿' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('安全計畫（諮商師手動提供）')).not.toBeInTheDocument()
+    expect(screen.queryByText('SYNTHETIC_SAFETY_PLAN')).not.toBeInTheDocument()
+  })
+
   test('Create Draft calls API and renders returned form', async () => {
     const user = userEvent.setup()
     api.createReportDraft.mockResolvedValue(makeReportDraft())
