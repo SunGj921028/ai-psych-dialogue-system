@@ -19,8 +19,8 @@ Show the current prototype workflow:
 - synthetic conversation entry
 - micro-summary and crisis-status support
 - safe session metadata and history behavior
-- Report Schema v2 manual input
-- Report v2 AI draft generation and read-only preview
+- report manual input for the case conceptualization workflow
+- AI draft generation, read-only preview, and print-friendly browser print view
 
 Emphasize throughout:
 
@@ -99,7 +99,7 @@ They can be pasted or paraphrased by the counselor as client-provided content.
 我目前沒有傷害自己或傷害別人的想法，也沒有計畫或衝動。壓力大的時候，我會找同學聊，也會跟家人說一下近況。我希望可以學會更穩定地安排時間，也想把睡眠調整回來。
 ```
 
-## Report v2 Manual Input Suggestions
+## Report Manual Input Suggestions
 
 Use synthetic values only.
 
@@ -236,7 +236,7 @@ Explain:
 
 Open ReportPage for the same case/session.
 
-Point out the v1/v2 separation:
+Point out the report workspace structure:
 
 - In `會談整理輔助`, the emotion dimension average area now includes a compact
   Recharts radar chart derived from structured summary averages on a fixed
@@ -245,17 +245,19 @@ Point out the v1/v2 separation:
   formal scale, diagnosis, or risk evaluation.
 - Point out that the existing text/bar emotion dimension overview remains
   visible as fallback.
-- `會談整理輔助` appears before the v2 report draft workflow
-- v2 manual input, generation, and preview are grouped under `v2 報告草稿`
+- `會談整理輔助` appears before the main report draft workflow
+- report manual input, AI draft generation, preview, and print-friendly viewing
+  use product-facing labels such as `個案概念化報告草稿`, `報告手動資料`,
+  `AI 草稿產生`, `個案概念化報告預覽`, and `列印友善檢視`
 - v1 appears lower as `舊版 v1 暫存報告`
 - v1 report generation remains transient and separate
-- v2 draft workflow uses Report Schema v2 draft state
-- v2 generation does not populate v1 report state
+- the main report workflow uses the internal Report Schema v2 draft state
+- AI draft generation does not populate v1 report state
 - v1 generation does not alter the v2 draft
 
-### 12. Create v2 Draft
+### 12. Create Report Draft
 
-If no v2 draft exists, explicitly create one.
+If no report draft exists, explicitly create one.
 
 Explain that drafts are not auto-created on page load.
 
@@ -269,9 +271,9 @@ Explain:
 - demographic and risk-related fields should not be invented by AI
 - manual input is saved through the backend Report v2 draft endpoint
 
-### 14. Generate v2 AI Draft
+### 14. Generate AI Draft
 
-Use the v2 AI draft generation action.
+Use the `AI 草稿產生` action.
 
 Explain:
 
@@ -280,9 +282,9 @@ Explain:
 - generated fields are draft support material only
 - AI output requires counselor review
 
-### 15. Show ReportV2Preview
+### 15. Show Report Preview
 
-Show the simplified v2 preview.
+Show the simplified `個案概念化報告預覽`.
 
 Point out:
 
@@ -293,7 +295,22 @@ Point out:
 - AI draft fields require counselor review
 - evidence references are pointer-only
 - missing data should remain missing
-- no final report or PDF export workflow exists yet
+- no final report workflow or true PDF export exists yet
+
+### 16. Show Print-Friendly View
+
+Open `列印友善檢視`.
+
+Point out:
+
+- the document title is `個案概念化報告`
+- this supports browser print / save-as-PDF through the browser print dialog, not
+  true PDF export
+- the print document keeps the Traditional Chinese global disclaimer
+- repeated per-field AI labels and turn-number evidence refs are hidden for a
+  cleaner document
+- workspace controls, charts, raw session IDs, raw messages/summaries/prompts,
+  provider responses, and provider/debug content are excluded
 
 ## Provider Mode Options
 
@@ -396,8 +413,8 @@ counselor review, not a clinical conclusion.
 - Raw prompts and raw provider responses are not persisted.
 - `final_report_json` remains null after v2 AI draft generation until a future
   counselor review/final-report workflow is implemented.
-- Final report workflow, reviewed status, print-friendly view, and PDF export
-  remain future work.
+- Final report workflow, reviewed status, and true PDF export remain future
+  work. The print-friendly browser print view is implemented.
 
 ## Demo Completion Checklist
 
@@ -410,7 +427,8 @@ Before class:
 - [ ] Frontend starts locally.
 - [ ] Synthetic case exists or can be created quickly.
 - [ ] Synthetic conversation turns are ready.
-- [ ] Report v2 draft can be generated in deterministic mode.
+- [ ] Report draft can be generated in deterministic mode.
+- [ ] Print-friendly report view can be opened.
 - [ ] Provider-mode fallback plan is ready if using live provider mode.
 - [ ] No `.env`, DB, logs, screenshots, provider outputs, or SQLite sidecar files
       are staged.
@@ -426,12 +444,14 @@ During class:
 - [ ] Show HistoryPage session metadata.
 - [ ] Rename the session.
 - [ ] Optionally archive/unarchive the session.
-- [ ] Create v2 draft.
+- [ ] Create report draft.
 - [ ] Fill and save manual input.
-- [ ] Generate v2 AI draft.
-- [ ] Show ReportV2Preview.
+- [ ] Generate AI draft.
+- [ ] Show report preview.
+- [ ] Show print-friendly view.
 - [ ] Explain AI draft requires counselor review.
-- [ ] Explain v1/v2 separation.
+- [ ] Explain internal v2 state remains separate from v1 while the user-facing
+      UI uses product-facing report wording.
 
 After class:
 
@@ -444,8 +464,7 @@ After class:
 
 - counselor final report workflow
 - reviewed status
-- print-friendly report view
-- PDF export
+- true PDF export
 - manual provider regression checks with Case B / Case C style scenarios to
   confirm family systems, interpersonal, attachment, psychodynamic, humanistic,
   or integrative orientations appear when supported by the case evidence

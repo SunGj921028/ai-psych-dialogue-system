@@ -41,8 +41,10 @@ Current reality:
 - ReportPage acts as a counselor review workspace integrated with the backend
   API. Report generation remains manual-only.
 - ReportPage displays the backend-supplied fixed disclaimer prominently.
-- ReportPage places `會談整理輔助` before the v2 report draft workflow and shows
-  the guidance copy `建議先檢視本區整理，再建立或產生 v2 報告草稿。`.
+- ReportPage places `會談整理輔助` before the main
+  `個案概念化報告草稿` workflow. User-facing report UI no longer exposes `v2`,
+  `Report v2`, or `Report Schema v2`; internal Report Schema v2 component,
+  helper, route, and schema names remain unchanged.
 - ReportPage includes summary review aids derived from loaded summaries: emotion
   intensity trend, emotion dimension average/latest snapshot, theme frequency
   chips, micro-summary timeline, and crisis occurrence indicator from existing
@@ -57,20 +59,23 @@ Current reality:
 - ReportPage review aids are counselor-facing context only and are not objective
   clinical measurements. The radar chart is a visual aid only and is not a
   formal assessment, scale, diagnosis, or risk evaluation.
-- ReportPage groups the Report Schema v2 manual input panel, v2 generation
-  action, and v2 preview under `v2 報告草稿`.
+- ReportPage groups report manual input, AI draft generation, preview, and
+  print-friendly viewing under product-facing labels such as
+  `個案概念化報告草稿`, `報告手動資料`, `AI 草稿產生`,
+  `個案概念化報告預覽`, and `列印友善檢視`.
 - The existing v1 transient report generation section appears lower on the page
   and is labeled `舊版 v1 暫存報告`.
-- The v2 panel loads the current report draft when one exists. If no draft
-  exists, it shows `尚未建立 v2 手動資料草稿` and requires explicit Create Draft.
+- The report panel loads the current report draft when one exists. If no draft
+  exists, it uses product-facing empty/prerequisite copy such as
+  `需先建立報告草稿後才可預覽` and requires explicit Create Draft.
 - Drafts are not auto-created on page load.
 - Manual input is saved only through backend `PATCH`.
-- ReportPage includes a separate `v2 AI 草稿產生` action card between the manual
-  input panel and the v2 preview. It is visually and behaviorally separate from
+- ReportPage includes a separate `AI 草稿產生` action card between the manual
+  input panel and the report preview. It is visually and behaviorally separate from
   v1 transient report generation, blocks generation when manual input has
   unsaved changes, disables generation while saving or generating, updates local
   `reportDraft` from the backend response, shows
-  `至少需要一筆會談摘要才能產生 v2 AI 草稿` for insufficient-summary 422 responses, and
+  insufficient-summary 422 guidance without user-facing `v2` wording, and
   provides a lightweight link back to the conversation workspace when
   case/session IDs are available.
 - The first v2 manual input slice supports optional fields for `會談日期`,
@@ -80,8 +85,8 @@ Current reality:
 - `frontend/src/components/ReportV2Preview.jsx` exists and renders a read-only
   simplified Report Schema v2 preview from loaded draft state, including inline
   `draft.ai_generated` fields when present.
-- ReportPage mounts the v2 preview below the v2 generation card. If no draft
-  exists, the preview shows `需先建立 v2 草稿後才可預覽`. The main preview focuses
+- ReportPage mounts the preview below the AI generation card. If no draft
+  exists, the preview shows `需先建立報告草稿後才可預覽`. The main preview focuses
   on demo-useful fields and intentionally hides `正式風險評估備註`, `晤談觀察`,
   `症狀與功能影響`, `防衛機制`, and `內在衝突`; this does not change schema, API,
   or backend behavior.
@@ -99,6 +104,18 @@ Current reality:
   provider output, AI formal risk level, or AI safety plan.
 - The v2 preview does not call APIs, does not call `generateReport`, and does
   not generate content.
+- `frontend/src/components/ReportV2PrintView.jsx` exists and renders a clean
+  document-like print-friendly report view from loaded draft state. ReportPage
+  shows `列印友善檢視` when a report draft exists, the print view title is
+  `個案概念化報告`, and the optional `列印` action calls `window.print()`.
+- The print-friendly view keeps a single Traditional Chinese global
+  AI/counselor-review disclaimer, hides repeated per-field
+  `AI 草稿，需諮商師審閱` labels and turn-number evidence refs, preserves report
+  content/section headings/field labels/`待評估`, and excludes workflow controls,
+  v1 legacy UI, charts, raw session IDs, raw messages, raw summaries, raw prompts,
+  raw provider responses, crisis reason/debug text, provider/debug content, and
+  browser storage/debug content. This is browser print / save-as-PDF friendly,
+  not true PDF export.
 - v1/v2 report behavior is intentionally separate: v2 save does not call
   `generateReport`, v2 generate calls only `generateReportDraftV2`, v2 generated
   data does not populate v1 report state, v1 report generation does not alter
@@ -201,22 +218,24 @@ Current reality:
   returns a report response but does not persist it, and ReportPage displays a
   note that draft reports are only temporarily shown on the page and must be
   regenerated after leaving or reloading.
-- ReportPage v2 manual input may contain clinical content and is saved
+- ReportPage manual input may contain clinical content and is saved
   backend-side only.
-- ReportPage v2 preview is client-side rendering from already loaded draft state
-  only. It does not write report preview text, generated report text,
+- ReportPage preview and print-friendly view are client-side rendering from
+  already loaded draft state only. They do not write report preview text,
+  generated report text,
   `ai_generated` JSON, manual input, report drafts, or clinical content to
   `localStorage` or `sessionStorage`.
-- PDF export, hard delete/session data-retention workflow, title search/filter,
-  richer session metadata, reviewed status/counselor final report workflow,
-  optional additional visualization work, production deployment/testing,
-  runtime/provider status endpoint if needed, and MCP integration are not
-  implemented yet.
+- True PDF export, hard delete/session data-retention workflow, title
+  search/filter, richer session metadata, reviewed status/counselor final report
+  workflow, optional additional visualization work, production
+  deployment/testing, runtime/provider status endpoint if needed, and MCP
+  integration are not implemented yet. Browser print / save-as-PDF through the
+  print-friendly report view is implemented.
 - Runtime/provider status must not leak secrets if added later. Real provider
   settings UI remains out of scope unless explicitly designed.
-- Frontend v2 AI generation integration exists through the separate
-  `v2 AI 草稿產生` action card and `generateReportDraftV2(draftId)`. No counselor
-  final report workflow, reviewed status, PDF export, editable report fields,
+- Frontend AI generation integration exists through the separate
+  `AI 草稿產生` action card and internal `generateReportDraftV2(draftId)`. No counselor
+  final report workflow, reviewed status, true PDF export, editable report fields,
   emotion intensity line chart, theme frequency chart, or additional chart
   polish has been implemented.
 - `frontend/src/api/client.js` contains the shared axios client for backend calls.
@@ -234,11 +253,11 @@ Remaining future behavior:
   optional HistoryPage crisis-level display, Settings backend integration, and
   MCP-related UI only when the corresponding tasks are prioritized.
 - Complete report workflow future work: counselor final report workflow,
-  reviewed status, final PDF export, optional additional visualizations and
+  reviewed status, true PDF export, optional additional visualizations and
   chart polish, production deployment/testing, and docs after future slices.
 - Smarter scroll behavior can be considered later as an optional UX refinement.
 - Add future frontend tests for counselor final report workflow, reviewed
-  status, PDF export, additional visualizations, and production
+  status, true PDF export, additional visualizations, and production
   deployment-specific behavior as those features are implemented. Optional
   Playwright/E2E and visual regression can be added later if needed.
 
@@ -261,16 +280,17 @@ Coverage includes:
 - ReportPage missing `sessionId` handling, manual generation, and disclaimer
   display.
 - ReportPage transient report note.
-- ReportPage v2 current draft load, missing-draft create state, Create Draft
-  flow, editing/saving manual input, save success/error behavior, v2 action card
+- ReportPage current draft load, missing-draft create state, Create Draft flow,
+  editing/saving manual input, save success/error behavior, AI action card
   behavior, unsaved-input blocking, 422/generic generation errors, regeneration
-  label, ReportPage layout order, v1/v2 separation, read-only preview
+  label, ReportPage layout order, v1/v2 behavior isolation, read-only preview
   prerequisite state, simplified preview field visibility, manual field mapping,
   preview AI mapping, visible `crisis_language_summary`, conditional manual
   safety-plan rendering, safe turn-number-only evidence refs, forbidden AI
-  risk/safety fields, missing-data placeholders, future placeholder wording,
-  risk missing behavior, save-to-preview updates, missing session behavior, and
-  storage safety.
+  risk/safety fields, print-friendly view action/content/disclaimer and
+  `window.print()` behavior, user-facing version-label cleanup, missing-data
+  placeholders, future placeholder wording, risk missing behavior,
+  save-to-preview updates, missing session behavior, and storage safety.
 - API helper path and payload contract tests, including `updateSessionTitle`,
   `getCurrentReportDraft`, `createReportDraft`, and
   `updateReportDraftManualInput`, and `generateReportDraftV2`.
@@ -302,7 +322,7 @@ Test boundaries:
 
 Remaining future testing work:
 
-- Future ReportPage tests for counselor final report workflow and PDF export as
+- Future ReportPage tests for counselor final report workflow and true PDF export as
   those features are added.
 - Future ReportPage tests for reviewed status, additional visualizations, and
   production deployment-specific behavior as those features are added.
@@ -360,16 +380,18 @@ Route: `/report/:caseId`
 Responsibilities:
 
 - Load report workspace context for a selected case/session.
-- Show `會談整理輔助` before the v2 report draft workflow with the guidance copy
-  `建議先檢視本區整理，再建立或產生 v2 報告草稿。`.
+- Show `會談整理輔助` before the main `個案概念化報告草稿` workflow.
 - Load the current Report Schema v2 draft when one exists.
-- Show `尚未建立 v2 手動資料草稿` and require explicit Create Draft when no v2
-  draft exists.
+- Show product-facing empty/prerequisite copy such as
+  `需先建立報告草稿後才可預覽` and require explicit Create Draft when no report draft
+  exists.
 - Avoid auto-creating v2 drafts on page load.
-- Let the counselor create a v2 manual input draft explicitly.
-- Let the counselor edit and save the first v2 manual input slice through
+- Let the counselor create a report manual input draft explicitly.
+- Let the counselor edit and save the first report manual input slice through
   backend `PATCH` only.
-- Group v2 manual input, v2 generation, and v2 preview under `v2 報告草稿`.
+- Group report manual input, AI generation, preview, and print-friendly viewing
+  under product-facing labels such as `個案概念化報告草稿`, `報告手動資料`,
+  `AI 草稿產生`, `個案概念化報告預覽`, and `列印友善檢視`.
 - Keep existing v1 transient report generation lower on the page as
   `舊版 v1 暫存報告`.
 - Generate or regenerate v1 and v2 reports only when the counselor manually
@@ -398,11 +420,11 @@ Responsibilities:
   generate must call only `generateReportDraftV2`, v2 generated data must not
   populate v1 report state, v1 report generation must not alter `reportDraft`,
   and the v1 generate button must only call existing v1 `generateReport`.
-- Render a read-only simplified v2 preview from loaded draft state without
+- Render a read-only simplified report preview from loaded draft state without
   calling APIs, calling `generateReport`, generating content, inferring facts
   from summaries, or inferring risk/crisis status.
-- Show `需先建立 v2 草稿後才可預覽` when no v2 draft exists.
-- Keep the main v2 preview focused on demo-useful fields; hide
+- Show `需先建立報告草稿後才可預覽` when no draft exists.
+- Keep the main report preview focused on demo-useful fields; hide
   `正式風險評估備註`, `晤談觀察`, `症狀與功能影響`, `防衛機制`, and `內在衝突` without
   changing schema/API/backend behavior.
 - Keep `crisis_language_summary` visible.
@@ -417,12 +439,18 @@ Responsibilities:
   and show evidence refs only as turn numbers.
 - Never render raw summaries, raw messages, key statements, crisis reasons,
   provider output, AI formal risk level, or AI safety plan in the v2 preview.
+- Render a clean print-friendly report view from loaded draft state when the
+  counselor chooses `列印友善檢視`. The print view should use the title
+  `個案概念化報告`, support browser print through `window.print()`, hide workspace
+  controls and repeated per-field AI/evidence metadata, preserve the global
+  Traditional Chinese AI/counselor-review disclaimer, exclude charts and raw
+  clinical/provider/debug content, and avoid browser storage writes.
 
 Not currently implemented:
 
 - Counselor edits/final report workflow.
 - Reviewed status.
-- PDF export.
+- True PDF export.
 - Editable report fields.
 - Emotion intensity line chart, theme frequency chart, and additional chart
   polish beyond the first Recharts emotion dimension radar chart.
@@ -906,30 +934,39 @@ Current implemented state:
   session until the counselor starts one.
 - ReportPage is a counselor review workspace wired to backend report generation,
   supports manual-only report generation, displays the backend disclaimer
-  prominently, and places summary-derived `會談整理輔助` before the v2 workflow.
+  prominently, and places summary-derived `會談整理輔助` before the main
+  `個案概念化報告草稿` workflow.
 - ReportPage generated reports are transient, displays a temporary-report note,
   and does not store report text in browser storage.
-- ReportPage groups v2 manual input, v2 generation, and v2 preview under
-  `v2 報告草稿`, while v1 transient generation appears lower as
-  `舊版 v1 暫存報告`. The v2 panel loads an existing current draft, shows
-  `尚未建立 v2 手動資料草稿` when no draft exists, requires explicit Create Draft,
-  does not auto-create drafts on page load, and saves manual input only through
-  backend `PATCH`.
+- ReportPage groups report manual input, AI generation, preview, and
+  print-friendly viewing under product-facing labels such as
+  `個案概念化報告草稿`, `報告手動資料`, `AI 草稿產生`,
+  `個案概念化報告預覽`, and `列印友善檢視`, while v1 transient generation appears
+  lower as `舊版 v1 暫存報告`. The report panel loads an existing current draft,
+  uses product-facing empty/prerequisite copy when no draft exists, requires
+  explicit Create Draft, does not auto-create drafts on page load, and saves
+  manual input only through backend `PATCH`.
 - The v2 manual input panel supports optional fields for session date, session
   count, referral source, age/gender, occupation/school status,
   marital/family status, client understanding/chief-complaint supplement,
   testing/assessment supplement, formal risk assessment notes, and safety plan.
 - ReportPage includes a read-only simplified v2 preview from loaded draft
-  state. It shows `需先建立 v2 草稿後才可預覽` when no draft exists, maps current
+  state. It shows `需先建立報告草稿後才可預覽` when no draft exists, maps current
   manual input fields into the template, uses `待評估` for missing manual fields,
   keeps `crisis_language_summary` visible, hides `正式風險評估備註`, `晤談觀察`,
   `症狀與功能影響`, `防衛機制`, and `內在衝突` in the main preview, conditionally
   renders counselor/manual `safety_plan` only when provided, and renders
   `draft.ai_generated` fields inline with review-needed AI labels.
-- ReportPage includes a separate `v2 AI 草稿產生` action card between manual input
+- ReportPage includes a separate `AI 草稿產生` action card between manual input
   and preview. It blocks unsaved manual input, disables generation while saving
   or generating, updates local `reportDraft` from the backend response, and
-  shows `至少需要一筆會談摘要才能產生 v2 AI 草稿` for no-summary 422 responses.
+  shows no-summary 422 guidance without user-facing `v2` wording.
+- ReportPage includes `ReportV2PrintView` through `列印友善檢視` when a report
+  draft exists. The print view title is `個案概念化報告`, supports browser
+  print/save-as-PDF through `window.print()`, keeps the Traditional Chinese
+  global disclaimer, hides repeated per-field AI labels and turn-number evidence
+  refs, excludes workflow controls, v1 legacy UI, charts, raw IDs, raw
+  clinical/provider/debug content, and adds no browser storage writes.
 - v2 save and v2 preview do not call `generateReport`; v2 generate calls only
   `generateReportDraftV2`, the v1 generate button calls only the existing v1
   `generateReport`, v2 generated data does not populate v1 report state, and v1
@@ -994,12 +1031,12 @@ Future behavior:
 - Optional latest/peak session crisis aggregate display remains future work.
 - HistoryPage crisis-level display remains future work, if desired.
 - Complete future report work after the report template stabilizes: Report
-  Schema v2 counselor final report workflow, reviewed status, final PDF export,
+  Schema v2 counselor final report workflow, reviewed status, true PDF export,
   optional additional visualizations and chart polish, production
   deployment/testing, and docs after future slices.
 - Smarter scroll behavior remains optional future UX work.
 - Add future frontend tests for counselor final report workflow, reviewed
-  status, PDF export, additional visualizations, and production
+  status, true PDF export, additional visualizations, and production
   deployment-specific behavior as those features are implemented.
 - Add optional Playwright/E2E later, and visual regression later if needed.
 
