@@ -68,6 +68,7 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 copy .env.example .env
+# 請先依照檔案內的註解填入必要設定，例如 `GEMINI_API_KEY`、`DATABASE_PATH` 等，再啟動後端。
 python -m uvicorn main:app --reload
 ```
 
