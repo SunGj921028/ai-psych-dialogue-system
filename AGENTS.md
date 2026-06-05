@@ -73,12 +73,12 @@ mismatches.
 - ReportPage is integrated with backend manual report generation and now acts as
   a counselor review workspace with a prominent backend disclaimer and
   summary-derived review aids.
-- ReportPage places `會談整理輔助` before the v2 workflow, groups v2 manual
-  input/generate/preview under `v2 報告草稿`, and moves v1 lower as
-  `舊版 v1 暫存報告`. The v2 panel loads existing drafts, requires explicit
-  Create Draft when none exists, does not auto-create drafts on page load, and
-  saves manual input only through the backend Report v2 draft PATCH endpoint.
-- ReportPage includes a separate `v2 AI 草稿產生` action card between the manual
+- ReportPage places `會談整理輔助` before the main `個案概念化報告草稿`
+  workflow. User-facing report labels no longer expose `v2`; the UI uses
+  product-facing wording such as `報告手動資料`, `AI 草稿產生`,
+  `個案概念化報告預覽`, and `需先建立報告草稿後才可預覽`. Internal Report Schema
+  v2 component/API/schema names remain unchanged.
+- ReportPage includes a separate `AI 草稿產生` action card between the manual
   input panel and `ReportV2Preview`. It calls `generateReportDraftV2(draftId)`,
   blocks generation when manual input has unsaved changes, updates local
   `reportDraft` from the backend response, and remains separate from v1
@@ -89,6 +89,13 @@ mismatches.
   counselor-owned, `crisis_language_summary` remains visible, manual
   `safety_plan` renders only when provided, evidence refs are turn-number-only,
   and the preview does not call APIs or `generateReport`.
+- ReportPage shows `列印友善檢視` when a report draft exists and mounts
+  `ReportV2PrintView` for clean browser print / save-as-PDF output. This is not
+  true PDF export. The print view title is `個案概念化報告`, keeps the Traditional
+  Chinese global AI/counselor-review disclaimer, hides repeated per-field AI
+  labels and turn-number evidence refs, excludes charts, workflow controls, raw
+  session IDs, raw messages/summaries/prompts/provider responses, v1 legacy UI,
+  and provider/debug content, and adds no browser storage writes.
 - ReportPage includes the first Recharts demo visualization slice in
   `會談整理輔助`: an emotion dimension radar chart derived from structured summary
   averages on a fixed `0-10` scale, with the existing text/bar fallback and
@@ -136,7 +143,7 @@ mismatches.
   refinement batch is complete, including evidence-based multi-orientation
   guidance for Report v2 theoretical orientation rationale. Counselor final
   report workflow, reviewed
-  status, print-friendly/PDF export, production deployment/testing, additional
+  status, true PDF export, production deployment/testing, additional
   chart polish/visualizations, hard delete/session data-retention workflow,
   title search/filter, richer session metadata, optional secret-safe
   runtime/provider status, and MCP integration remain future work.

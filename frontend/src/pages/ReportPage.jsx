@@ -8,6 +8,7 @@ import {
   FileText,
   Loader2,
   PlusCircle,
+  Printer,
   RefreshCcw,
   Save,
   Tags,
@@ -30,6 +31,7 @@ import {
   updateReportDraftManualInput,
 } from '../api/client.js'
 import ReportV2Preview from '../components/ReportV2Preview.jsx'
+import ReportV2PrintView from '../components/ReportV2PrintView.jsx'
 
 function getFriendlyError(error, fallback = '操作失敗，請稍後再試。') {
   if (error?.response?.status === 404) {
@@ -250,7 +252,7 @@ function getDraftErrorMessage(error) {
     return 'not_found'
   }
 
-  return '無法載入 v2 手動資料草稿，請稍後再試。'
+  return '無法載入報告手動資料，請稍後再試。'
 }
 
 function SectionCard({ title, description, children }) {
@@ -351,8 +353,8 @@ function ReportDraftManualInputPanel({
 
   return (
     <SectionCard
-      title="Report v2 手動資料"
-      description="未來五段式報告的手動資料準備；此區只保存諮商師手動輸入，不會產生 v2 AI 報告。"
+      title="報告手動資料"
+      description="個案概念化報告的手動資料準備；此區只保存諮商師手動輸入，不會產生 AI 報告。"
     >
       <div className="space-y-4">
         <div className="rounded-md border border-amber-200 bg-amber-50/80 p-4 text-sm leading-6 text-amber-950 dark:border-amber-500/35 dark:bg-amber-950/45 dark:text-amber-100">
@@ -369,13 +371,13 @@ function ReportDraftManualInputPanel({
         ) : null}
 
         {draftState === 'loading' ? (
-          <p className="text-sm text-muted-foreground">載入 v2 手動資料草稿中...</p>
+          <p className="text-sm text-muted-foreground">載入報告手動資料中...</p>
         ) : null}
 
         {draftState === 'missing' ? (
           <div className="rounded-md border border-dashed border-slate-300 bg-slate-50/80 p-5 text-sm dark:border-slate-700 dark:bg-slate-900/55">
             <h4 className="font-semibold text-slate-950 dark:text-slate-50">
-              尚未建立 v2 手動資料草稿
+              尚未建立報告草稿
             </h4>
             <p className="mt-1 leading-6 text-muted-foreground">
               建立後才能儲存本頁手動資料；目前不會自動建立草稿，也不會觸發 AI 產生。
@@ -391,7 +393,7 @@ function ReportDraftManualInputPanel({
               ) : (
                 <PlusCircle className="h-4 w-4" />
               )}
-              建立 v2 手動資料草稿
+              建立報告草稿
             </button>
           </div>
         ) : null}
@@ -435,7 +437,7 @@ function ReportDraftManualInputPanel({
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                儲存 v2 手動資料
+                儲存報告手動資料
               </button>
               <span className="text-sm text-muted-foreground">{saveStatus}</span>
             </div>
@@ -461,20 +463,20 @@ function ReportDraftGeneratePanel({
   if (!hasDraft) return null
 
   const hasAiGenerated = Boolean(draft?.ai_generated)
-  const buttonLabel = hasAiGenerated ? '重新產生 v2 AI 草稿' : '產生 v2 AI 草稿'
+  const buttonLabel = hasAiGenerated ? '重新產生 AI 草稿' : '產生 AI 草稿'
   const disabled = isSavingDraft || isGeneratingDraft
 
   return (
     <SectionCard
-      title="v2 AI 草稿產生"
-      description="依目前已儲存的手動資料與會談摘要產生五段式報告的 AI 草稿。此草稿需由諮商師審閱，且不會影響目前 v1 暫時報告。"
+      title="AI 草稿產生"
+      description="依目前已儲存的手動資料與會談摘要產生五段式報告的 AI 草稿。此草稿需由諮商師審閱，且不會影響其他暫存內容。"
     >
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="text-sm leading-6 text-muted-foreground">
           <p>產生時只會使用後端已儲存的手動資料與會談摘要。</p>
           {hasUnsavedChanges ? (
             <p className="mt-1 text-amber-800 dark:text-amber-200">
-              請先儲存手動資料，再產生 v2 AI 草稿
+              請先儲存手動資料，再產生 AI 草稿
             </p>
           ) : null}
         </div>
@@ -831,6 +833,7 @@ export default function ReportPage() {
   const [draftGenerateStatus, setDraftGenerateStatus] = useState('')
   const [showDraftGenerateConversationLink, setShowDraftGenerateConversationLink] =
     useState(false)
+  const [isPrintView, setIsPrintView] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
   const sortedSummaries = getSortedSummaries(summaries)
@@ -852,6 +855,7 @@ export default function ReportPage() {
     setSaveStatus('已儲存')
     setDraftGenerateStatus('')
     setShowDraftGenerateConversationLink(false)
+    setIsPrintView(false)
 
     try {
       const draftResultPromise = getCurrentReportDraft(caseId, sessionId)
@@ -906,7 +910,7 @@ export default function ReportPage() {
       setDraftGenerateStatus('')
       setShowDraftGenerateConversationLink(false)
     } catch {
-      setDraftError('無法建立 v2 手動資料草稿，請稍後再試。')
+      setDraftError('無法建立報告草稿，請稍後再試。')
     } finally {
       setIsCreatingDraft(false)
     }
@@ -967,10 +971,10 @@ export default function ReportPage() {
       setReportDraft(updatedDraft)
       setFormManualInput(updatedDraft.manual_input ?? formManualInput)
       setHasUnsavedChanges(false)
-      setDraftGenerateStatus('已產生 v2 AI 草稿')
+      setDraftGenerateStatus('已產生 AI 草稿')
     } catch (generateDraftError) {
       if (generateDraftError?.response?.status === 422) {
-        setDraftGenerateStatus('至少需要一筆會談摘要才能產生 v2 AI 草稿')
+        setDraftGenerateStatus('至少需要一筆會談摘要才能產生 AI 草稿')
         setShowDraftGenerateConversationLink(Boolean(caseId && sessionId))
       } else {
         setDraftGenerateStatus('產生失敗，請稍後再試')
@@ -979,6 +983,15 @@ export default function ReportPage() {
     } finally {
       setIsGeneratingDraftV2(false)
     }
+  }
+
+  function handleOpenPrintView() {
+    if (!getDraftId(reportDraft)) return
+    setIsPrintView(true)
+  }
+
+  function handlePrintReport() {
+    window.print()
   }
 
   if (!sessionId) {
@@ -1001,6 +1014,17 @@ export default function ReportPage() {
           </Link>
         </section>
       </div>
+    )
+  }
+
+  if (isPrintView && getDraftId(reportDraft)) {
+    return (
+      <ReportV2PrintView
+        caseInfo={caseInfo}
+        draft={reportDraft}
+        onBack={() => setIsPrintView(false)}
+        onPrint={handlePrintReport}
+      />
     )
   }
 
@@ -1117,7 +1141,7 @@ export default function ReportPage() {
       <section className="space-y-5" aria-labelledby="v2-draft-heading">
         <div className="border-b border-slate-200 pb-3 dark:border-slate-800">
           <p className="text-xs font-semibold uppercase tracking-wide text-indigo-800 dark:text-indigo-300">
-            Report v2 Draft
+            個案概念化報告
           </p>
           <h2
             className="mt-1 text-xl font-semibold tracking-tight text-slate-950 dark:text-slate-50"
@@ -1151,6 +1175,19 @@ export default function ReportPage() {
           onGenerateDraft={handleGenerateDraftV2}
           showConversationLink={showDraftGenerateConversationLink}
         />
+
+        {getDraftId(reportDraft) ? (
+          <div className="flex justify-end">
+            <button
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-900 shadow-sm transition hover:bg-slate-50 dark:border-slate-700 dark:bg-card dark:text-slate-50 dark:hover:bg-slate-800"
+              onClick={handleOpenPrintView}
+              type="button"
+            >
+              <Printer className="h-4 w-4" />
+              列印友善檢視
+            </button>
+          </div>
+        ) : null}
 
         <ReportV2Preview draft={reportDraft} />
       </section>
