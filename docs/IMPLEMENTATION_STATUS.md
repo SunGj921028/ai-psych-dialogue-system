@@ -414,6 +414,16 @@ Current facts:
   a newline, IME composing Enter does not submit, the textarea remains editable
   while submitting, the send button is locked while submitting, and duplicate
   submits are guarded.
+- ConversationPage includes a frontend-only voice input control near the
+  textarea/send controls. It uses browser `SpeechRecognition` or
+  `webkitSpeechRecognition` with `zh-TW` when available, fills/appends recognized
+  text into the existing textarea, and never auto-submits the turn. The
+  counselor must review the recognized text and manually send it.
+- Voice input is ConversationPage-only and browser-based. It added no backend
+  API, speech-to-text endpoint, provider behavior, database/schema change,
+  package dependency, audio upload, or audio-file persistence.
+- Unsupported browsers show a keyboard-input fallback message, and recognition
+  errors show generic non-technical UI copy without raw browser error details.
 - ReportPage acts as a counselor review workspace integrated with the backend
   report API. Report generation remains manual-only.
 - Generated reports are currently transient: `POST /api/reports/generate` returns
@@ -693,14 +703,15 @@ Current facts:
   browser storage safety regressions.
 - Browser storage safety tests confirm clinical message content, summaries,
   generated report text, `ai_generated` JSON, report drafts, manual input,
-  crisis levels, crisis reasons, case notes, and other clinical content are not
-  persisted to browser storage.
+  crisis levels, crisis reasons, case notes, voice transcripts, speech state,
+  speech-recognition error details, and other clinical content are not persisted
+  to browser storage.
 - Frontend storage expectations are explicit: `localStorage` is used only for
   `ai-psych-theme`, and `sessionStorage` may store only active case/session
   identifiers.
-- Recent frontend verification for the print-friendly and user-facing wording
-  polish passed with `npm run test` reporting 132 passed tests and
-  `npm run build` passing. The existing Vite large chunk warning remains
+- Recent frontend verification for the ConversationPage voice input slice passed
+  from `frontend/`: `npm run test` reported 7 files / 141 tests passed, and
+  `npm run build` passed. The existing Vite large chunk warning remains
   non-blocking.
 - Remaining future frontend testing work includes counselor final report
   workflow and true PDF export coverage when those features are implemented,
@@ -940,6 +951,10 @@ Current reality:
   message visible above the composer, supports Enter/Shift+Enter/IME-safe input
   behavior, keeps the textarea editable while submitting, locks the send button
   while submitting, and guards duplicate submits.
+- ConversationPage also has a frontend-only `語音輸入` / `停止語音輸入` control
+  that uses browser speech recognition when available. Recognized text is placed
+  into the textarea, appended with a newline when content already exists, and is
+  never sent automatically; unsupported browsers fall back to keyboard input.
 - Starting a new session preserves the selected case, creates a durable backend
   session, uses the backend returned `session_id`, and clears current message and
   summary UI only after creation succeeds.
@@ -998,8 +1013,9 @@ Current reality:
   calls.
 - Frontend does not persist clinical message content, summaries, session
   metadata, previews, generated report text, `ai_generated` JSON, report drafts,
-  manual input, crisis levels, crisis reasons, case notes, titles, drafts, or
-  other clinical content in browser storage.
+  manual input, crisis levels, crisis reasons, case notes, titles, drafts, voice
+  transcripts, speech state, speech-recognition error details, or other clinical
+  content in browser storage.
 - Titles are nullable operational metadata only. The system does not create
   AI-generated titles and must not derive titles from messages, summaries, key
   statements, themes, crisis reasons, previews, reports, notes, or other

@@ -191,6 +191,16 @@ After each turn, briefly point out:
 - the client is not using the system directly
 - AI support is for preparation and documentation only
 
+Optional voice-input demo:
+
+- Use `語音輸入` only with synthetic or de-identified content.
+- Say: `語音輸入只會將語音轉成文字放進輸入框，不會自動送出；送出前仍需諮商師確認。`
+- Browser speech recognition support may vary. If the browser shows
+  `此瀏覽器不支援語音輸入，請改用鍵盤輸入。`, continue the demo with keyboard input.
+- Do not describe this as server-side speech-to-text. The project backend does
+  not receive audio, create audio files, or store voice transcripts in browser
+  storage.
+
 ### 7. Show Crisis Status
 
 Show the displayed crisis status after the low-risk synthetic turns.
@@ -398,6 +408,10 @@ counselor review, not a clinical conclusion.
   crisis reasons, case notes, titles, or other clinical content in browser
   storage. `localStorage` is reserved for theme preference, and
   `sessionStorage` may store only active case/session identifiers.
+- ConversationPage voice input is optional and browser-dependent. It fills the
+  textarea for counselor review, does not auto-send, does not change
+  crisis/summary/report behavior, and should be demonstrated only with
+  synthetic or de-identified content.
 - ReportPage visualizations use structured summary metadata already shown in the
   UI. The Recharts emotion dimension radar chart must not expose raw messages,
   raw summaries, key statements, report text, or clinical free text.

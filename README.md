@@ -26,6 +26,10 @@
 
 - 個案與會談管理：建立個案、建立/恢復會談、手動會談標題、封存/解除封存。
 - 對話工作台：諮商師輸入案主提供內容，後端產生 AI 輔助回應並保存會談訊息。
+- 語音輸入輔助：ConversationPage 可使用瀏覽器 `SpeechRecognition` /
+  `webkitSpeechRecognition` 將語音填入 textarea；不會自動送出，需由
+  諮商師審閱後手動送出。不支援語音辨識的瀏覽器可改用鍵盤輸入，且系統
+  不新增音訊上傳、音訊檔案建立或 transcript browser-storage 保存。
 - 微摘要整理：每輪產生情緒、強度、情緒面向、主題與關鍵陳述的結構化摘要。
 - 危機提示 metadata：後端保留 `none`、`low`、`high` 的 `crisis_level`。前端紅色高風險提示只對 `high` 顯示。
 - 高風險視覺提示：即時高風險回應會開啟高風險 modal。從歷史資料恢復時只顯示頁面提示，不重播 modal。

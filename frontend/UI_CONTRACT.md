@@ -174,14 +174,29 @@ Current reality:
   inserts a newline, IME composing Enter does not submit, the textarea remains
   editable while submitting, the send button is locked while submitting, and
   duplicate submits are guarded.
+- ConversationPage includes a frontend-only voice input control near the
+  textarea/send controls. When browser speech recognition is supported, the
+  visible default button label is `語音輸入`; while active, it changes to
+  `停止語音輸入`.
+- Voice input uses browser `SpeechRecognition` or `webkitSpeechRecognition` with
+  `zh-TW`. It fills the existing textarea only; if the textarea already has
+  content, recognized speech is appended predictably with a newline.
+- Voice input must never auto-submit a conversation turn. The counselor must
+  review recognized text and manually use the existing send behavior.
+- Unsupported browsers show `此瀏覽器不支援語音輸入，請改用鍵盤輸入。`; recognition
+  errors show `語音辨識失敗，請再試一次或改用鍵盤輸入。` without exposing raw browser
+  error details.
+- Voice controls must use visible text labels, not icon-only status. Listening
+  status must be visible text and not rely only on color.
 - ReportPage back-to-conversation links preserve active case/session IDs.
 - The shared header includes navigation and a theme toggle.
 - Light/dark theme support exists and stores only the theme preference under the
   `ai-psych-theme` localStorage key.
 - The frontend does not store clinical message content, summaries, session
   metadata, previews, report text, report drafts, manual input, crisis levels,
-  crisis reasons, case notes, titles, drafts, or other clinical content in
-  browser storage.
+  crisis reasons, case notes, titles, drafts, voice transcripts, speech state,
+  speech-recognition error details, or other clinical content in browser
+  storage.
 - Session titles are nullable operational metadata only. The frontend does not
   generate titles with AI and must not derive titles from raw messages,
   summaries, key statements, themes, crisis reasons, previews, reports, notes,
@@ -270,6 +285,9 @@ Coverage includes:
 - Header navigation and theme toggle behavior.
 - Safe theme localStorage usage.
 - ConversationPage input behavior.
+- ConversationPage voice input behavior, including supported/unsupported
+  browsers, listening state, stop behavior, transcript append, no auto-submit,
+  manual submit after review, generic error handling, and storage safety.
 - ConversationPage crisis modal and fallback behavior.
 - ConversationPage restored persisted crisis display for high, low, none, legacy
   fallback, high-over-low, and low-over-none precedence.
@@ -313,8 +331,9 @@ Test boundaries:
 - Tests do not call the live backend, LLM providers, or network.
 - Storage safety tests confirm clinical message content, summaries, generated
   report text, `ai_generated` JSON, report drafts, manual input, crisis levels,
-  crisis reasons, case notes, session metadata, previews, titles, drafts, and
-  other clinical content are not persisted to browser storage.
+  crisis reasons, case notes, session metadata, previews, titles, drafts, voice
+  transcripts, speech state, speech-recognition error details, and other
+  clinical content are not persisted to browser storage.
 - `localStorage` is used only for `ai-psych-theme`.
 - `sessionStorage` may store only active case/session identifiers.
 - Session metadata, preview text, titles, drafts, and clinical content are not
@@ -352,6 +371,14 @@ Responsibilities:
   `session_id`, and clear the visible message and summary state only after
   durable session creation succeeds.
 - Let the counselor enter client-provided text.
+- Let the counselor optionally use browser-based voice input to fill the
+  textarea with editable text when `SpeechRecognition` or
+  `webkitSpeechRecognition` is available.
+- Show `語音輸入` by default, `停止語音輸入` while listening, a safe unsupported
+  browser fallback when unavailable, and a generic recognition-error message on
+  failure.
+- Voice input must not upload audio, create audio files, call a backend speech
+  API, change the existing conversation API flow, or auto-submit recognized text.
 - Submit with Enter, insert a newline with Shift+Enter, and ignore Enter while an
   IME composition is active.
 - Keep the textarea editable while a turn is submitting.
@@ -927,6 +954,10 @@ Current implemented state:
   message visible above the composer, supports Enter/Shift+Enter/IME-safe input,
   keeps the textarea editable while submitting, locks the send button while
   submitting, and guards duplicate submits.
+- ConversationPage voice input is implemented as a browser-based convenience
+  feature only. It uses `SpeechRecognition` / `webkitSpeechRecognition`, inserts
+  or appends recognized `zh-TW` text into the textarea, and requires manual
+  counselor review plus manual send.
 - Starting a new session from a resumed session preserves the selected case,
   creates a durable backend session, uses the backend returned `session_id`, and
   clears message/summary UI only after session creation succeeds.
@@ -999,7 +1030,8 @@ Current implemented state:
 - Theme preference is stored with the `ai-psych-theme` localStorage key.
 - Clinical message content, summaries, generated report text, `ai_generated`
   JSON, crisis levels, crisis reasons, case notes, report drafts, and manual
-  input are not stored in browser storage.
+  input are not stored in browser storage. Voice transcripts, speech state, and
+  speech-recognition error details are also not stored in browser storage.
 - Session metadata, preview text, titles, drafts, and clinical content are not
   stored in browser storage.
 - Archive state is not stored in browser storage.
