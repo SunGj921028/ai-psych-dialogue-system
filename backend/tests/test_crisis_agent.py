@@ -132,6 +132,59 @@ def test_detect_crisis_repairs_contradictory_model_output(
 
 
 @pytest.mark.parametrize(
+    "text",
+    [
+        "我覺得好像活不下去了。",
+        "我不確定自己這幾天能不能一直保持安全。",
+        "我現在真的很混亂，也不知道自己能不能撐過這段時間。",
+        (
+            "這幾天我常常想到，如果我不在了，好像大家也不會真的受到太大影響。"
+            "雖然我還沒有真的做什麼，但這個念頭出現得越來越頻繁。"
+        ),
+    ],
+)
+def test_detect_crisis_fallback_marks_current_speaker_life_safety_phrases_high(
+    monkeypatch,
+    text,
+):
+    fake_client = FakeLLMClient(exc=RuntimeError("force fallback"))
+    monkeypatch.setattr(crisis_agent, "get_llm_client", fake_client)
+
+    result = _detect(text)
+
+    assert result.crisis_flag is True
+    assert result.crisis_level == "high"
+
+
+@pytest.mark.parametrize(
+    ("text", "mocked_content"),
+    [
+        (
+            "我覺得好像活不下去了。",
+            '{"crisis_flag": true, "crisis_level": "low", "reason": "mocked low"}',
+        ),
+        (
+            "我不確定自己這幾天能不能一直保持安全。",
+            '{"crisis_flag": false, "crisis_level": "none", "reason": "mocked none"}',
+        ),
+    ],
+)
+def test_detect_crisis_upgrades_provider_under_call_for_current_speaker_high_risk(
+    monkeypatch,
+    text,
+    mocked_content,
+):
+    fake_client = FakeLLMClient(content=mocked_content)
+    monkeypatch.setattr(crisis_agent, "get_llm_client", fake_client)
+
+    result = _detect(text)
+
+    assert result.crisis_flag is True
+    assert result.crisis_level == "high"
+    assert "本地安全校準" in result.reason
+
+
+@pytest.mark.parametrize(
     ("text", "expected_flag", "expected_level", "reason_part"),
     [
         (
