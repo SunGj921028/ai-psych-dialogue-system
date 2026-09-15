@@ -228,8 +228,6 @@ React state, not browser persistence.
 
 Important project documents:
 
-- `AGENTS.md`: repository entry point and engineering rules for future Codex
-  sessions.
 - `docs/IMPLEMENTATION_STATUS.md`: current implementation reality and future
   work.
 - `backend/API_CONTRACT.md`: implemented HTTP API behavior.
@@ -240,7 +238,3 @@ Important project documents:
 - `docs/DEMO_RUNBOOK.md`: classroom demo workflow.
 - `docs/REPORT_V2_PROVIDER_SMOKE_TEST.md`: manual provider-mode smoke-test
   guidance.
-
-If documents conflict, source code is the implementation truth, while
-`docs/IMPLEMENTATION_STATUS.md`, `backend/API_CONTRACT.md`, and
-`frontend/UI_CONTRACT.md` explain the expected current behavior.
